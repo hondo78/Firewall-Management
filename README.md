@@ -29,7 +29,8 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   „Rückgängig machen“ erzeugt einen Gegen-Antrag.
 - **Rollen & Rechte**: frei definierbare Rollen aus Einzelrechten, pro Benutzer global oder je Firewall-Gruppe
   zugewiesen (z. B. „Firewall-Administrator“ für Filialen, „Betrachter“ für die Zentrale). Die Verbindungs-
-  einstellungen einer Firewall (Adresse, API-Key/Passwort, TLS, Anbindung) sieht und ändert nur ein Superadmin.
+  einstellungen einer Firewall (Adresse, API-Key/Passwort, TLS, Anbindung) und die Sophos-Central-Konten sieht
+  und ändert nur ein Superadmin; im Audit-Log sind diese Angaben für alle anderen geschwärzt.
 - **Dokumentation**: Audit-Log mit SHA-256-Hash-Kette (Integritätsprüfung, CSV-Export, optional Syslog),
   Verlauf/Kommentare je Antrag, Ausroll-Protokoll mit dem gesendeten XML, Versionsstände der Konfiguration
   inkl. Vergleich (auch zwischen Firewalls) und Erkennung von Änderungen außerhalb des Tools.

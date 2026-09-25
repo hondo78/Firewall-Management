@@ -319,3 +319,24 @@ def test_connection_settings_superadmin_only(client, admin, fake):
     assert r.status_code == 403
     assert client.post(f"/api/firewalls/{fw_id}/test", headers=fwa).status_code == 403
     assert client.post(f"/api/firewalls/{fw_id}/diagnose", headers=fwa).status_code == 403
+
+
+def test_central_and_audit_connection_data_superadmin_only(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    aud = make_user(client, admin, "auditor", [("Auditor", None)])
+    r = client.post("/api/roles", headers=admin, json={"name": "Benutzerverwaltung", "permissions": ["admin", "firewall.view"]})
+    assert r.status_code == 200, r.text
+    adm = make_user(client, admin, "useradmin", [("Benutzerverwaltung", None)])
+
+    # Central-Konten nur für Superadmins, auch nicht mit dem Recht „admin“
+    assert client.get("/api/central-accounts", headers=adm).status_code == 403
+    assert client.get("/api/central-accounts", headers=admin).status_code == 200
+
+    # Audit-Log: API-Adresse geschwärzt und auch nicht über die Suche auffindbar
+    entry = lambda h: next(e for e in client.get("/api/audit", headers=h).json()["items"] if e["action"] == "firewall.created")
+    assert entry(admin)["details"]["api_url"] == "fw.test"
+    assert entry(aud)["details"]["api_url"] == "•••"
+    assert client.get("/api/audit", headers=aud, params={"q": "fw.test"}).json()["total"] == 0
+    assert client.get("/api/audit", headers=admin, params={"q": "fw.test"}).json()["total"] >= 1
+    csv_text = client.get("/api/audit/export.csv", headers=aud).text
+    assert "fw.test" not in csv_text

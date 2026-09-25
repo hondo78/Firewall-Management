@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from .. import permissions
@@ -21,7 +21,8 @@ router = APIRouter(prefix="/api", tags=["audit"])
 auditor = require_global("audit.view")
 
 
-def _query(action: str, actor: str, target_id: str, q: str, since: datetime | None, until: datetime | None):
+def _query(action: str, actor: str, target_id: str, q: str, since: datetime | None, until: datetime | None,
+           user: User | None = None):
     stmt = select(AuditLog)
     if action:
         stmt = stmt.where(AuditLog.action.like(f"{action}%"))
@@ -36,23 +37,27 @@ def _query(action: str, actor: str, target_id: str, q: str, since: datetime | No
     if q:
         # details ist JSON – für die Volltextsuche als Text vergleichen
         from sqlalchemy import String, cast
-        stmt = stmt.where(or_(cast(AuditLog.details, String).ilike(f"%{q}%"), AuditLog.action.ilike(f"%{q}%")))
+        in_details = cast(AuditLog.details, String).ilike(f"%{q}%")
+        if user is not None and not user.is_superadmin:
+            # Geschwärzte Verbindungsdaten dürfen auch über die Suche nicht erratbar sein
+            in_details = and_(in_details, AuditLog.target_type.notin_(("firewall", "central_account")))
+        stmt = stmt.where(or_(in_details, AuditLog.action.ilike(f"%{q}%")))
     return stmt
 
 
-def _out(e: AuditLog) -> dict:
+def _out(e: AuditLog, user: User) -> dict:
     return {"id": e.id, "ts": e.ts, "actor": e.actor_name, "action": e.action, "target_type": e.target_type,
-            "target_id": e.target_id, "details": e.details, "ip": e.ip, "hash": e.hash[:12]}
+            "target_id": e.target_id, "details": permissions.redact(e.details, user), "ip": e.ip, "hash": e.hash[:12]}
 
 
 @router.get("/audit")
 def list_audit(action: str = "", actor: str = "", target_id: str = "", q: str = "",
                since: datetime | None = None, until: datetime | None = None, offset: int = 0, limit: int = 100,
-               _: User = Depends(auditor), db: DbSession = Depends(get_db)):
-    stmt = _query(action, actor, target_id, q, since, until)
+               user: User = Depends(auditor), db: DbSession = Depends(get_db)):
+    stmt = _query(action, actor, target_id, q, since, until, user)
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
     rows = db.execute(stmt.order_by(AuditLog.id.desc()).offset(offset).limit(min(limit, 500))).scalars().all()
-    return {"total": total, "items": [_out(e) for e in rows]}
+    return {"total": total, "items": [_out(e, user) for e in rows]}
 
 
 @router.get("/audit/actions")
@@ -71,14 +76,14 @@ def verify(request: Request, user: User = Depends(auditor), db: DbSession = Depe
 def export_csv(request: Request, action: str = "", actor: str = "", target_id: str = "", q: str = "",
                since: datetime | None = None, until: datetime | None = None,
                user: User = Depends(auditor), db: DbSession = Depends(get_db)):
-    rows = db.execute(_query(action, actor, target_id, q, since, until).order_by(AuditLog.id)).scalars().all()
+    rows = db.execute(_query(action, actor, target_id, q, since, until, user).order_by(AuditLog.id)).scalars().all()
     audit(db, "audit.exported", actor=user, ip=client_ip(request), details={"rows": len(rows)})
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
     w.writerow(["id", "zeit", "benutzer", "aktion", "objekttyp", "objekt", "ip", "details", "hash", "prev_hash"])
     for e in rows:
         w.writerow([e.id, e.ts.isoformat(), e.actor_name, e.action, e.target_type, e.target_id, e.ip,
-                    json.dumps(e.details, ensure_ascii=False), e.hash, e.prev_hash])
+                    json.dumps(permissions.redact(e.details, user), ensure_ascii=False), e.hash, e.prev_hash])
     return StreamingResponse(iter(["﻿" + buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="audit-log.csv"'})
 
@@ -95,7 +100,7 @@ def dashboard(user: User = Depends(get_current_user), db: DbSession = Depends(ge
                   and permissions.can(db, user, "change.approve", c.firewall)]
     recent = []
     if permissions.has_global(db, user, "audit.view"):
-        recent = [_out(e) for e in db.execute(select(AuditLog).order_by(AuditLog.id.desc()).limit(12)).scalars()]
+        recent = [_out(e, user) for e in db.execute(select(AuditLog).order_by(AuditLog.id.desc()).limit(12)).scalars()]
     return {
         "firewalls": len(fws),
         "firewalls_error": sum(1 for f in fws if f.last_sync_error),

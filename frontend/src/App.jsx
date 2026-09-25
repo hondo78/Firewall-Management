@@ -80,7 +80,7 @@ function Layout({ children }) {
             <div className="nav-section">Administration</div>
             {link('/admin/users', 'users', 'Benutzer')}
             {link('/admin/roles', 'roles', 'Rollen & Rechte')}
-            {link('/admin/central', 'cloud', 'Sophos Central')}
+            {me.is_superadmin && link('/admin/central', 'cloud', 'Sophos Central')}
             {link('/admin/notifications', 'bell', 'Benachrichtigungen')}
             {link('/admin/sso', 'roles', 'Anmeldung & SSO')}
             {link('/admin/settings', 'settings', 'Einstellungen')}

@@ -19,6 +19,8 @@ from .. import config
 API_PREFIXES = ("/api/firewall-config/v1", "/firewall-config/v1")
 _PREFIX_BY_BASE: dict[str, str] = {}
 PAGE_SIZE = 100
+FALLBACK_PAGE_SIZES = (50, 25, 10)
+_PAGE_SIZES: dict[str, int] = {}  # je Pfad gelernte Seitengröße (Prozess-Laufzeit)
 
 
 class RestApiError(Exception):
@@ -101,15 +103,26 @@ class RestApiClient:
     # --- Objekte -----------------------------------------------------------------------------------------
 
     def list(self, path: str) -> list[dict]:
+        size = _PAGE_SIZES.get(path, PAGE_SIZE)
         items, page = [], 1
         while True:
-            body = self.request("GET", path, params={"page": page, "pageSize": PAGE_SIZE, "pageTotal": "true"})
+            try:
+                body = self.request("GET", path, params={"page": page, "pageSize": size, "pageTotal": "true"})
+            except RestApiError as e:
+                # Manche Endpunkte (z. B. /application/policies) erlauben nur kleinere Seiten als dokumentiert:
+                # SFOS antwortet dann mit 400 „Invalid page size“ → kleinere Seitengröße, von vorn beginnen
+                smaller = [x for x in FALLBACK_PAGE_SIZES if x < size]
+                if e.status == 400 and "page size" in str(e).lower() and smaller:
+                    size = _PAGE_SIZES[path] = smaller[0]
+                    items, page = [], 1
+                    continue
+                raise
             batch = body.get("items") or []
             items += batch
             pages = body.get("pages") or {}
             total = pages.get("total")
             if not batch or (total is not None and page >= int(total)) or (
-                    total is None and len(batch) < int(pages.get("size") or PAGE_SIZE)):
+                    total is None and len(batch) < int(pages.get("size") or size)):
                 return items
             page += 1
 

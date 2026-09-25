@@ -35,6 +35,30 @@ def test_prefix_fallback_on_html_404_and_paging():
     assert calls.count("/api/firewall-config/v1/network/zones") == 1
 
 
+def test_page_size_fallback():
+    """Echte SFOS: /application/policies lehnt pageSize=100 mit 400 „Invalid page size.“ ab."""
+    sizes = []
+
+    def handler(req: httpx.Request):
+        size = int(req.url.params["pageSize"])
+        sizes.append(size)
+        if size > 50:
+            return httpx.Response(400, json={"error": "badRequest", "message": "Invalid page size."})
+        page = int(req.url.params["page"])
+        items = [{"name": f"p{page}{i}"} for i in range(50 if page == 1 else 2)]
+        return httpx.Response(200, json={"items": items, "pages": {"current": page, "total": 2, "size": size}})
+
+    restapi._PAGE_SIZES.clear()
+    c = client_for(handler)
+    assert len(c.list("/application/policies")) == 52
+    assert sizes == [100, 50, 50]
+    # gelernte Größe wird beim nächsten Mal direkt verwendet
+    sizes.clear()
+    c.list("/application/policies")
+    assert sizes == [50, 50]
+    restapi._PAGE_SIZES.clear()
+
+
 def test_json_404_is_object_not_found_and_errors_are_readable():
     def handler(req):
         if req.method == "DELETE":

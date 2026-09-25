@@ -8,12 +8,13 @@ from .. import config, crypto, diagnose, sync
 from ..audit import audit
 from ..db import get_db
 from ..models import CentralAccount, User, new_id
-from ..permissions import require_global
+from ..permissions import require_superadmin
 from ..security import client_ip
 from ..sophos.central import CentralError
 
 router = APIRouter(prefix="/api/central-accounts", tags=["central"])
-admin_only = require_global("admin")
+# Central-Konten enthalten Zugangsdaten zu allen Firewalls eines Tenants → nur Superadmin
+admin_only = require_superadmin
 
 
 class AccountIn(BaseModel):

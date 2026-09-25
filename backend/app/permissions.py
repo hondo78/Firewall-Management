@@ -96,6 +96,27 @@ def visible_group_ids(db: DbSession, user: User, perm: str = "firewall.view") ->
     return ids
 
 
+def require_superadmin(user: User = Depends(get_current_user)) -> User:
+    """Nur Superadmins – z. B. für Verbindungs- und Zugangsdaten (Firewalls, Sophos Central)."""
+    if not user.is_superadmin:
+        raise HTTPException(403, "Nur für Superadmins")
+    return user
+
+
+# Audit-Details mit Verbindungsdaten: für alle anderen geschwärzt
+SENSITIVE_AUDIT_KEYS = frozenset({"api_url", "api_username", "client_id", "tenant_id", "id_url"})
+
+
+def redact(value, user: User):
+    if user.is_superadmin:
+        return value
+    if isinstance(value, dict):
+        return {k: ("•••" if k in SENSITIVE_AUDIT_KEYS and v else redact(v, user)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact(v, user) for v in value]
+    return value
+
+
 def require_global(perm: str):
     def dep(user: User = Depends(get_current_user), db: DbSession = Depends(get_db)) -> User:
         if not has_global(db, user, perm):

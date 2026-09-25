@@ -131,7 +131,7 @@ export default function Firewalls() {
       <ErrorBox error={error} />
       {fws && !fws.length && (
         <div className="panel"><Empty>
-          Noch keine Firewalls. {me.is_superadmin || me.permissions.global.includes('admin')
+          Noch keine Firewalls. {me.is_superadmin
             ? <>Firewalls per REST-API (API-Key) hinzufügen oder über <Link to="/admin/central">Sophos Central</Link> übernehmen.</>
             : 'Bitte einen Superadmin, Firewalls anzubinden oder Ihnen Rechte zu geben.'}
         </Empty></div>
