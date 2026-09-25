@@ -1,0 +1,297 @@
+import { useMemo, useState } from 'react'
+import { api } from '../api'
+import { asList, listOf, policy, refOptions, setList, toXml } from './entities'
+import { ErrorBox, Field, Modal, Picker, Seg } from './ui'
+
+/** Rahmen für alle Editoren: Formular ⇄ XML-Expertenansicht, Speichern = in den Entwurf übernehmen. */
+function EditorShell({ title, entity, data, setData, isNew, form, onClose, onSubmit, extraFoot, positionField }) {
+  const [mode, setMode] = useState(form ? 'form' : 'xml')
+  const [xml, setXml] = useState('')
+  const [error, setError] = useState('')
+  const [warnings, setWarnings] = useState([])
+  const [busy, setBusy] = useState(false)
+
+  const switchMode = async (m) => {
+    setError('')
+    if (m === 'xml') setXml(toXml(entity, data))
+    if (m === 'form' && mode === 'xml') {
+      try {
+        const r = await api('/xml/parse', { method: 'POST', body: { entity, xml } })
+        setData(r.data)
+      } catch (e) { setError(e.message); return }
+    }
+    setMode(m)
+  }
+
+  const submit = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      let payload = data
+      if (mode === 'xml') payload = (await api('/xml/parse', { method: 'POST', body: { entity, xml } })).data
+      const r = await onSubmit(payload)
+      if (r?.warnings?.length) setWarnings(r.warnings)
+      else onClose()
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal title={title} onClose={onClose} wide>
+      <div className="row between" style={{ marginBottom: 12 }}>
+        {form ? <Seg options={[['form', 'Formular'], ['xml', 'XML (Experte)']]} value={mode} onChange={switchMode} />
+          : <span className="muted small">Für diesen Objekttyp gibt es nur den XML-Editor.</span>}
+        <span className="muted small">{isNew ? 'Neues Objekt' : 'Änderung'} wird in Ihren Entwurf übernommen – erst nach Genehmigung aktiv.</span>
+      </div>
+      {mode === 'form' ? form : (
+        <div className="stack">
+          <textarea className="code" value={xml} spellCheck={false} onChange={(e) => setXml(e.target.value)} />
+          <div className="muted small">Struktur wie in der Sophos-XML-API bzw. Entities.xml. Umbenennen ist nicht möglich.</div>
+        </div>
+      )}
+      {mode === 'xml' && positionField}
+      <ErrorBox error={error} />
+      {warnings.length > 0 && (
+        <div className="alert warn small">
+          In den Entwurf übernommen – Hinweise:<ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+        </div>
+      )}
+      <div className="modal-foot">
+        {extraFoot}
+        <button onClick={onClose}>{warnings.length ? 'Schließen' : 'Abbrechen'}</button>
+        {!warnings.length && <button className="primary" disabled={busy} onClick={submit}>{busy ? 'Übernehme …' : 'In Entwurf übernehmen'}</button>}
+      </div>
+    </Modal>
+  )
+}
+
+// --- Firewall-Regel ------------------------------------------------------------------------------------------
+
+const NEW_RULE = {
+  Name: '', Description: '', IPFamily: 'IPv4', Status: 'Enable', PolicyType: 'Network',
+  NetworkPolicy: {
+    Action: 'Accept', LogTraffic: 'Enable', SkipLocalDestined: 'Disable',
+    SourceZones: { Zone: ['LAN'] }, DestinationZones: { Zone: ['WAN'] }, Schedule: 'All The Time',
+  },
+}
+
+function PositionField({ position, setPosition, rules, name, isNew }) {
+  const others = rules.filter((r) => r !== name)
+  return (
+    <div className="form-grid" style={{ marginTop: 12 }}>
+      <Field label="Position in der Regelliste">
+        <select value={position.type} onChange={(e) => setPosition({ type: e.target.value, ref: position.ref || others[0] })}>
+          {!isNew && <option value="keep">Unverändert</option>}
+          <option value="top">Ganz oben</option>
+          <option value="bottom">Ganz unten</option>
+          <option value="after">Nach Regel …</option>
+          <option value="before">Vor Regel …</option>
+        </select>
+      </Field>
+      {['after', 'before'].includes(position.type) && (
+        <Field label="Bezugsregel">
+          <select value={position.ref} onChange={(e) => setPosition({ ...position, ref: e.target.value })}>
+            {others.map((r) => <option key={r}>{r}</option>)}
+          </select>
+        </Field>
+      )}
+    </div>
+  )
+}
+
+export function RuleEditor({ config, rule, onClose, onSubmit }) {
+  const isNew = !rule
+  const [data, setData] = useState(() => structuredClone(rule || NEW_RULE))
+  const [position, setPosition] = useState(isNew ? { type: 'top' } : { type: 'keep' })
+  const opts = useMemo(() => refOptions(config), [config])
+  const p = policy(data)
+  const polKey = data.UserPolicy ? 'UserPolicy' : 'NetworkPolicy'
+  const setPol = (next) => setData({ ...data, [polKey]: next })
+  const setTop = (k) => (e) => setData({ ...data, [k]: e.target.value })
+  const setP = (k) => (e) => setPol({ ...p, [k]: e.target.value })
+  const list = (c, k) => listOf(p[c], k)
+
+  const posField = <PositionField position={position} setPosition={setPosition} rules={opts.rules} name={data.Name} isNew={isNew} />
+  const form = (
+    <div className="stack">
+      <div className="form-grid">
+        <Field label="Regelname"><input value={data.Name} disabled={!isNew} onChange={setTop('Name')} autoFocus={isNew} /></Field>
+        <Field label="Beschreibung"><input value={data.Description || ''} onChange={setTop('Description')} /></Field>
+      </div>
+      <div className="form-grid">
+        <Field label="Aktion">
+          <Seg options={[['Accept', 'Zulassen'], ['Drop', 'Verwerfen'], ['Reject', 'Ablehnen']]} value={p.Action}
+            onChange={(v) => setPol({ ...p, Action: v })} />
+        </Field>
+        <Field label="Status">
+          <Seg options={[['Enable', 'Aktiv'], ['Disable', 'Inaktiv']]} value={data.Status || 'Enable'}
+            onChange={(v) => setData({ ...data, Status: v })} />
+        </Field>
+        <Field label="Protokollierung">
+          <Seg options={[['Enable', 'An'], ['Disable', 'Aus']]} value={p.LogTraffic || 'Disable'}
+            onChange={(v) => setPol({ ...p, LogTraffic: v })} />
+        </Field>
+        <Field label="Zeitplan">
+          <select value={p.Schedule || 'All The Time'} onChange={setP('Schedule')}>
+            {[...new Set(['All The Time', ...opts.schedules])].map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </Field>
+      </div>
+      {data.PolicyType === 'User' && <div className="alert info small">Benutzerbasierte Regel – Benutzer/Gruppen im XML-Editor pflegen.</div>}
+      <div className="grid two">
+        <div className="panel panel-pad stack">
+          <h3 style={{ margin: 0 }}>Quelle</h3>
+          <Field label="Zonen"><Picker value={list('SourceZones', 'Zone')} options={opts.zones}
+            onChange={(v) => setPol(setList(p, 'SourceZones', 'Zone', v))} /></Field>
+          <Field label="Netzwerke und Geräte"><Picker value={list('SourceNetworks', 'Network')} options={opts.networks}
+            onChange={(v) => setPol(setList(p, 'SourceNetworks', 'Network', v))} /></Field>
+        </div>
+        <div className="panel panel-pad stack">
+          <h3 style={{ margin: 0 }}>Ziel</h3>
+          <Field label="Zonen"><Picker value={list('DestinationZones', 'Zone')} options={opts.zones}
+            onChange={(v) => setPol(setList(p, 'DestinationZones', 'Zone', v))} /></Field>
+          <Field label="Netzwerke"><Picker value={list('DestinationNetworks', 'Network')} options={opts.networks}
+            onChange={(v) => setPol(setList(p, 'DestinationNetworks', 'Network', v))} /></Field>
+          <Field label="Dienste"><Picker value={list('Services', 'Service')} options={opts.services}
+            onChange={(v) => setPol(setList(p, 'Services', 'Service', v))} /></Field>
+        </div>
+      </div>
+      {posField}
+    </div>
+  )
+
+  return (
+    <EditorShell title={isNew ? 'Neue Firewall-Regel' : `Regel „${rule.Name}“ bearbeiten`} entity="FirewallRule"
+      data={data} setData={setData} isNew={isNew} form={form} onClose={onClose} positionField={posField}
+      onSubmit={(payload) => onSubmit({
+        entity: 'FirewallRule', action: isNew ? 'add' : 'update', name: payload.Name, data: payload,
+        position: position.type === 'keep' ? null : position,
+      })} />
+  )
+}
+
+// --- Hosts, Dienste, Gruppen ---------------------------------------------------------------------------------
+
+const NEW_OBJECTS = {
+  IPHost: { Name: '', Description: '', IPFamily: 'IPv4', HostType: 'IP', IPAddress: '' },
+  IPHostGroup: { Name: '', Description: '', HostList: { Host: [] }, IPFamily: 'IPv4' },
+  FQDNHost: { Name: '', FQDN: '', Description: '' },
+  FQDNHostGroup: { Name: '', Description: '', FQDNHostList: { FQDNHost: [] } },
+  Services: { Name: '', Description: '', Type: 'TCPorUDP', ServiceDetails: { ServiceDetail: [{ SourcePort: '1:65535', DestinationPort: '', Protocol: 'TCP' }] } },
+  ServiceGroup: { Name: '', Description: '', ServiceList: { Service: [] } },
+}
+
+export const FORM_ENTITIES = Object.keys(NEW_OBJECTS)
+
+function IPHostForm({ data, setData, isNew }) {
+  const set = (k) => (e) => setData({ ...data, [k]: e.target.value })
+  const type = data.HostType || 'IP'
+  const setType = (t) => {
+    const base = { Name: data.Name, Description: data.Description, IPFamily: data.IPFamily || 'IPv4', HostType: t }
+    if (t === 'IP') base.IPAddress = data.IPAddress || ''
+    if (t === 'Network') Object.assign(base, { IPAddress: data.IPAddress || '', Subnet: data.Subnet || '255.255.255.0' })
+    if (t === 'IPRange') Object.assign(base, { StartIPAddress: data.StartIPAddress || '', EndIPAddress: data.EndIPAddress || '' })
+    if (t === 'IPList') base.ListOfIPAddresses = data.ListOfIPAddresses || ''
+    if (data.HostGroupList) base.HostGroupList = data.HostGroupList
+    setData(base)
+  }
+  return (
+    <div className="stack">
+      <div className="form-grid">
+        <Field label="Name"><input value={data.Name} disabled={!isNew} onChange={set('Name')} autoFocus={isNew} /></Field>
+        <Field label="Beschreibung"><input value={data.Description || ''} onChange={set('Description')} /></Field>
+        <Field label="IP-Version">
+          <select value={data.IPFamily || 'IPv4'} onChange={set('IPFamily')}><option>IPv4</option><option>IPv6</option></select>
+        </Field>
+      </div>
+      <Field label="Typ"><Seg options={[['IP', 'IP'], ['Network', 'Netzwerk'], ['IPRange', 'Bereich'], ['IPList', 'Liste']]}
+        value={type} onChange={setType} /></Field>
+      <div className="form-grid">
+        {(type === 'IP' || type === 'Network') && <Field label="IP-Adresse"><input value={data.IPAddress || ''} onChange={set('IPAddress')} placeholder="10.0.0.1" /></Field>}
+        {type === 'Network' && <Field label="Subnetzmaske"><input value={data.Subnet || ''} onChange={set('Subnet')} placeholder="255.255.255.0" /></Field>}
+        {type === 'IPRange' && <>
+          <Field label="Start-IP"><input value={data.StartIPAddress || ''} onChange={set('StartIPAddress')} /></Field>
+          <Field label="End-IP"><input value={data.EndIPAddress || ''} onChange={set('EndIPAddress')} /></Field>
+        </>}
+        {type === 'IPList' && <Field label="IP-Adressen" hint="Kommagetrennt"><input value={data.ListOfIPAddresses || ''} onChange={set('ListOfIPAddresses')} /></Field>}
+      </div>
+    </div>
+  )
+}
+
+function ServiceForm({ data, setData, isNew }) {
+  const set = (k) => (e) => setData({ ...data, [k]: e.target.value })
+  const details = listOf(data.ServiceDetails, 'ServiceDetail')
+  const setDetails = (d) => setData({ ...data, ServiceDetails: { ServiceDetail: d } })
+  const upd = (i, k) => (e) => setDetails(details.map((d, j) => (j === i ? { ...d, [k]: e.target.value } : d)))
+  return (
+    <div className="stack">
+      <div className="form-grid">
+        <Field label="Name"><input value={data.Name} disabled={!isNew} onChange={set('Name')} autoFocus={isNew} /></Field>
+        <Field label="Beschreibung"><input value={data.Description || ''} onChange={set('Description')} /></Field>
+      </div>
+      {data.Type !== 'TCPorUDP' ? <div className="alert info small">Diensttyp „{data.Type}“ – bitte im XML-Editor bearbeiten.</div> : (
+        <table>
+          <thead><tr><th>Protokoll</th><th>Quell-Port(s)</th><th>Ziel-Port(s)</th><th /></tr></thead>
+          <tbody>
+            {details.map((d, i) => (
+              <tr key={i}>
+                <td><select value={d.Protocol} onChange={upd(i, 'Protocol')}><option>TCP</option><option>UDP</option></select></td>
+                <td><input value={d.SourcePort || ''} onChange={upd(i, 'SourcePort')} placeholder="1:65535" /></td>
+                <td><input value={d.DestinationPort || ''} onChange={upd(i, 'DestinationPort')} placeholder="443 oder 8000:8080" /></td>
+                <td><button className="ghost" disabled={details.length === 1} onClick={() => setDetails(details.filter((_, j) => j !== i))}>×</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {data.Type === 'TCPorUDP' && <div><button className="sm" onClick={() => setDetails([...details, { SourcePort: '1:65535', DestinationPort: '', Protocol: 'TCP' }])}>+ Port hinzufügen</button></div>}
+    </div>
+  )
+}
+
+function GroupForm({ data, setData, isNew, container, itemKey, options, label }) {
+  const set = (k) => (e) => setData({ ...data, [k]: e.target.value })
+  return (
+    <div className="stack">
+      <div className="form-grid">
+        <Field label="Name"><input value={data.Name} disabled={!isNew} onChange={set('Name')} autoFocus={isNew} /></Field>
+        <Field label="Beschreibung"><input value={data.Description || ''} onChange={set('Description')} /></Field>
+      </div>
+      <Field label={label}>
+        <Picker value={asList(data[container]?.[itemKey])} options={options} emptyLabel="keine"
+          onChange={(v) => setData({ ...data, [container]: { [itemKey]: v } })} />
+      </Field>
+    </div>
+  )
+}
+
+function FQDNForm({ data, setData, isNew }) {
+  const set = (k) => (e) => setData({ ...data, [k]: e.target.value })
+  return (
+    <div className="form-grid">
+      <Field label="Name"><input value={data.Name} disabled={!isNew} onChange={set('Name')} autoFocus={isNew} /></Field>
+      <Field label="FQDN" hint="Wildcards wie *.example.com erlaubt"><input value={data.FQDN || ''} onChange={set('FQDN')} /></Field>
+      <Field label="Beschreibung"><input value={data.Description || ''} onChange={set('Description')} /></Field>
+    </div>
+  )
+}
+
+export function ObjectEditor({ entity, label, config, object, onClose, onSubmit }) {
+  const isNew = !object
+  const [data, setData] = useState(() => structuredClone(object || NEW_OBJECTS[entity] || { Name: '' }))
+  const opts = useMemo(() => refOptions(config), [config])
+  const props = { data, setData, isNew }
+  const forms = {
+    IPHost: <IPHostForm {...props} />,
+    FQDNHost: <FQDNForm {...props} />,
+    Services: <ServiceForm {...props} />,
+    IPHostGroup: <GroupForm {...props} container="HostList" itemKey="Host" options={opts.hosts} label="Mitglieder (IP-Hosts)" />,
+    ServiceGroup: <GroupForm {...props} container="ServiceList" itemKey="Service" options={opts.serviceItems} label="Mitglieder (Dienste)" />,
+    FQDNHostGroup: <GroupForm {...props} container="FQDNHostList" itemKey="FQDNHost" options={opts.fqdnHosts} label="Mitglieder (FQDN-Hosts)" />,
+  }
+  return (
+    <EditorShell title={isNew ? `${label}: neu` : `${label} „${object.Name}“ bearbeiten`} entity={entity}
+      data={data} setData={setData} isNew={isNew} form={forms[entity]} onClose={onClose}
+      onSubmit={(payload) => onSubmit({ entity, action: isNew ? 'add' : 'update', name: payload.Name, data: payload })} />
+  )
+}
