@@ -90,6 +90,16 @@ Roles = sets of permission keys. A `RoleAssignment` is global (`group_id NULL`) 
 Every relevant action calls `audit(db, action, ...)`, which **commits by default** (`commit=False` flushes only). It keeps a hash chain `sha256(prev_hash + canonical JSON)` with a `pg_advisory_xact_lock` on Postgres. `ts` is truncated to seconds, and `models.TZDateTime` (a TypeDecorator) keeps timestamps UTC-aware on SQLite, otherwise `verify_chain` breaks in tests. Never modify existing entries. Syslog export is optional (`SYSLOG_HOST`).
 
 ### Frontend
+The config view is `pages/firewall/Editor.jsx`, modelled on **Sophos Config Studio's configuration editor**:
+- a dark entity sidebar with search and collapsible sections; the main nav shrinks to an icon rail on `/firewalls/:id`, and the pin state lives in localStorage;
+- global search (Ctrl+K), a "Getting Started" strip, and per-entity column definitions (`components/columns.js`) with a column picker (localStorage);
+- row checkboxes for bulk delete, and a "Konfig-Analyse" column fed by `/analysis`;
+- a sticky actions column;
+- bulk add with Config Studio input formats (`components/bulk.js`);
+- Preview (the draft's API calls) and a Download dropdown.
+
+**Import** (`importer.py`, `POST /firewalls/{id}/import/review|apply`) takes an Entities.xml or `.tar`, compares it with the cache, and puts the selected objects into the user's draft. For REST firewalls it converts XML→REST: hosts, groups, FQDN, MAC, TCP/UDP services, service groups and network rules. Ports are kept as strings, like the real SFOS returns them. Network refs are keyed via the cache (countries use `@countries`). The comparison normalizes lists (order-insensitive, empty = missing). The upload is never stored; the parsed items stay in memory for 30 min per user and firewall. nginx allows 25 MB.
+
 Format-aware: `components/entities.js` provides `isRestEntity`, `anyRuleView`, `anySummary`, `restRefOptions`, and `RestEditors.jsx` holds the REST forms. `EditorShell` switches its expert mode between JSON (REST) and XML. `pages/FirewallView.jsx` holds the studio view: `buildRows` overlays the user's draft on the cached config (preview comes from the backend `effective_config`). `components/Editors.jsx` has the form editors plus the XML expert mode (parsed server-side via `POST /api/xml/parse`). `components/entities.js` has the object helpers (list containers!). The `Picker` dropdown is an absolute overlay on purpose: an inline list shifted the layout on blur, and clicks missed.
 
 ### Tests

@@ -10,6 +10,7 @@ import { Chips, DiffTable, Empty, ErrorBox, Field, Modal, Status, Tabs, useLoad 
 import { SyncState } from './Firewalls'
 import Diagnose from '../components/Diagnose'
 import AnalysisTab from './firewall/AnalysisTab'
+import Editor from './firewall/Editor'
 import CentralTab from './firewall/CentralTab'
 import Findings from '../components/Findings'
 import CompareTab from './firewall/CompareTab'
@@ -22,7 +23,7 @@ const PERM_SHORT = {
 
 // --- Entwurf -------------------------------------------------------------------------------------------------
 
-export function OperationCard({ op, onRemove }) {
+export function OperationCard({ op, onRemove, open }) {
   return (
     <div className="op">
       <div className="op-head">
@@ -33,7 +34,7 @@ export function OperationCard({ op, onRemove }) {
       </div>
       <div className="op-body">
         {op.action === 'remove' ? <div className="muted small">Objekt wird gelöscht.</div> : <DiffTable rows={op.diff} />}
-        <details><summary>API-Aufruf ({op.xml?.startsWith('<') ? 'XML' : 'REST'})</summary><pre className="xml">{op.xml}</pre></details>
+        <details open={open}><summary>API-Aufruf ({op.xml?.startsWith('<') ? 'XML' : 'REST'})</summary><pre className="xml">{op.xml}</pre></details>
       </div>
     </div>
   )
@@ -155,233 +156,6 @@ function DraftBar({ draft, onChanged, requireTicket, settings, fw }) {
   )
 }
 
-// --- Konfiguration (Config-Studio-Ansicht) -------------------------------------------------------------------
-
-function PendingBadges({ pending, draftAction }) {
-  return (
-    <span className="chips">
-      {draftAction && <span className={`badge ${draftAction === 'add' ? 'b-ok' : draftAction === 'remove' ? 'b-danger' : 'b-warn'}`}>
-        Entwurf: {ACTION_LABEL[draftAction]}</span>}
-      {(pending || []).filter((p) => p.status !== 'draft').map((p) => (
-        <Link key={p.change_id} to={`/changes/${p.change_id}`} className={`badge st-${p.status}`} title={`${ACTION_LABEL[p.action]} – ${p.status}`}>
-          {crNo(p.number)}
-        </Link>
-      ))}
-    </span>
-  )
-}
-
-function buildRows(entity, objects, preview, showDraft, draftOps) {
-  const orig = objects[entity] || []
-  if (!showDraft) return orig.map((o) => ({ obj: o, state: '' }))
-  const origBy = Object.fromEntries(orig.map((o) => [oname(o), o]))
-  const opBy = Object.fromEntries(draftOps.filter((o) => o.entity === entity).map((o) => [o.name, o.action]))
-  const rows = (preview[entity] || []).map((o) => ({
-    obj: o,
-    state: !origBy[oname(o)] ? 'add' : (opBy[oname(o)] === 'update' || canonical(origBy[oname(o)]) !== canonical(o)) ? 'update' : '',
-  }))
-  orig.forEach((o, i) => {
-    if (opBy[oname(o)] === 'remove') rows.splice(Math.min(i, rows.length), 0, { obj: o, state: 'remove' })
-  })
-  return rows
-}
-
-function ObjectDetail({ fw, entity, obj, onClose }) {
-  const [d] = useLoad(() => api(`/firewalls/${fw.id}/objects/${entity}/${encodeURIComponent(oname(obj))}/xml`), [entity, oname(obj)])
-  return (
-    <Modal title={oname(obj)} onClose={onClose} wide>
-      {d?.used_by?.length > 0 && <div className="alert info small">Verwendet von: {d.used_by.join(', ')}</div>}
-      <pre className="xml">{d?.xml || 'Lade …'}</pre>
-    </Modal>
-  )
-}
-
-function RuleTable({ entity, rows, fw, mayEdit, pendingBy, draftBy, onEdit, onOp, onShow }) {
-  const names = rows.filter((r) => r.state !== 'remove').map((r) => oname(r.obj))
-  const rest = isRestEntity(entity)
-  if (!rows.length) return <Empty>Keine Firewall-Regeln.</Empty>
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>#</th><th>Regel</th><th>Quelle</th><th>Ziel</th><th>Dienste</th><th>Aktion</th><th /></tr></thead>
-        <tbody>
-          {rows.map(({ obj, state }, i) => {
-            const v = anyRuleView(entity, obj)
-            const name = oname(obj)
-            const desc = rest ? obj.description : obj.Description
-            const idx = names.indexOf(name)
-            const cls = state ? `row-${state}` : !v.enabled ? 'row-disabled' : ''
-            return (
-              <tr key={`${name}-${state}`} className={cls}>
-                <td className="muted small">{state === 'remove' ? '–' : idx + 1}</td>
-                <td className="name">
-                  <button className="link" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }} onClick={() => onShow(obj)}>{name}</button>
-                  {!v.enabled && <span className="badge st-Disable" style={{ marginLeft: 6 }}>inaktiv</span>}
-                  {v.type === 'waf' && <span className="badge b-info" style={{ marginLeft: 6 }}>WAF</span>}
-                  {desc && <div className="small muted">{desc}</div>}
-                  <div style={{ marginTop: 3 }}><PendingBadges pending={pendingBy[name]} draftAction={draftBy[name]} /></div>
-                </td>
-                <td><Chips items={v.srcZones} kind="zone" /><div style={{ marginTop: 3 }}><Chips items={v.srcNets} /></div></td>
-                <td><Chips items={v.dstZones} kind="zone" /><div style={{ marginTop: 3 }}><Chips items={v.dstNets} /></div></td>
-                <td><Chips items={v.services} />{v.schedule && v.schedule !== 'All The Time' && <div className="small muted">⏱ {v.schedule}</div>}</td>
-                <td><span className={`badge st-${v.action}`}>{{ Accept: 'Zulassen', Drop: 'Verwerfen', Reject: 'Ablehnen' }[v.action] || v.action}</span>
-                  {v.log && <div className="small muted">protokolliert</div>}</td>
-                <td className="actions">
-                  {mayEdit && state !== 'remove' && <>
-                    <button className="ghost sm" title="Nach oben" disabled={idx <= 0}
-                      onClick={() => onOp({ entity, action: 'update', name, data: obj, position: { type: 'before', ref: names[idx - 1] } })}>↑</button>
-                    <button className="ghost sm" title="Nach unten" disabled={idx >= names.length - 1}
-                      onClick={() => onOp({ entity, action: 'update', name, data: obj, position: { type: 'after', ref: names[idx + 1] } })}>↓</button>
-                    <button className="ghost sm" onClick={() => onOp({ entity, action: 'update', name, data: rest ? { ...obj, enabled: !v.enabled } : { ...obj, Status: v.enabled ? 'Disable' : 'Enable' } })}>
-                      {v.enabled ? 'Deaktivieren' : 'Aktivieren'}</button>
-                    <button className="ghost sm" onClick={() => onEdit(obj)}>Bearbeiten</button>
-                    {fw.capabilities.remove && <button className="ghost sm" style={{ color: 'var(--danger)' }}
-                      onClick={() => onOp({ entity, action: 'remove', name })}>Löschen</button>}
-                  </>}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function ObjectTable({ entity, rows, fw, mayEdit, pendingBy, draftBy, onEdit, onOp, onShow }) {
-  if (!rows.length) return <Empty>Keine Objekte dieses Typs.</Empty>
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr><th>Name</th><th>Details</th><th>Beschreibung</th><th /></tr></thead>
-        <tbody>
-          {rows.map(({ obj, state }) => (
-            <tr key={`${oname(obj)}-${state}`} className={state ? `row-${state}` : ''}>
-              <td className="name"><button className="link" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }} onClick={() => onShow(obj)}>{oname(obj)}</button>
-                <div><PendingBadges pending={pendingBy[oname(obj)]} draftAction={draftBy[oname(obj)]} /></div></td>
-              <td className="small">{anySummary(entity, obj)}</td>
-              <td className="small muted">{obj.Description || obj.description || ''}</td>
-              <td className="actions">
-                {mayEdit && state !== 'remove' && <>
-                  <button className="ghost sm" onClick={() => onEdit(obj)}>Bearbeiten</button>
-                  {fw.capabilities.remove && !obj.isInternal && <button className="ghost sm" style={{ color: 'var(--danger)' }}
-                    onClick={() => onOp({ entity, action: 'remove', name: oname(obj) })}>Löschen</button>}
-                  {obj.isInternal && <span className="badge" title="Eingebautes Objekt der Firewall">vordefiniert</span>}
-                </>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function ConfigTab({ fw, cfg, draft, reload }) {
-  const { me } = useAuth()
-  const [entity, setEntity] = useState(PRIMARY_RULES[cfg.format] || 'FirewallRule')
-  const isRuleTable = RULE_TABLE_ENTITIES.has(entity)
-  const rest = cfg.format === 'rest'
-  const [showDraft, setShowDraft] = useState(true)
-  const [editing, setEditing] = useState(null)   // {obj|null}
-  const [detail, setDetail] = useState(null)
-  const [q, setQ] = useState('')
-  const [msg, setMsg] = useState(null)
-  const mayEdit = can(me, 'change.create', fw) && !!fw.last_sync_at
-  const draftOps = draft?.operations || []
-  const meta = cfg.entities.find((e) => e.entity === entity)
-
-  const pendingBy = useMemo(() => {
-    const out = {}
-    for (const p of cfg.pending) if (p.entity === entity) out[p.name] = p.changes
-    return out
-  }, [cfg, entity])
-  const draftBy = Object.fromEntries(draftOps.filter((o) => o.entity === entity).map((o) => [o.name, o.action]))
-  const pendingEntities = new Set([...cfg.pending.map((p) => p.entity), ...draftOps.map((o) => o.entity)])
-
-  const f = q.toLowerCase()
-  const rows = buildRows(entity, cfg.objects, cfg.preview, showDraft, draftOps)
-    .filter((r) => !f || JSON.stringify(r.obj).toLowerCase().includes(f))
-
-  const addOp = useCallback(async (op) => {
-    setMsg(null)
-    const r = await api(`/firewalls/${fw.id}/draft/operations`, { method: 'POST', body: op })
-    reload()
-    return r
-  }, [fw.id, reload])
-  const quickOp = async (op) => {
-    try {
-      const r = await addOp(op)
-      setMsg({ kind: r.warnings.length ? 'warn' : 'ok', text: r.warnings.length ? r.warnings.join(' · ') : `In Entwurf übernommen: ${ACTION_LABEL[op.action]} „${op.name}“` })
-    } catch (e) { setMsg({ kind: 'error', text: e.message }) }
-  }
-
-  const sections = [...new Set(cfg.entities.map((e) => e.section))]
-  const editorConfig = cfg.preview
-  return (
-    <div className="studio">
-      <div className="panel entity-nav">
-        {sections.map((s) => (
-          <div key={s}>
-            <div className="sec">{s}</div>
-            {cfg.entities.filter((e) => e.section === s).map((e) => (
-              <button key={e.entity} className={entity === e.entity ? 'active' : ''} onClick={() => { setEntity(e.entity); setQ('') }}>
-                {e.label}{pendingEntities.has(e.entity) && <span className="p" title="Geplante Änderungen" />}<span className="n">{e.count}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
-      <div className="panel">
-        <div className="panel-head">
-          <h3>{meta?.label}</h3>
-          <input placeholder="Filtern …" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 180 }} />
-          {draftOps.length > 0 && <label className="check small"><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />mit meinem Entwurf</label>}
-          <div className="right row">
-            {mayEdit && <TemplatePicker fw={fw} format={cfg.format} onApplied={(r) => { reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: r.skipped.length ? `Vorlage übernommen, übersprungen: ${r.skipped.join('; ')}` : 'Vorlage in den Entwurf übernommen.' }) }} onError={(t) => setMsg({ kind: 'error', text: t })} />}
-            {mayEdit && (rest || entity === 'FirewallRule' || FORM_ENTITIES.includes(entity) || ['Zone', 'Schedule', 'MACHost', 'NATRule', 'FirewallRuleGroup'].includes(entity)) &&
-              <button className="primary sm" onClick={() => setEditing({ obj: null })}>+ Neu</button>}
-          </div>
-        </div>
-        {msg && <div style={{ padding: '0 16px' }}><div className={`alert ${msg.kind} small`}>{msg.text}</div></div>}
-        {!fw.last_sync_at && <div className="alert warn" style={{ margin: 16 }}>Noch keine Konfiguration geladen – bitte „Jetzt synchronisieren“.</div>}
-        {isRuleTable
-          ? <RuleTable entity={entity} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
-            onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={setDetail} />
-          : <ObjectTable entity={entity} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
-            onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={setDetail} />}
-        {!fw.capabilities.remove && mayEdit && <div className="muted small" style={{ padding: '8px 16px' }}>
-          Löschen ist über den Sophos-Central-Import nicht möglich – Regeln stattdessen deaktivieren oder die Firewall per REST-API anbinden.</div>}
-      </div>
-      {editing && rest && (entity.startsWith('firewallRules')
-        ? <RestRuleEditor entity={entity} config={editorConfig} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
-        : <RestObjectEditor entity={entity} label={meta.label} config={editorConfig} object={editing.obj}
-          onClose={() => setEditing(null)} onSubmit={addOp} />)}
-      {editing && !rest && (entity === 'FirewallRule'
-        ? <RuleEditor config={editorConfig} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
-        : <ObjectEditor entity={entity} label={meta.label} config={editorConfig} object={editing.obj}
-          onClose={() => setEditing(null)} onSubmit={addOp} />)}
-      {detail && <ObjectDetail fw={fw} entity={entity} obj={detail} onClose={() => setDetail(null)} />}
-    </div>
-  )
-}
-
-function TemplatePicker({ fw, format, onApplied, onError }) {
-  const [tpls] = useLoad(() => api('/templates'), [])
-  const list = (tpls || []).filter((t) => t.format === format)
-  if (!list.length) return null
-  const apply = async (id) => {
-    if (!id) return
-    try { onApplied(await api(`/firewalls/${fw.id}/templates/${id}/apply`, { method: 'POST' })) } catch (e) { onError(e.message) }
-  }
-  return (
-    <select className="sm" value="" onChange={(e) => apply(e.target.value)} style={{ width: 190 }} aria-label="Vorlage anwenden">
-      <option value="">Vorlage anwenden …</option>
-      {list.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.operations.length})</option>)}
-    </select>
-  )
-}
-
 // --- Weitere Tabs --------------------------------------------------------------------------------------------
 
 function ChangesTab({ fw }) {
@@ -486,11 +260,6 @@ export default function FirewallView() {
           <h1>{fw.name}</h1>
         </div>
         <div className="right row">
-          {fw.capabilities.format === 'rest'
-            ? <button className="sm" onClick={() => download(`/firewalls/${fw.id}/export.json`, `Konfiguration-${fw.name}.json`)}
-              title="Zwischengespeicherte Konfiguration im Format der REST-API">JSON-Export</button>
-            : <button className="sm" onClick={() => download(`/firewalls/${fw.id}/export.xml`, `Entities-${fw.name}.xml`)}
-            title="Zwischengespeicherte Konfiguration als Entities.xml – z. B. für Sophos Config Studio">Entities.xml</button>}
           <button className="primary sm" disabled={syncing} onClick={sync}>{syncing ? 'Synchronisiere …' : 'Jetzt synchronisieren'}</button>
         </div>
       </div>
@@ -511,7 +280,7 @@ export default function FirewallView() {
       {fw.last_sync_error && <div className="alert error small">Letzte Synchronisation fehlgeschlagen: {fw.last_sync_error}</div>}
       {syncMsg && <div className={`alert ${syncMsg.kind} small`}>{syncMsg.text}</div>}
       <Tabs tabs={tabs} value={tab} onChange={(t) => nav(`/firewalls/${id}/${t}`)} />
-      {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <ConfigTab key={cfg.format} fw={fw} cfg={cfg} draft={draft} reload={reload} />)}
+      {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <Editor key={cfg.format} fw={fw} cfg={cfg} draft={draft} reload={reload} />)}
       {tab === 'analysis' && <AnalysisTab fw={fw} />}
       {tab === 'compare' && <CompareTab fw={fw} />}
       {tab === 'changes' && <ChangesTab fw={fw} />}

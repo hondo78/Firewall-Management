@@ -1,5 +1,5 @@
 """Firewalls, Firewall-Gruppen, Konfigurationsansicht, Versionsstände/Vergleich und Firmware."""
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from datetime import date, datetime, time, timezone
 
 from pydantic import BaseModel, Field
@@ -497,3 +497,48 @@ def analysis(firewall_id: str, user: User = Depends(get_current_user), db: DbSes
     findings = lint.analyze(sync.cached_config(db, fw))
     return {"findings": findings, "counts": {s: sum(1 for f in findings if f["severity"] == s)
                                              for s in ("high", "medium", "info")}}
+
+
+# --- Import (wie „Review import“ im Config Studio) ---------------------------------------------------------
+
+@router.post("/firewalls/{firewall_id}/import/review")
+async def import_review(firewall_id: str, file: UploadFile = File(...), user: User = Depends(get_current_user),
+                        db: DbSession = Depends(get_db)):
+    """Entities.xml/.tar hochladen und mit der Firewall vergleichen – nichts wird gespeichert oder geändert."""
+    from .. import importer
+    fw = firewall_or_404(db, user, firewall_id, "change.create")
+    parsed, version = importer.parse_upload(await file.read(importer.MAX_BYTES + 1))
+    items = importer.review(sync.cached_config(db, fw), entities.fmt_for(fw.connector), parsed)
+    token = importer.store(user.id, fw.id, items)
+    counts = {s: sum(1 for i in items if i["status"] == s) for s in ("new", "changed", "same", "unsupported")}
+    return {"token": token, "api_version": version, "counts": counts,
+            "items": [{k: v for k, v in i.items() if k != "data"} | {"key": str(n)} for n, i in enumerate(items)]}
+
+
+class ImportApplyIn(BaseModel):
+    token: str
+    keys: list[str] = Field(max_length=5000)
+
+
+@router.post("/firewalls/{firewall_id}/import/apply")
+def import_apply(firewall_id: str, body: ImportApplyIn, request: Request, user: User = Depends(get_current_user),
+                 db: DbSession = Depends(get_db)):
+    """Ausgewählte Import-Einträge in den eigenen Entwurf übernehmen (einzeln geprüft)."""
+    from .. import importer
+    from ..serializers import change_out
+    fw = firewall_or_404(db, user, firewall_id, "change.create")
+    items = importer.load(body.token, user.id, fw.id)
+    ops = importer.operations(items, set(body.keys), sync.cached_config(db, fw))
+    added, skipped, draft = 0, [], None
+    for op in ops:
+        try:
+            draft, _ = changes.draft_add(db, user, fw, op)
+            added += 1
+        except HTTPException as e:
+            db.rollback()
+            skipped.append(f"{entities.LABELS.get(op['entity'], op['entity'])} „{op['name']}“: {e.detail}")
+    if draft is None:
+        draft = changes.get_draft(db, user, fw)
+    audit(db, "config.import_to_draft", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
+          details={"firewall": fw.name, "added": added, "skipped": len(skipped)})
+    return {"added": added, "skipped": skipped, "draft": change_out(db, draft, user) if draft else None}

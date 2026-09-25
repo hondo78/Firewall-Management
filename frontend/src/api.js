@@ -96,3 +96,14 @@ export function canAnywhere(me, perm) {
   if (me.is_superadmin || (me.permissions?.global || []).includes(perm)) return true
   return Object.values(me.permissions?.groups || {}).some((p) => p.includes(perm))
 }
+
+/** Datei-Upload (multipart) mit Bearer-Token. */
+export async function upload(path, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const token = getToken()
+  const res = await fetch(`/api${path}`, { method: 'POST', body: form, headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : body.detail?.message || `${res.status} ${res.statusText}`)
+  return body
+}

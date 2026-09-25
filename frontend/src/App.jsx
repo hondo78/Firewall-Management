@@ -52,17 +52,24 @@ function Layout({ children }) {
     return () => window.removeEventListener('fwm:mfa-setup', go)
   }, [nav])
   const isAdmin = me.is_superadmin || me.permissions.global.includes('admin')
+  // Im Konfigurations-Editor wird die Navigation zur Symbolleiste (mehr Platz, wie im Config Studio)
+  const inEditor = /^\/firewalls\/[^/]+(\/config)?$/.test(loc.pathname)
+  const [pinned, setPinned] = useState(() => { try { return localStorage.getItem('fwm.nav.pinned') === '1' } catch { return false } })
+  const rail = inEditor && !pinned
+  const togglePin = () => { const v = !pinned; setPinned(v); try { localStorage.setItem('fwm.nav.pinned', v ? '1' : '0') } catch { /* egal */ } }
   const link = (to, icon, label, extra) => (
-    <NavLink to={to} end={to === '/'}><Icon d={I[icon]} />{label}{extra}</NavLink>
+    <NavLink to={to} end={to === '/'} title={rail ? label : undefined}><Icon d={I[icon]} /><span className="nav-label">{label}</span>{extra}</NavLink>
   )
   return (
     <div className="layout">
-      <aside className={`sidebar ${open ? 'open' : ''}`}>
+      <aside className={`sidebar ${open ? 'open' : ''} ${rail ? 'rail' : ''}`}>
         <div className="brand">
           <span className="brand-mark"><Icon d="M5 8h14M5 12h14M5 16h9" /></span>
           <span>Firewall-Management<small>Sophos Firewall</small></span>
         </div>
         <button className="menu-toggle sm" onClick={() => setOpen(!open)} aria-label="Menü">☰</button>
+        {inEditor && <button className="rail-toggle" onClick={togglePin} title={rail ? 'Navigation ausklappen' : 'Navigation einklappen'}
+          aria-label={rail ? 'Navigation ausklappen' : 'Navigation einklappen'}><Icon d={rail ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'} /></button>}
         <nav>
           {link('/', 'home', 'Übersicht')}
           {link('/firewalls', 'fw', 'Firewalls')}
@@ -85,7 +92,7 @@ function Layout({ children }) {
           <button className="link" onClick={logout}>Abmelden</button>
         </div>
       </aside>
-      <main className="content">
+      <main className={`content ${rail ? 'with-rail' : ''}`}>
         {me.mfa_setup_required && <div className="alert warn">Für Ihre Rolle ist die Zwei-Faktor-Anmeldung Pflicht. Bitte im Profil einrichten – bis dahin sind andere Bereiche gesperrt.</div>}
         <ErrorBoundary key={loc.pathname}>{children}</ErrorBoundary>
       </main>
