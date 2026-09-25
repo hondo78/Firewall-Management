@@ -44,6 +44,9 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    # Benachrichtigungen: E-Mail an/aus, Telegram-Chat (per Einmal-Code aus dem Profil verknüpft)
+    notify_email: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    telegram_chat_id: Mapped[str] = mapped_column(String(40), default="", server_default="")
 
     assignments: Mapped[list["RoleAssignment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
@@ -124,6 +127,8 @@ class Firewall(Base):
     verify_tls: Mapped[bool] = mapped_column(Boolean, default=True)
     # REST-API: Ablaufdatum des API-Keys (in SFOS beim Erzeugen angezeigt) – für rechtzeitige Warnung
     api_key_expires_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    # Kleinste Warnstufe (Tage vor Ablauf), zu der bereits benachrichtigt wurde – 0 = noch keine
+    api_key_warned_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     external_ips: Mapped[list] = mapped_column(JSON, default=list)
     last_sync_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     last_sync_error: Mapped[str] = mapped_column(Text, default="")
@@ -180,6 +185,8 @@ class ChangeRequest(Base):
     # Befristung: nach Ablauf wird automatisch eine Rücknahme erzeugt ("" | "reverted" | "failed")
     expires_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True, index=True)
     expiry_state: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    # Erinnerung „Befristung läuft bald ab“ bereits verschickt
+    expiry_warned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     submitted_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     deployed_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)

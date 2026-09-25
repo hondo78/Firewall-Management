@@ -19,7 +19,7 @@ export const AUDIT_LABEL = {
   'change.withdrawn': 'Antrag zurückgezogen', 'change.revert_submitted': 'Rücknahme eingereicht', 'change.expiry_failed': 'Automatische Rücknahme fehlgeschlagen', 'change.commented': 'Kommentar', 'change.deploy_requested': 'Ausrollen angestoßen',
   'change.deployed': 'Antrag ausgerollt', 'change.deploy_failed': 'Ausrollen fehlgeschlagen', 'change.conflict': 'Konflikt beim Ausrollen',
   'firmware.upgrade_scheduled': 'Firmware-Update geplant', 'firmware.upgrade_failed': 'Firmware-Update fehlgeschlagen',
-  'firmware.upgrade_cancelled': 'Firmware-Update storniert', 'audit.verified': 'Audit-Kette geprüft', 'central.diagnosed': 'Probelauf Sophos Central', 'firewall.diagnosed': 'Probelauf Firewall', 'audit.exported': 'Audit-Log exportiert',
+  'firmware.upgrade_cancelled': 'Firmware-Update storniert', 'audit.verified': 'Audit-Kette geprüft', 'notifications.updated': 'Benachrichtigungen geändert', 'user.telegram_linked': 'Telegram verknüpft', 'user.telegram_unlinked': 'Telegram getrennt', 'user.notification_prefs': 'Benachrichtigungs-Einstellungen', 'central.diagnosed': 'Probelauf Sophos Central', 'firewall.diagnosed': 'Probelauf Firewall', 'audit.exported': 'Audit-Log exportiert',
 }
 
 const PREFIXES = [['', 'Alle Bereiche'], ['auth.', 'Anmeldungen'], ['change.', 'Anträge'], ['firewall.', 'Firewalls'],

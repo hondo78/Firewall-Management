@@ -10,7 +10,7 @@ from . import config, crypto, migrations, permissions, worker
 from .audit import audit
 from .db import Base, SessionLocal, engine
 from .models import Role, User
-from .routers import admin, audit_log, auth, central, changes, firewalls
+from .routers import admin, audit_log, auth, central, changes, firewalls, notifications
 from .security import hash_password
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Firewall-Management (Sophos)", lifespan=lifespan, docs_url="/api/docs",
               openapi_url="/api/openapi.json")
 
-for r in (auth, admin, central, firewalls, changes, audit_log):
+for r in (auth, admin, central, firewalls, changes, audit_log, notifications):
     app.include_router(r.router)
 
 

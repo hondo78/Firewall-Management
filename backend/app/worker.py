@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from sqlalchemy import or_, select
 
-from . import changes, config, settings, sync
+from . import changes, config, notify, settings, sync
 from .db import SessionLocal
 from .models import CentralAccount, ChangeRequest, Firewall, User, utcnow
 from .sophos import connector
@@ -98,8 +98,10 @@ def _recover_stuck() -> None:
 
 async def run_forever() -> None:
     await asyncio.to_thread(_recover_stuck)
+    stop = threading.Event()
+    threading.Thread(target=notify.run_telegram_forever, args=(stop,), daemon=True, name="telegram").start()
     while True:
-        for step in (_expire_due, _deploy_due, _sync_due):
+        for step in (_expire_due, _deploy_due, _sync_due, notify.check_reminders):
             try:
                 await asyncio.to_thread(step)
             except Exception:

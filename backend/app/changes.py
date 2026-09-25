@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session as DbSession
 
-from . import diff, permissions, settings, sync
+from . import diff, notify, permissions, settings, sync
 from .audit import audit
 from .models import ChangeEvent, ChangeRequest, Firewall, User, utcnow
 from .sophos import connector, entities
@@ -262,6 +262,7 @@ def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justific
         "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in cr.operations],
         **({"expires_at": expires_at.isoformat()} if expires_at else {}),
     })
+    notify.change_event(cr.id, "pending")
 
 
 def approvals(cr: ChangeRequest) -> list[ChangeEvent]:
@@ -284,7 +285,8 @@ def decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment:
         cr.decided_at = utcnow()
         event(db, cr, "rejected", comment.strip(), user)
         audit(db, "change.rejected", actor=user, target_type="change", target_id=cr.id, ip=ip,
-              details={"number": cr.number, "firewall": cr.firewall.name, "comment": comment.strip()})
+              details={"number": cr.number, "firewall": cr.firewall.name, "comment": comment.strip(), "via": ip})
+        notify.change_event(cr.id, "rejected")
         return
     if decision != "approve":
         raise HTTPException(400, "Entscheidung muss approve oder reject sein")
@@ -298,7 +300,10 @@ def decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment:
     audit(db, "change.approved", actor=user, target_type="change", target_id=cr.id, ip=ip, details={
         "number": cr.number, "firewall": cr.firewall.name, "comment": comment.strip(),
         "approvals": f"{count}/{cr.required_approvals}", "fully_approved": cr.status == "approved",
+        **({"via": "telegram"} if ip == "telegram" else {}),
     })
+    if cr.status == "approved":
+        notify.change_event(cr.id, "approved")
 
 
 def withdraw(db: DbSession, user: User, cr: ChangeRequest, ip: str) -> None:
@@ -386,6 +391,8 @@ def _create_revert(db: DbSession, cr: ChangeRequest, actor: User | None, *, just
         "automatic": actor is None, "preapproved": preapproved,
         "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in rev.operations],
     })
+    if not preapproved:
+        notify.change_event(rev.id, "pending")
     return rev
 
 
@@ -420,6 +427,7 @@ def expire(db: DbSession, cr: ChangeRequest) -> ChangeRequest | None:
         event(db, cr, "expiry_failed", str(e.detail))
         audit(db, "change.expiry_failed", target_type="change", target_id=cr.id,
               details={"number": cr.number, "firewall": cr.firewall.name, "error": str(e.detail)})
+        notify.change_event(cr.id, "expiry_failed")
         return None
     cr.expiry_state = "reverted"
     db.commit()
@@ -479,6 +487,7 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
                 audit(db, "change.conflict", actor=actor, target_type="change", target_id=cr.id,
                       details={"number": cr.number, "firewall": fw.name, "problems": problems})
                 sync.store_config(db, fw, current, reason="sync")
+                notify.change_event(cr.id, "conflict")
                 return
             logline("Keine Abweichungen – wende Änderungen an …")
             connector.apply(db, fw, cr.operations, logline)
@@ -503,6 +512,7 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
                 "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in cr.operations],
                 "approvers": [e.actor_name for e in approvals(cr)],
             })
+            notify.change_event(cr.id, "deployed")
         except (connector.DeployError, *connector.ConnectorError) as e:
             db.rollback()
             cr = db.get(ChangeRequest, change_id)
@@ -511,6 +521,7 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
             event(db, cr, "failed", str(e), actor)
             audit(db, "change.deploy_failed", actor=actor, target_type="change", target_id=cr.id,
                   details={"number": cr.number, "firewall": cr.firewall.name, "error": str(e)})
+            notify.change_event(cr.id, "failed")
         except Exception as e:  # unerwartet: Antrag nicht in „deploying“ hängen lassen
             log.exception("Ausrollen von %s fehlgeschlagen", change_id)
             db.rollback()
@@ -520,3 +531,4 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
             event(db, cr, "failed", str(e), actor)
             audit(db, "change.deploy_failed", actor=actor, target_type="change", target_id=cr.id,
                   details={"number": cr.number, "error": f"intern: {e}"})
+            notify.change_event(cr.id, "failed")

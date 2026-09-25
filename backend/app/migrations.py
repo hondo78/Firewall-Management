@@ -12,6 +12,10 @@ POSTGRES = [
     "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS expiry_state VARCHAR(20) NOT NULL DEFAULT ''",
     "CREATE INDEX IF NOT EXISTS ix_change_requests_expires_at ON change_requests (expires_at)",
     "ALTER TABLE change_requests ALTER COLUMN created_by DROP NOT NULL",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS expiry_warned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_email BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR(40) NOT NULL DEFAULT ''",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS api_key_warned_days INTEGER NOT NULL DEFAULT 0",
 ]
 
 

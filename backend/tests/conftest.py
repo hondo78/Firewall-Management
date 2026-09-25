@@ -15,6 +15,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.sophos import connector  # noqa: E402
+from app import notify  # noqa: E402
+
+notify.SYNC = True  # Benachrichtigungen im Test synchron (SQLite-In-Memory verträgt keine Parallelzugriffe)
 
 
 def rule(name, action="Accept", status="Enable", src="LAN", dst="WAN", services=None):

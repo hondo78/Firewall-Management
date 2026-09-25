@@ -70,6 +70,9 @@ def _store_config(db: DbSession, fw: Firewall, config: dict[str, list[dict]], *,
             audit(db, "config.drift_detected", actor=actor, target_type="firewall", target_id=fw.id,
                   details={"firewall": fw.name, "summary": summary}, commit=False)
     db.commit()
+    if result["changed"] and summary and reason == "sync":
+        from . import notify
+        notify.drift_detected(fw.id, summary)
     return result
 
 
