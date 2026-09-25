@@ -72,6 +72,7 @@ export const EVENT_LABEL = {
   created: 'Entwurf angelegt', draft_changed: 'Entwurf geändert', submitted: 'Eingereicht', approved: 'Genehmigt',
   rejected: 'Abgelehnt', withdrawn: 'Zurückgezogen', comment: 'Kommentar', deploy_started: 'Ausrollen gestartet',
   deployed: 'Ausgerollt', failed: 'Fehlgeschlagen', conflict: 'Konflikt erkannt',
+  preapproved: 'Vorab genehmigt (Befristung)', expiry_failed: 'Automatische Rücknahme fehlgeschlagen',
 }
 
 /** Recht auf einer Firewall (fw.permissions kommt vom Backend) bzw. global. */

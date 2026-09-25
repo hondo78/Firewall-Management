@@ -6,6 +6,7 @@ Einreichen), "position"/"before_position" (nur Regeln: {"type": top|bottom|after
 import copy
 import logging
 import threading
+from datetime import timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import func, select, update
@@ -217,8 +218,19 @@ def draft_remove(db: DbSession, user: User, cr: ChangeRequest, index: int) -> No
 
 # --- Workflow ------------------------------------------------------------------------------------------------
 
+def check_expiry(db: DbSession, expires_at, deploy_after) -> None:
+    if expires_at is None:
+        return
+    start = deploy_after or utcnow()
+    if expires_at <= start + timedelta(minutes=5):
+        raise HTTPException(400, "Die Befristung muss mindestens 5 Minuten nach dem Ausrollen enden")
+    max_days = int(settings.get(db, "temp_max_days"))
+    if max_days and expires_at > start + timedelta(days=max_days):
+        raise HTTPException(400, f"Befristung höchstens {max_days} Tage")
+
+
 def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justification: str, ticket_ref: str,
-           deploy_after, ip: str) -> None:
+           deploy_after, ip: str, expires_at=None) -> None:
     if cr.status != "draft" or cr.created_by != user.id:
         raise HTTPException(409, "Nur eigene Entwürfe können eingereicht werden")
     if not cr.operations:
@@ -238,7 +250,9 @@ def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justific
         working = effective_config(working, [o])
     cr.operations = with_before(cr.operations, config)
     cr.title, cr.justification, cr.ticket_ref = title.strip(), justification.strip(), ticket_ref.strip()
+    check_expiry(db, expires_at, deploy_after)
     cr.deploy_after = deploy_after
+    cr.expires_at = expires_at
     cr.required_approvals = int(settings.get(db, "required_approvals"))
     cr.status = "pending"
     cr.submitted_at = utcnow()
@@ -246,6 +260,7 @@ def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justific
     audit(db, "change.submitted", actor=user, target_type="change", target_id=cr.id, ip=ip, details={
         "number": cr.number, "firewall": fw.name, "title": cr.title, "ticket": cr.ticket_ref,
         "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in cr.operations],
+        **({"expires_at": expires_at.isoformat()} if expires_at else {}),
     })
 
 
@@ -329,19 +344,15 @@ def revert_operations(cr: ChangeRequest) -> list[dict]:
     return ops
 
 
-def submit_revert(db: DbSession, user: User, cr: ChangeRequest, *, justification: str, ticket_ref: str,
-                  deploy_after, ip: str) -> ChangeRequest:
-    """Rücknahme eines ausgerollten Antrags direkt als neuen Antrag einreichen (Vier-Augen-Prinzip gilt weiter:
-    wer die Rücknahme stellt, kann sie nicht selbst genehmigen)."""
-    if cr.status != "deployed":
-        raise HTTPException(409, "Nur ausgerollte Anträge können rückgängig gemacht werden")
-    if not can_revert(db, user, cr):
-        raise HTTPException(403, "Rücknahme erfordert das Recht zum Beantragen oder Genehmigen für diese Firewall")
-    if not justification.strip():
-        raise HTTPException(400, "Bitte eine Begründung für die Rücknahme angeben")
-    existing = db.execute(select(ChangeRequest).where(
+def active_revert(db: DbSession, cr: ChangeRequest) -> ChangeRequest | None:
+    return db.execute(select(ChangeRequest).where(
         ChangeRequest.reverts_id == cr.id,
         ChangeRequest.status.notin_(("rejected", "withdrawn", "failed", "conflict")))).scalar()
+
+
+def _create_revert(db: DbSession, cr: ChangeRequest, actor: User | None, *, justification: str, ticket_ref: str,
+                   deploy_after, ip: str, preapproved: bool = False) -> ChangeRequest:
+    existing = active_revert(db, cr)
     if existing:
         raise HTTPException(409, f"Für diesen Antrag gibt es bereits die Rücknahme CR-{existing.number:04d}")
     fw = cr.firewall
@@ -356,19 +367,62 @@ def submit_revert(db: DbSession, user: User, cr: ChangeRequest, *, justification
         clean_ops.append(c)
         working = effective_config(working, [c])
     title = f"Rücknahme von CR-{cr.number:04d}: {cr.title}"[:300]
-    rev = ChangeRequest(number=next_number(db), firewall_id=fw.id, created_by=user.id, status="pending",
-                        title=title, justification=justification.strip(), ticket_ref=ticket_ref.strip(),
+    rev = ChangeRequest(number=next_number(db), firewall_id=fw.id, created_by=actor.id if actor else None,
+                        status="approved" if preapproved else "pending", title=title,
+                        justification=justification.strip(), ticket_ref=ticket_ref.strip(),
                         deploy_after=deploy_after, reverts_id=cr.id, submitted_at=utcnow(),
+                        decided_at=utcnow() if preapproved else None,
                         required_approvals=int(settings.get(db, "required_approvals")),
                         operations=with_before(clean_ops, config))
     db.add(rev)
     db.flush()
-    event(db, rev, "submitted", justification.strip(), user)
-    event(db, cr, "comment", f"Rücknahme beantragt: CR-{rev.number:04d}", user)
-    audit(db, "change.revert_submitted", actor=user, target_type="change", target_id=rev.id, ip=ip, details={
+    event(db, rev, "submitted", justification.strip(), actor)
+    if preapproved:
+        event(db, rev, "preapproved", f"Befristung wurde mit CR-{cr.number:04d} genehmigt "
+                                      f"({', '.join(e.actor_name for e in approvals(cr))})")
+    event(db, cr, "comment", f"Rücknahme {'automatisch ' if actor is None else ''}beantragt: CR-{rev.number:04d}", actor)
+    audit(db, "change.revert_submitted", actor=actor, target_type="change", target_id=rev.id, ip=ip, details={
         "number": rev.number, "reverts": cr.number, "firewall": fw.name, "justification": justification.strip(),
+        "automatic": actor is None, "preapproved": preapproved,
         "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in rev.operations],
     })
+    return rev
+
+
+def submit_revert(db: DbSession, user: User, cr: ChangeRequest, *, justification: str, ticket_ref: str,
+                  deploy_after, ip: str) -> ChangeRequest:
+    """Rücknahme eines ausgerollten Antrags direkt als neuen Antrag einreichen (Vier-Augen-Prinzip gilt weiter:
+    wer die Rücknahme stellt, kann sie nicht selbst genehmigen)."""
+    if cr.status != "deployed":
+        raise HTTPException(409, "Nur ausgerollte Anträge können rückgängig gemacht werden")
+    if not can_revert(db, user, cr):
+        raise HTTPException(403, "Rücknahme erfordert das Recht zum Beantragen oder Genehmigen für diese Firewall")
+    if not justification.strip():
+        raise HTTPException(400, "Bitte eine Begründung für die Rücknahme angeben")
+    return _create_revert(db, cr, user, justification=justification, ticket_ref=ticket_ref,
+                          deploy_after=deploy_after, ip=ip)
+
+
+def expire(db: DbSession, cr: ChangeRequest) -> ChangeRequest | None:
+    """Befristeten, ausgerollten Antrag nach Ablauf zurücknehmen (vom Worker aufgerufen)."""
+    if active_revert(db, cr):
+        cr.expiry_state = "reverted"          # wurde bereits manuell zurückgenommen
+        db.commit()
+        return None
+    preapproved = bool(settings.get(db, "temp_revert_preapproved"))
+    try:
+        rev = _create_revert(db, cr, None, justification=f"Befristung abgelaufen ({cr.expires_at:%d.%m.%Y %H:%M} UTC)",
+                             ticket_ref=cr.ticket_ref, deploy_after=None, ip="", preapproved=preapproved)
+    except HTTPException as e:
+        db.rollback()
+        cr = db.get(ChangeRequest, cr.id)
+        cr.expiry_state = "failed"
+        event(db, cr, "expiry_failed", str(e.detail))
+        audit(db, "change.expiry_failed", target_type="change", target_id=cr.id,
+              details={"number": cr.number, "firewall": cr.firewall.name, "error": str(e.detail)})
+        return None
+    cr.expiry_state = "reverted"
+    db.commit()
     return rev
 
 

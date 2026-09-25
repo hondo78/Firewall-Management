@@ -38,6 +38,20 @@ def _deploy_due() -> None:
                 changes.deploy(db, cid)
 
 
+def _expire_due() -> None:
+    """Befristete Anträge nach Ablauf zurücknehmen (Rücknahme wird je nach Einstellung vorab genehmigt)."""
+    with SessionLocal() as db:
+        ids = db.execute(select(ChangeRequest.id).where(
+            ChangeRequest.status == "deployed", ChangeRequest.expires_at.is_not(None),
+            ChangeRequest.expires_at <= utcnow(), ChangeRequest.expiry_state == "")).scalars().all()
+    for cid in ids:
+        with SessionLocal() as db:
+            cr = db.get(ChangeRequest, cid)
+            rev = changes.expire(db, cr)
+            if rev:
+                log.info("Befristung von CR-%04d abgelaufen – Rücknahme CR-%04d angelegt", cr.number, rev.number)
+
+
 def _sync_due() -> None:
     with SessionLocal() as db:
         minutes = int(settings.get(db, "sync_interval_minutes"))
@@ -85,7 +99,7 @@ def _recover_stuck() -> None:
 async def run_forever() -> None:
     await asyncio.to_thread(_recover_stuck)
     while True:
-        for step in (_deploy_due, _sync_due):
+        for step in (_expire_due, _deploy_due, _sync_due):
             try:
                 await asyncio.to_thread(step)
             except Exception:

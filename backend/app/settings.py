@@ -12,6 +12,11 @@ DEFAULTS: dict = {
     "sync_interval_minutes": 30,
     # Pflichtfeld Ticket-Referenz beim Einreichen
     "require_ticket": False,
+    # Befristete Anträge: automatische Rücknahme nach Ablauf ohne erneute Freigabe ausrollen
+    # (die Befristung wurde mit dem ursprünglichen Antrag im Vier-Augen-Prinzip genehmigt)
+    "temp_revert_preapproved": True,
+    # Maximale Befristung in Tagen (0 = unbegrenzt)
+    "temp_max_days": 90,
 }
 
 

@@ -26,6 +26,12 @@ export default function SettingsPage() {
           <span>Genehmigte Anträge automatisch ausrollen <span className="muted small">(sonst manuell durch Berechtigte mit „change.deploy“)</span></span></label>
         <label className="check"><input type="checkbox" checked={form.require_ticket} onChange={(e) => setForm({ ...form, require_ticket: e.target.checked })} />
           <span>Ticket-Referenz beim Einreichen verpflichtend</span></label>
+        <h3 style={{ margin: '10px 0 0' }}>Befristete Änderungen</h3>
+        <label className="check"><input type="checkbox" checked={form.temp_revert_preapproved} onChange={(e) => setForm({ ...form, temp_revert_preapproved: e.target.checked })} />
+          <span>Automatische Rücknahme nach Ablauf ohne erneute Freigabe ausrollen <span className="muted small">(die Befristung ist Teil der ursprünglichen Genehmigung)</span></span></label>
+        <Field label="Maximale Befristung (Tage)" hint="0 = unbegrenzt">
+          <input type="number" min={0} value={form.temp_max_days} onChange={(e) => setForm({ ...form, temp_max_days: Number(e.target.value) })} style={{ maxWidth: 200 }} />
+        </Field>
         <h3 style={{ margin: '10px 0 0' }}>Synchronisation</h3>
         <Field label="Intervall (Minuten)" hint="Liest regelmäßig die Konfiguration aller Firewalls und erkennt Änderungen außerhalb dieses Tools. 0 = aus.">
           <input type="number" min={0} value={form.sync_interval_minutes} onChange={(e) => setForm({ ...form, sync_interval_minutes: Number(e.target.value) })} style={{ maxWidth: 200 }} />

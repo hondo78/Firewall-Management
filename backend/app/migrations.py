@@ -8,6 +8,10 @@ POSTGRES = [
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS api_key_expires_at TIMESTAMPTZ",
     "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS reverts_id VARCHAR(36)",
     "CREATE INDEX IF NOT EXISTS ix_change_requests_reverts_id ON change_requests (reverts_id)",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS expiry_state VARCHAR(20) NOT NULL DEFAULT ''",
+    "CREATE INDEX IF NOT EXISTS ix_change_requests_expires_at ON change_requests (expires_at)",
+    "ALTER TABLE change_requests ALTER COLUMN created_by DROP NOT NULL",
 ]
 
 

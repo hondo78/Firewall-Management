@@ -37,15 +37,16 @@ export function OperationCard({ op, onRemove }) {
   )
 }
 
-function SubmitModal({ draft, onClose, onDone, requireTicket }) {
-  const [form, setForm] = useState({ title: draft.title || '', justification: '', ticket_ref: '', deploy_after: '' })
+function SubmitModal({ draft, onClose, onDone, requireTicket, settings }) {
+  const [form, setForm] = useState({ title: draft.title || '', justification: '', ticket_ref: '', deploy_after: '', expires_at: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
   const submit = async () => {
     setBusy(true)
     try {
-      const body = { ...form, deploy_after: form.deploy_after ? new Date(form.deploy_after).toISOString() : null }
+      const body = { ...form, deploy_after: form.deploy_after ? new Date(form.deploy_after).toISOString() : null,
+        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null }
       const r = await api(`/changes/${draft.id}/submit`, { method: 'POST', body })
       onDone(r)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -60,7 +61,12 @@ function SubmitModal({ draft, onClose, onDone, requireTicket }) {
           <Field label="Frühestens ausrollen ab" hint="leer = sofort nach Genehmigung">
             <input type="datetime-local" value={form.deploy_after} onChange={set('deploy_after')} />
           </Field>
+          <Field label="Befristet bis" hint="optional – danach wird die Änderung automatisch zurückgenommen">
+            <input type="datetime-local" value={form.expires_at} onChange={set('expires_at')} />
+          </Field>
         </div>
+        {form.expires_at && <div className="alert info small">Befristeter Antrag: Nach Ablauf legt das System automatisch eine Rücknahme an
+          {settings?.temp_revert_preapproved ? ' und rollt sie ohne erneute Freigabe aus – die Befristung ist Teil dieser Genehmigung.' : ', die erneut genehmigt werden muss.'}</div>}
         <Field label="Begründung"><textarea rows={3} value={form.justification} onChange={set('justification')}
           placeholder="Warum wird die Änderung benötigt? Wer hat sie angefordert?" /></Field>
         <h3>{draft.operations.length} Änderung(en)</h3>
@@ -75,7 +81,7 @@ function SubmitModal({ draft, onClose, onDone, requireTicket }) {
   )
 }
 
-function DraftBar({ draft, onChanged, requireTicket }) {
+function DraftBar({ draft, onChanged, requireTicket, settings }) {
   const nav = useNavigate()
   const { refreshCounts } = useAuth()
   const [show, setShow] = useState(false)
@@ -110,7 +116,7 @@ function DraftBar({ draft, onChanged, requireTicket }) {
           </div>
         </Modal>
       )}
-      {submitting && <SubmitModal draft={draft} requireTicket={requireTicket} onClose={() => setSubmitting(false)}
+      {submitting && <SubmitModal draft={draft} requireTicket={requireTicket} settings={settings} onClose={() => setSubmitting(false)}
         onDone={(cr) => { setSubmitting(false); refreshCounts(); nav(`/changes/${cr.id}`) }} />}
     </>
   )
@@ -461,7 +467,7 @@ export default function FirewallView() {
       {tab === 'firmware' && <FirmwareTab fw={fw} />}
       {tab === 'central' && <CentralTab fw={fw} />}
       {tab === 'settings' && <SettingsTab fw={fw} onSaved={(f) => { setFw({ ...fw, ...f }); reload() }} />}
-      <DraftBar draft={draft} onChanged={reload} requireTicket={settings?.require_ticket} />
+      <DraftBar draft={draft} onChanged={reload} requireTicket={settings?.require_ticket} settings={settings} />
     </>
   )
 }

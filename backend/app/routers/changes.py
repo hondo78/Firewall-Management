@@ -30,6 +30,8 @@ class SubmitIn(BaseModel):
     justification: str
     ticket_ref: str = ""
     deploy_after: datetime | None = None
+    # Befristung: nach diesem Zeitpunkt wird die Änderung automatisch zurückgenommen
+    expires_at: datetime | None = None
 
 
 class DecisionIn(BaseModel):
@@ -84,7 +86,7 @@ def submit(change_id: str, body: SubmitIn, request: Request, user: User = Depend
            db: DbSession = Depends(get_db)):
     cr = _change_or_404(db, user, change_id)
     changes.submit(db, user, cr, title=body.title, justification=body.justification, ticket_ref=body.ticket_ref,
-                   deploy_after=body.deploy_after, ip=client_ip(request))
+                   deploy_after=body.deploy_after, ip=client_ip(request), expires_at=body.expires_at)
     return change_out(db, cr, user)
 
 

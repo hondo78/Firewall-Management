@@ -129,6 +129,9 @@ export default function ChangeDetail() {
           <div><span>Ticket</span>{cr.ticket_ref || '–'}</div>
           <div><span>Genehmigungen</span><Progress value={cr.approvals} max={cr.required_approvals} /> {cr.approvals}/{cr.required_approvals}{approvedBy.length > 0 && <span className="muted"> ({approvedBy.join(', ')})</span>}</div>
           <div><span>Ausrollen ab</span>{cr.deploy_after ? fmt(cr.deploy_after) : 'sofort'}</div>
+          {cr.expires_at && <div><span>Befristet bis</span>{fmt(cr.expires_at)}
+            {cr.expiry_state === 'reverted' && <span className="muted"> · zurückgenommen</span>}
+            {cr.expiry_state === 'failed' && <span className="text-error"> · Rücknahme fehlgeschlagen</span>}</div>}
           {cr.deployed_at && <div><span>Ausgerollt</span>{fmt(cr.deployed_at)}</div>}
           <div><span>Schreibweg</span>{{ rest: 'SFOS REST-API', central: 'Sophos Central', xmlapi: 'XML-API (alt)' }[cr.connector] || cr.connector}</div>
         </div>

@@ -41,7 +41,9 @@ export default function Changes() {
               {rows.map((c) => (
                 <tr key={c.id} className="clickable" onClick={() => nav(`/changes/${c.id}`)}>
                   <td className="nowrap"><Link to={`/changes/${c.id}`} onClick={(e) => e.stopPropagation()}>{crNo(c.number)}</Link></td>
-                  <td>{c.title}<div className="small muted">{c.operations_count} Änderung(en){c.ticket_ref && ` · ${c.ticket_ref}`}</div></td>
+                  <td>{c.title}{c.expires_at && <span className="badge b-info" style={{ marginLeft: 6 }} title={`bis ${fmt(c.expires_at)}`}>befristet</span>}
+                    {c.reverts_id && <span className="badge" style={{ marginLeft: 6 }}>Rücknahme</span>}
+                    <div className="small muted">{c.operations_count} Änderung(en){c.ticket_ref && ` · ${c.ticket_ref}`}</div></td>
                   <td>{c.firewall}</td>
                   <td>{c.created_by}</td>
                   <td><Status value={c.status} />{c.deploy_after && c.status === 'approved' && <div className="small muted">ab {fmt(c.deploy_after)}</div>}</td>

@@ -174,8 +174,12 @@ class ChangeRequest(Base):
     required_approvals: Mapped[int] = mapped_column(Integer, default=1)
     # Frühester Zeitpunkt für das Ausrollen (Wartungsfenster), NULL = sofort nach Genehmigung
     deploy_after: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
-    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    # NULL = vom System angelegt (automatische Rücknahme befristeter Anträge)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+    # Befristung: nach Ablauf wird automatisch eine Rücknahme erzeugt ("" | "reverted" | "failed")
+    expires_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True, index=True)
+    expiry_state: Mapped[str] = mapped_column(String(20), default="", server_default="")
     submitted_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     deployed_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
