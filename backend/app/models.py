@@ -180,6 +180,8 @@ class ChangeRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     deployed_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     deploy_log: Mapped[list] = mapped_column(JSON, default=list)
+    # Rücknahme: verweist auf den ausgerollten Antrag, der umgekehrt wird
+    reverts_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     error: Mapped[str] = mapped_column(Text, default="")
 
     firewall: Mapped[Firewall] = relationship()

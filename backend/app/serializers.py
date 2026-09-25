@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from . import diff, permissions
@@ -65,7 +66,13 @@ def change_summary(cr: ChangeRequest) -> dict:
 
 
 def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
+    from . import changes
     fw = cr.firewall
+    # Verknüpfung Rücknahme ⇄ Original
+    reverted_by = db.execute(select(ChangeRequest).where(
+        ChangeRequest.reverts_id == cr.id,
+        ChangeRequest.status.notin_(("rejected", "withdrawn", "failed", "conflict")))).scalar()
+    reverts = db.get(ChangeRequest, cr.reverts_id) if cr.reverts_id else None
     approved_by = {e.user_id for e in cr.events if e.kind == "approved"}
     is_owner = cr.created_by == user.id
     return {
@@ -80,8 +87,11 @@ def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
             "withdraw": cr.status in ("draft", "pending", "approved")
             and (is_owner or permissions.has_global(db, user, "admin")),
             "deploy": cr.status in ("approved", "failed") and permissions.can(db, user, "change.deploy", fw),
-            "revert": cr.status == "deployed" and permissions.can(db, user, "change.create", fw),
+            "revert": changes.can_revert(db, user, cr) and not reverted_by,
             "submit": cr.status == "draft" and is_owner,
         },
         "own": is_owner,
+        "reverts": {"id": reverts.id, "number": reverts.number} if reverts else None,
+        "reverted_by": {"id": reverted_by.id, "number": reverted_by.number, "status": reverted_by.status}
+        if reverted_by else None,
     }

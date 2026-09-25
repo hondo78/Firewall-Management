@@ -187,9 +187,17 @@ def deploy_now(change_id: str, request: Request, user: User = Depends(get_curren
     return change_out(db, cr, user)
 
 
+class RevertIn(BaseModel):
+    justification: str
+    ticket_ref: str = ""
+    deploy_after: datetime | None = None
+
+
 @router.post("/changes/{change_id}/revert")
-def revert(change_id: str, user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
+def revert(change_id: str, body: RevertIn, request: Request, user: User = Depends(get_current_user),
+           db: DbSession = Depends(get_db)):
+    """Ausgerollten Antrag zurücknehmen – als neuer, sofort eingereichter Antrag (Superadmin, Approver, Operator)."""
     cr = _change_or_404(db, user, change_id)
-    fw: Firewall = firewall_or_404(db, user, cr.firewall_id, "change.create")
-    draft = changes.revert_draft(db, user, cr)
-    return {"firewall_id": fw.id, "draft_id": draft.id}
+    rev = changes.submit_revert(db, user, cr, justification=body.justification, ticket_ref=body.ticket_ref,
+                                deploy_after=body.deploy_after, ip=client_ip(request))
+    return change_out(db, rev, user)

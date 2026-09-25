@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
-import { EVENT_LABEL, api, crNo, fmt } from '../api'
-import { ErrorBox, Field, Progress, Status, useLoad } from '../components/ui'
+import { EVENT_LABEL, STATUS_LABEL, api, crNo, fmt } from '../api'
+import { ErrorBox, Field, Modal, Progress, Status, useLoad } from '../components/ui'
 import { OperationCard } from './FirewallView'
 
 function DecisionBox({ cr, onDone }) {
@@ -30,6 +30,41 @@ function DecisionBox({ cr, onDone }) {
   )
 }
 
+function RevertModal({ cr, onClose, onDone }) {
+  const [form, setForm] = useState({ justification: '', ticket_ref: cr.ticket_ref || '', deploy_after: '' })
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+  const submit = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const body = { ...form, deploy_after: form.deploy_after ? new Date(form.deploy_after).toISOString() : null }
+      onDone(await api(`/changes/${cr.id}/revert`, { method: 'POST', body }))
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={`${crNo(cr.number)} rückgängig machen`} onClose={onClose}>
+      <div className="stack">
+        <div className="alert info small">Es wird ein neuer Antrag eingereicht, der die {cr.operations.length} Änderung(en) umkehrt.
+          Auch die Rücknahme muss von einer <b>anderen Person</b> genehmigt werden (Vier-Augen-Prinzip), danach wird sie ausgerollt.</div>
+        <Field label="Begründung"><textarea rows={3} value={form.justification} onChange={set('justification')} autoFocus
+          placeholder="Warum wird die Änderung zurückgenommen?" /></Field>
+        <div className="form-grid">
+          <Field label="Ticket-Referenz"><input value={form.ticket_ref} onChange={set('ticket_ref')} /></Field>
+          <Field label="Frühestens ausrollen ab" hint="leer = sofort nach Genehmigung">
+            <input type="datetime-local" value={form.deploy_after} onChange={set('deploy_after')} /></Field>
+        </div>
+        <ErrorBox error={error} />
+      </div>
+      <div className="modal-foot">
+        <button onClick={onClose}>Abbrechen</button>
+        <button className="primary" disabled={busy || !form.justification.trim()} onClick={submit}>Rücknahme einreichen</button>
+      </div>
+    </Modal>
+  )
+}
+
 function DeployLog({ lines }) {
   if (!lines?.length) return null
   return (
@@ -50,6 +85,7 @@ export default function ChangeDetail() {
   const [cr, error, reload, setCr] = useLoad(() => api(`/changes/${id}`), [id])
   const [comment, setComment] = useState('')
   const [actionError, setActionError] = useState('')
+  const [reverting, setReverting] = useState(false)
 
   // Während des Ausrollens regelmäßig aktualisieren
   useEffect(() => {
@@ -67,7 +103,6 @@ export default function ChangeDetail() {
 
   const withdraw = () => act(async () => setCr(await api(`/changes/${cr.id}/withdraw`, { method: 'POST' })))
   const deploy = () => act(async () => setCr(await api(`/changes/${cr.id}/deploy`, { method: 'POST' })))
-  const revert = () => act(async () => { const r = await api(`/changes/${cr.id}/revert`, { method: 'POST' }); nav(`/firewalls/${r.firewall_id}`) })
   const addComment = () => act(async () => { setCr(await api(`/changes/${cr.id}/comments`, { method: 'POST', body: { text: comment } })); setComment('') })
   const approvedBy = cr.events.filter((e) => e.kind === 'approved').map((e) => e.actor)
 
@@ -81,7 +116,7 @@ export default function ChangeDetail() {
         <Status value={cr.status} />
         <div className="right row">
           {cr.can.deploy && <button className="primary" onClick={deploy}>{cr.status === 'failed' ? 'Erneut ausrollen' : 'Jetzt ausrollen'}</button>}
-          {cr.can.revert && <button onClick={revert} title="Legt einen neuen Entwurf an, der diese Änderungen umkehrt">Rückgängig machen …</button>}
+          {cr.can.revert && <button onClick={() => setReverting(true)} title="Reicht einen Antrag ein, der diese Änderungen umkehrt">Rückgängig machen …</button>}
           {cr.can.withdraw && <button className="danger" onClick={withdraw}>Zurückziehen</button>}
         </div>
       </div>
@@ -95,9 +130,13 @@ export default function ChangeDetail() {
           <div><span>Genehmigungen</span><Progress value={cr.approvals} max={cr.required_approvals} /> {cr.approvals}/{cr.required_approvals}{approvedBy.length > 0 && <span className="muted"> ({approvedBy.join(', ')})</span>}</div>
           <div><span>Ausrollen ab</span>{cr.deploy_after ? fmt(cr.deploy_after) : 'sofort'}</div>
           {cr.deployed_at && <div><span>Ausgerollt</span>{fmt(cr.deployed_at)}</div>}
-          <div><span>Schreibweg</span>{cr.connector === 'central' ? 'Sophos Central' : 'XML-API'}</div>
+          <div><span>Schreibweg</span>{{ rest: 'SFOS REST-API', central: 'Sophos Central', xmlapi: 'XML-API (alt)' }[cr.connector] || cr.connector}</div>
         </div>
       </div>
+      {cr.reverts && <div className="alert info small">Dieser Antrag nimmt <Link to={`/changes/${cr.reverts.id}`}>{crNo(cr.reverts.number)}</Link> zurück.</div>}
+      {cr.reverted_by && <div className="alert warn small">Rücknahme beantragt bzw. erfolgt: <Link to={`/changes/${cr.reverted_by.id}`}>{crNo(cr.reverted_by.number)}</Link> ({STATUS_LABEL[cr.reverted_by.status] || cr.reverted_by.status})</div>}
+      {reverting && <RevertModal cr={cr} onClose={() => setReverting(false)}
+        onDone={(r) => { setReverting(false); refreshCounts(); nav(`/changes/${r.id}`) }} />}
       {cr.own && cr.status === 'pending' && <div className="alert info small">Ihr Antrag wartet auf die Genehmigung durch eine andere Person (Vier-Augen-Prinzip).</div>}
       {cr.overlaps?.length > 0 && <div className="alert warn small">Andere offene Anträge betreffen dieselben Objekte: {cr.overlaps.map((o) => <Link key={o.id} to={`/changes/${o.id}`} style={{ marginRight: 8 }}>{crNo(o.number)}</Link>)} – beim Ausrollen wird auf Abweichungen geprüft.</div>}
       {cr.error && <div className="alert error"><b>{cr.status === 'conflict' ? 'Konflikt – die Konfiguration hat sich seit dem Einreichen geändert' : 'Fehler'}:</b> {cr.error}

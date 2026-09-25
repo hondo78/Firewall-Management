@@ -6,6 +6,8 @@ from .db import engine
 POSTGRES = [
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS api_key_expires_at TIMESTAMPTZ",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS reverts_id VARCHAR(36)",
+    "CREATE INDEX IF NOT EXISTS ix_change_requests_reverts_id ON change_requests (reverts_id)",
 ]
 
 

@@ -170,10 +170,69 @@ def test_remove_in_use_object_rejected_and_revert(client, admin, fake):
     cid = submit_new_rule(client, fw_id, op)
     client.post(f"/api/changes/{cid}/decision", headers=admin, json={"decision": "approve"})
     deploy_sync(cid)
-    r = client.post(f"/api/changes/{cid}/revert", headers=op)
+    r = client.post(f"/api/changes/{cid}/revert", headers=op, json={"justification": "doch nicht"})
     assert r.status_code == 200, r.text
-    draft = client.get(f"/api/firewalls/{fw_id}/draft", headers=op).json()
-    assert [(o["action"], o["name"]) for o in draft["operations"]] == [("remove", "Neu")]
+    rev = r.json()
+    assert rev["status"] == "pending" and rev["reverts"]["id"] == cid
+    assert [(o["action"], o["name"]) for o in rev["operations"]] == [("remove", "Neu")]
+
+
+def test_approver_and_superadmin_can_revert(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    op = make_user(client, admin, "operator", [("Operator", None)])
+    ap = make_user(client, admin, "approver", [("Approver", None)])
+    viewer = make_user(client, admin, "viewer", [("Betrachter", None)])
+    cid = submit_new_rule(client, fw_id, op)
+    client.post(f"/api/changes/{cid}/decision", headers=ap, json={"decision": "approve"})
+    deploy_sync(cid)
+    detail = client.get(f"/api/changes/{cid}", headers=ap).json()
+    assert detail["can"]["revert"] is True
+    assert client.get(f"/api/changes/{cid}", headers=viewer).json()["can"]["revert"] is False
+    assert client.post(f"/api/changes/{cid}/revert", headers=viewer, json={"justification": "x"}).status_code == 403
+    assert client.post(f"/api/changes/{cid}/revert", headers=ap, json={"justification": " "}).status_code == 400
+    # Approver (ohne change.create) stellt die Rücknahme …
+    r = client.post(f"/api/changes/{cid}/revert", headers=ap, json={"justification": "Regel verursacht Störung"})
+    assert r.status_code == 200, r.text
+    rev = r.json()
+    # … darf sie aber nicht selbst genehmigen (Vier-Augen-Prinzip)
+    assert client.post(f"/api/changes/{rev['id']}/decision", headers=ap,
+                       json={"decision": "approve"}).status_code == 403
+    # doppelte Rücknahme wird verhindert
+    assert client.post(f"/api/changes/{cid}/revert", headers=admin, json={"justification": "x"}).status_code == 409
+    assert client.get(f"/api/changes/{cid}", headers=ap).json()["reverted_by"]["id"] == rev["id"]
+    # Superadmin genehmigt, ausrollen stellt den alten Stand wieder her
+    client.post(f"/api/changes/{rev['id']}/decision", headers=admin, json={"decision": "approve"})
+    deploy_sync(rev["id"])
+    assert client.get(f"/api/changes/{rev['id']}", headers=ap).json()["status"] == "deployed"
+    assert [x["Name"] for x in fake.config["FirewallRule"]] == ["Regel-A", "Regel-B"]
+    log = client.get("/api/audit", headers=admin, params={"action": "change.revert"}).json()["items"]
+    assert log[0]["details"]["reverts"] == 1
+
+
+def test_superadmin_can_revert_own_approved_change(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    op = make_user(client, admin, "operator", [("Operator", None)])
+    cid = submit_new_rule(client, fw_id, op)
+    client.post(f"/api/changes/{cid}/decision", headers=admin, json={"decision": "approve"})
+    deploy_sync(cid)
+    r = client.post(f"/api/changes/{cid}/revert", headers=admin, json={"justification": "Notfall"})
+    assert r.status_code == 200 and r.json()["created_by"] == "admin"
+    # Operator darf die Rücknahme des Superadmins nicht genehmigen (kein change.approve)
+    assert client.post(f"/api/changes/{r.json()['id']}/decision", headers=op,
+                       json={"decision": "approve"}).status_code == 403
+
+
+def test_revert_blocked_when_config_changed(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    op = make_user(client, admin, "operator", [("Operator", None)])
+    cid = submit_new_rule(client, fw_id, op)
+    client.post(f"/api/changes/{cid}/decision", headers=admin, json={"decision": "approve"})
+    deploy_sync(cid)
+    # Regel wurde inzwischen an der Firewall gelöscht → Rücknahme (remove) nicht mehr möglich
+    fake.config["FirewallRule"] = [r for r in fake.config["FirewallRule"] if r["Name"] != "Neu"]
+    client.post(f"/api/firewalls/{fw_id}/sync", headers=admin)
+    r = client.post(f"/api/changes/{cid}/revert", headers=admin, json={"justification": "x"})
+    assert r.status_code == 409 and "geändert" in r.json()["detail"]
 
 
 def test_removed_firewall_keeps_history(client, admin, fake):

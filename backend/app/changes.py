@@ -309,36 +309,67 @@ def comment(db: DbSession, user: User, cr: ChangeRequest, text: str) -> None:
           details={"number": cr.number, "text": text.strip()})
 
 
-def revert_draft(db: DbSession, user: User, cr: ChangeRequest) -> ChangeRequest:
-    """Neuen Entwurf anlegen, der einen ausgerollten Antrag umkehrt."""
-    if cr.status != "deployed":
-        raise HTTPException(409, "Nur ausgerollte Anträge können rückgängig gemacht werden")
-    fw = cr.firewall
-    if get_draft(db, user, fw):
-        raise HTTPException(409, "Sie haben für diese Firewall bereits einen offenen Entwurf")
+def can_revert(db: DbSession, user: User, cr: ChangeRequest) -> bool:
+    """Rücknahme anstoßen: wer beantragen ODER genehmigen darf (Superadmins immer)."""
+    return cr.status == "deployed" and (permissions.can(db, user, "change.create", cr.firewall)
+                                        or permissions.can(db, user, "change.approve", cr.firewall))
+
+
+def revert_operations(cr: ChangeRequest) -> list[dict]:
+    """Umkehrung der Operationen eines ausgerollten Antrags (umgekehrte Reihenfolge)."""
     ops = []
     for o in reversed(cr.operations):
+        pos = {"position": o["before_position"]} if o.get("before_position") else {}
         if o["action"] == "add":
             ops.append({"entity": o["entity"], "action": "remove", "name": o["name"]})
         elif o["action"] == "update":
-            ops.append({"entity": o["entity"], "action": "update", "name": o["name"], "data": o["before"],
-                        **({"position": o["before_position"]} if o.get("before_position") else {})})
+            ops.append({"entity": o["entity"], "action": "update", "name": o["name"], "data": o["before"], **pos})
         else:
-            ops.append({"entity": o["entity"], "action": "add", "name": o["name"], "data": o["before"],
-                        **({"position": o["before_position"]} if o.get("before_position") else {})})
-    draft = get_draft(db, user, fw, create=True)
+            ops.append({"entity": o["entity"], "action": "add", "name": o["name"], "data": o["before"], **pos})
+    return ops
+
+
+def submit_revert(db: DbSession, user: User, cr: ChangeRequest, *, justification: str, ticket_ref: str,
+                  deploy_after, ip: str) -> ChangeRequest:
+    """Rücknahme eines ausgerollten Antrags direkt als neuen Antrag einreichen (Vier-Augen-Prinzip gilt weiter:
+    wer die Rücknahme stellt, kann sie nicht selbst genehmigen)."""
+    if cr.status != "deployed":
+        raise HTTPException(409, "Nur ausgerollte Anträge können rückgängig gemacht werden")
+    if not can_revert(db, user, cr):
+        raise HTTPException(403, "Rücknahme erfordert das Recht zum Beantragen oder Genehmigen für diese Firewall")
+    if not justification.strip():
+        raise HTTPException(400, "Bitte eine Begründung für die Rücknahme angeben")
+    existing = db.execute(select(ChangeRequest).where(
+        ChangeRequest.reverts_id == cr.id,
+        ChangeRequest.status.notin_(("rejected", "withdrawn", "failed", "conflict")))).scalar()
+    if existing:
+        raise HTTPException(409, f"Für diesen Antrag gibt es bereits die Rücknahme CR-{existing.number:04d}")
+    fw = cr.firewall
     config = sync.cached_config(db, fw)
-    working = config
-    clean_ops = []
-    for o in ops:
-        c = validate_operation(fw, o, working)
+    working, clean_ops = config, []
+    for o in revert_operations(cr):
+        try:
+            c = validate_operation(fw, o, working)
+        except HTTPException as e:
+            raise HTTPException(409, f"Rücknahme nicht möglich – die Konfiguration hat sich seitdem geändert: "
+                                     f"{e.detail}")
         clean_ops.append(c)
         working = effective_config(working, [c])
-    draft.operations = with_before(clean_ops, config)
-    draft.title = f"Rücknahme von CR-{cr.number:04d}: {cr.title}"[:300]
-    event(db, draft, "draft_changed", f"Rücknahme von CR-{cr.number:04d} vorbereitet", user)
-    db.commit()
-    return draft
+    title = f"Rücknahme von CR-{cr.number:04d}: {cr.title}"[:300]
+    rev = ChangeRequest(number=next_number(db), firewall_id=fw.id, created_by=user.id, status="pending",
+                        title=title, justification=justification.strip(), ticket_ref=ticket_ref.strip(),
+                        deploy_after=deploy_after, reverts_id=cr.id, submitted_at=utcnow(),
+                        required_approvals=int(settings.get(db, "required_approvals")),
+                        operations=with_before(clean_ops, config))
+    db.add(rev)
+    db.flush()
+    event(db, rev, "submitted", justification.strip(), user)
+    event(db, cr, "comment", f"Rücknahme beantragt: CR-{rev.number:04d}", user)
+    audit(db, "change.revert_submitted", actor=user, target_type="change", target_id=rev.id, ip=ip, details={
+        "number": rev.number, "reverts": cr.number, "firewall": fw.name, "justification": justification.strip(),
+        "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in rev.operations],
+    })
+    return rev
 
 
 # --- Ausrollen -----------------------------------------------------------------------------------------------

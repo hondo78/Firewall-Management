@@ -16,7 +16,7 @@ export const AUDIT_LABEL = {
   'firewall.sync_failed': 'Synchronisation fehlgeschlagen', 'config.drift_detected': 'Änderung außerhalb des Tools erkannt',
   'config.exported': 'Konfiguration exportiert',
   'change.submitted': 'Antrag eingereicht', 'change.approved': 'Antrag genehmigt', 'change.rejected': 'Antrag abgelehnt',
-  'change.withdrawn': 'Antrag zurückgezogen', 'change.commented': 'Kommentar', 'change.deploy_requested': 'Ausrollen angestoßen',
+  'change.withdrawn': 'Antrag zurückgezogen', 'change.revert_submitted': 'Rücknahme eingereicht', 'change.commented': 'Kommentar', 'change.deploy_requested': 'Ausrollen angestoßen',
   'change.deployed': 'Antrag ausgerollt', 'change.deploy_failed': 'Ausrollen fehlgeschlagen', 'change.conflict': 'Konflikt beim Ausrollen',
   'firmware.upgrade_scheduled': 'Firmware-Update geplant', 'firmware.upgrade_failed': 'Firmware-Update fehlgeschlagen',
   'firmware.upgrade_cancelled': 'Firmware-Update storniert', 'audit.verified': 'Audit-Kette geprüft', 'central.diagnosed': 'Probelauf Sophos Central', 'firewall.diagnosed': 'Probelauf Firewall', 'audit.exported': 'Audit-Log exportiert',
@@ -75,7 +75,7 @@ export default function Audit() {
                     <td className="muted small">{e.id}</td>
                     <td className="nowrap small">{fmt(e.ts)}</td>
                     <td>{e.actor}</td>
-                    <td><span className={/failed|conflict|drift|rejected/.test(e.action) ? 'text-error' : ''}>{AUDIT_LABEL[e.action] || e.action}</span>
+                    <td><span className={/failed|conflict|drift|rejected|revert/.test(e.action) ? 'text-error' : ''}>{AUDIT_LABEL[e.action] || e.action}</span>
                       <div className="small muted mono">{e.action}</div></td>
                     <td onClick={(ev) => ev.stopPropagation()}>{target(e)}</td>
                     <td className="small muted">{e.ip}</td>

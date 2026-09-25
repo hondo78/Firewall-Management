@@ -58,7 +58,7 @@ Operation = `{entity, action: add|update|remove, name, data, before, position?, 
    - otherwise `connector.apply` → re-sync (snapshot `reason=deploy`) → `deployed`;
    - on error → `failed`, which can be retried.
    - The worker (`worker.py`) auto-deploys `approved` requests (setting `auto_deploy`, respects `deploy_after`). A manual deploy runs in a thread (`worker.deploy_in_background`). On startup, stuck `deploying` requests become `failed`.
-- `revert_draft` builds the inverse ops of a deployed request into a new draft.
+- Revert: `submit_revert` builds the inverse ops of a deployed request and **submits them directly** as a new request (`reverts_id` → original, so there is no draft). Allowed for `change.create` **or** `change.approve` (`can_revert`), and superadmins can always revert. Four-eyes still applies: the person reverting cannot approve it. Only one active revert per request, and it is refused with a 409 if the config has changed since.
 
 ### Config cache & history (`sync.py`, `diff.py`)
 `config_objects` = the last synced state (ordered, `position`). A new `config_snapshots` row is written only when the config hash changes. A snapshot with `reason=sync` after an initial one means a change outside the tool, so the audit gets `config.drift_detected`. `diff.compare_configs` powers the snapshot compare and the compare against another firewall. The worker syncs all firewalls and Central inventories every `sync_interval_minutes`.
