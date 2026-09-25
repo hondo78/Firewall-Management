@@ -26,7 +26,14 @@ def link(public_url: str, cr: ChangeRequest) -> str:
 
 
 def change_lines(cr: ChangeRequest, kind: str) -> list[str]:
-    lines = [f"{cr_no(cr)} · {cr.title}", f"Firewall: {cr.firewall.name}",
+    from sqlalchemy import select
+    from sqlalchemy.orm import object_session
+    fws = cr.firewall.name
+    if cr.batch_id:
+        members = object_session(cr).execute(select(ChangeRequest).where(
+            ChangeRequest.batch_id == cr.batch_id)).scalars().all()
+        fws = ", ".join(m.firewall.name for m in members) + f" (Sammelantrag, {len(members)} Firewalls)"
+    lines = [f"{cr_no(cr)} · {cr.title}", f"Firewall: {fws}",
              f"Antragsteller: {cr.creator.username if cr.creator else 'System'}"]
     if kind == "pending":
         lines.append(f"Begründung: {cr.justification}")

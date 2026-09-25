@@ -43,6 +43,7 @@ export default function Changes() {
                   <td className="nowrap"><Link to={`/changes/${c.id}`} onClick={(e) => e.stopPropagation()}>{crNo(c.number)}</Link></td>
                   <td>{c.title}{c.expires_at && <span className="badge b-info" style={{ marginLeft: 6 }} title={`bis ${fmt(c.expires_at)}`}>befristet</span>}
                     {c.reverts_id && <span className="badge" style={{ marginLeft: 6 }}>Rücknahme</span>}
+                    {c.batch_id && <span className="badge b-accent" style={{ marginLeft: 6 }}>Sammelantrag</span>}
                     <div className="small muted">{c.operations_count} Änderung(en){c.ticket_ref && ` · ${c.ticket_ref}`}</div></td>
                   <td>{c.firewall}</td>
                   <td>{c.created_by}</td>

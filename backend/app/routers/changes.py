@@ -32,6 +32,8 @@ class SubmitIn(BaseModel):
     deploy_after: datetime | None = None
     # Befristung: nach diesem Zeitpunkt wird die Änderung automatisch zurückgenommen
     expires_at: datetime | None = None
+    # Sammelantrag: dieselben Änderungen zusätzlich auf diesen Firewalls
+    extra_firewall_ids: list[str] = Field(default_factory=list, max_length=100)
 
 
 class DecisionIn(BaseModel):
@@ -86,7 +88,8 @@ def submit(change_id: str, body: SubmitIn, request: Request, user: User = Depend
            db: DbSession = Depends(get_db)):
     cr = _change_or_404(db, user, change_id)
     changes.submit(db, user, cr, title=body.title, justification=body.justification, ticket_ref=body.ticket_ref,
-                   deploy_after=body.deploy_after, ip=client_ip(request), expires_at=body.expires_at)
+                   deploy_after=body.deploy_after, ip=client_ip(request), expires_at=body.expires_at,
+                   extra_firewall_ids=body.extra_firewall_ids)
     return change_out(db, cr, user)
 
 

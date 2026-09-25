@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from . import diff, notify, permissions, settings, sync
 from .audit import audit
-from .models import ChangeEvent, ChangeRequest, Firewall, User, utcnow
+from .models import ChangeEvent, ChangeRequest, Firewall, User, new_id, utcnow
 from .sophos import connector, entities
 
 log = logging.getLogger("fwm.changes")
@@ -152,6 +152,8 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
             raise HTTPException(400, "Ungültige Position")
         if pos.get("type") in ("after", "before") and pos.get("ref") == name:
             raise HTTPException(400, "Eine Regel kann nicht relativ zu sich selbst positioniert werden")
+        if pos.get("type") in ("after", "before") and pos.get("ref") not in _index(config).get(entity, {}):
+            raise HTTPException(400, f"Bezugsregel „{pos.get('ref')}“ für die Position existiert nicht")
         clean["position"] = {"type": pos["type"], **({"ref": pos["ref"]} if pos.get("ref") else {})}
     elif entity in entities.RULE_ENTITIES and action == "add":
         clean["position"] = {"type": "bottom"}
@@ -230,7 +232,61 @@ def check_expiry(db: DbSession, expires_at, deploy_after) -> None:
 
 
 def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justification: str, ticket_ref: str,
-           deploy_after, ip: str, expires_at=None) -> None:
+           deploy_after, ip: str, expires_at=None, extra_firewall_ids: list[str] | None = None) -> list[ChangeRequest]:
+    """Einreichen; mit extra_firewall_ids als Sammelantrag (gleiche Änderungen auf weiteren Firewalls)."""
+    extra = _prepare_batch(db, user, cr, extra_firewall_ids or [])
+    if extra:
+        cr.batch_id = new_id()
+    _submit_one(db, user, cr, title=title, justification=justification, ticket_ref=ticket_ref,
+                deploy_after=deploy_after, ip=ip, expires_at=expires_at, announce=not extra)
+    if not extra:
+        return [cr]
+    batch_id = cr.batch_id
+    out = [cr]
+    for fw, ops in extra:
+        sib = ChangeRequest(number=next_number(db), firewall_id=fw.id, created_by=user.id, status="draft",
+                            operations=ops, batch_id=batch_id)
+        db.add(sib)
+        db.flush()
+        event(db, sib, "created", f"Sammelantrag mit CR-{cr.number:04d}", user)
+        _submit_one(db, user, sib, title=title, justification=justification, ticket_ref=ticket_ref,
+                    deploy_after=deploy_after, ip=ip, expires_at=expires_at, announce=False)
+        out.append(sib)
+    db.commit()
+    notify.change_event(cr.id, "pending")
+    return out
+
+
+def _prepare_batch(db: DbSession, user: User, cr: ChangeRequest, firewall_ids: list[str]):
+    """Alles vorab prüfen (alles oder nichts): Rechte, gleiches Format, Operationen passen zur Ziel-Firewall."""
+    out = []
+    fmt = entities.fmt_for(cr.firewall.connector)
+    for fid in dict.fromkeys(firewall_ids):
+        if fid == cr.firewall_id:
+            continue
+        fw = db.get(Firewall, fid)
+        if not fw or fw.archived or not permissions.can(db, user, "change.create", fw):
+            raise HTTPException(403, "Keine Berechtigung für eine der ausgewählten Firewalls")
+        if entities.fmt_for(fw.connector) != fmt:
+            raise HTTPException(400, f"„{fw.name}“ nutzt ein anderes Format (REST/XML) – nicht im selben Antrag möglich")
+        if not fw.last_sync_at:
+            raise HTTPException(409, f"„{fw.name}“ wurde noch nie synchronisiert")
+        config = sync.cached_config(db, fw)
+        working, clean = config, []
+        for o in cr.operations or []:
+            base = {k: v for k, v in o.items() if k not in ("before", "before_position")}
+            try:
+                c = validate_operation(fw, base, working)
+            except HTTPException as e:
+                raise HTTPException(e.status_code, f"„{fw.name}“: {e.detail}")
+            clean.append(c)
+            working = effective_config(working, [c])
+        out.append((fw, with_before(clean, config)))
+    return out
+
+
+def _submit_one(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justification: str, ticket_ref: str,
+                deploy_after, ip: str, expires_at=None, announce: bool = True) -> None:
     if cr.status != "draft" or cr.created_by != user.id:
         raise HTTPException(409, "Nur eigene Entwürfe können eingereicht werden")
     if not cr.operations:
@@ -261,26 +317,54 @@ def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justific
         "number": cr.number, "firewall": fw.name, "title": cr.title, "ticket": cr.ticket_ref,
         "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in cr.operations],
         **({"expires_at": expires_at.isoformat()} if expires_at else {}),
+        **({"batch": cr.batch_id} if cr.batch_id else {}),
     })
-    notify.change_event(cr.id, "pending")
+    if announce:
+        notify.change_event(cr.id, "pending")
 
 
 def approvals(cr: ChangeRequest) -> list[ChangeEvent]:
     return [e for e in cr.events if e.kind == "approved"]
 
 
-def decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment: str, ip: str) -> None:
+def batch_members(db: DbSession, cr: ChangeRequest, states: tuple | None = None) -> list[ChangeRequest]:
+    """Alle Anträge eines Sammelantrags (inkl. cr), sonst nur cr."""
+    if not cr.batch_id:
+        return [cr]
+    stmt = select(ChangeRequest).where(ChangeRequest.batch_id == cr.batch_id)
+    if states:
+        stmt = stmt.where(ChangeRequest.status.in_(states))
+    return list(db.execute(stmt.order_by(ChangeRequest.number)).scalars())
+
+
+def _check_decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment: str) -> None:
     if cr.status != "pending":
         raise HTTPException(409, "Antrag ist nicht (mehr) offen")
     if not permissions.can(db, user, "change.approve", cr.firewall):
-        raise HTTPException(403, "Keine Berechtigung zum Genehmigen für diese Firewall")
+        raise HTTPException(403, f"Keine Berechtigung zum Genehmigen für die Firewall „{cr.firewall.name}“")
     if cr.created_by == user.id:
         raise HTTPException(403, "Vier-Augen-Prinzip: eigene Anträge können nicht genehmigt werden")
     if any(e.user_id == user.id for e in approvals(cr)):
         raise HTTPException(409, "Sie haben diesen Antrag bereits genehmigt")
+    if decision == "reject" and not comment.strip():
+        raise HTTPException(400, "Bitte eine Begründung für die Ablehnung angeben")
+    if decision not in ("approve", "reject"):
+        raise HTTPException(400, "Entscheidung muss approve oder reject sein")
+
+
+def decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment: str, ip: str) -> None:
+    """Entscheidung – bei Sammelanträgen für alle offenen Anträge des Sammelantrags (Rechte auf allen nötig)."""
+    members = batch_members(db, cr, ("pending",)) if cr.batch_id else [cr]
+    if cr not in members:
+        members = [cr] + members
+    for m in members:
+        _check_decide(db, user, m, decision, comment)
+    for m in members:
+        _decide_one(db, user, m, decision, comment, ip)
+
+
+def _decide_one(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment: str, ip: str) -> None:
     if decision == "reject":
-        if not comment.strip():
-            raise HTTPException(400, "Bitte eine Begründung für die Ablehnung angeben")
         cr.status = "rejected"
         cr.decided_at = utcnow()
         event(db, cr, "rejected", comment.strip(), user)
@@ -288,8 +372,6 @@ def decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment:
               details={"number": cr.number, "firewall": cr.firewall.name, "comment": comment.strip(), "via": ip})
         notify.change_event(cr.id, "rejected")
         return
-    if decision != "approve":
-        raise HTTPException(400, "Entscheidung muss approve oder reject sein")
     event(db, cr, "approved", comment.strip(), user)
     db.flush()
     db.refresh(cr)
@@ -307,6 +389,18 @@ def decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment:
 
 
 def withdraw(db: DbSession, user: User, cr: ChangeRequest, ip: str) -> None:
+    """Zurückziehen – bei Sammelanträgen alle noch nicht ausgerollten Anträge."""
+    if cr.batch_id and cr.status != "draft":
+        members = [m for m in batch_members(db, cr) if m.status in ("pending", "approved")]
+        if cr not in members:
+            raise HTTPException(409, "Antrag kann in diesem Status nicht zurückgezogen werden")
+        for m in members:
+            _withdraw_one(db, user, m, ip)
+        return
+    _withdraw_one(db, user, cr, ip)
+
+
+def _withdraw_one(db: DbSession, user: User, cr: ChangeRequest, ip: str) -> None:
     if cr.created_by != user.id and not permissions.has_global(db, user, "admin"):
         raise HTTPException(403, "Nur der Antragsteller kann den Antrag zurückziehen")
     if cr.status not in ("draft", "pending", "approved"):

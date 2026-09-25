@@ -17,6 +17,54 @@ export function SyncState({ fw }) {
   )
 }
 
+function DriftModal({ group, firewalls, onClose }) {
+  const [ref, setRef] = useState(firewalls[0]?.id || '')
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [open, setOpen] = useState(null)
+  const run = async (id) => {
+    setRef(id)
+    setError('')
+    try { setData(await api(`/groups/${group.id}/drift?reference=${id}`)) } catch (e) { setError(e.message) }
+  }
+  return (
+    <Modal title={`Abgleich „${group.name}“`} onClose={onClose} wide>
+      <div className="stack">
+        <Field label="Referenz (Standard-Konfiguration)">
+          <select value={ref} onChange={(e) => run(e.target.value)}>
+            <option value="">– wählen –</option>
+            {firewalls.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        </Field>
+        {!data && ref && <div><button className="primary" onClick={() => run(ref)}>Abgleichen</button></div>}
+        <ErrorBox error={error} />
+        {data && (
+          <div className="table-wrap"><table>
+            <thead><tr><th>Firewall</th><th>Abweichungen</th><th>Details</th></tr></thead>
+            <tbody>{data.firewalls.map((row) => (
+              <tr key={row.id}>
+                <td><Link to={`/firewalls/${row.id}/compare`}>{row.name}</Link></td>
+                <td>{row.error ? <span className="muted">{row.error}</span>
+                  : row.total ? <span className="badge b-warn">{row.total}</span> : <span className="badge b-ok">keine</span>}</td>
+                <td className="small">
+                  {Object.entries(row.entities || {}).map(([e, c]) => (
+                    <div key={e}>
+                      <button className="link" onClick={() => setOpen(open === row.id + e ? null : row.id + e)}>{data.labels[e] || e}</button>:
+                      {c.missing ? ` ${c.missing} fehlen` : ''}{c.extra ? ` · ${c.extra} zusätzlich` : ''}{c.different ? ` · ${c.different} abweichend` : ''}
+                      {open === row.id + e && <div className="muted">{c.missing_names.length > 0 && <>Fehlen: {c.missing_names.join(', ')}<br /></>}
+                        {c.different_names.length > 0 && <>Abweichend: {c.different_names.join(', ')}</>}</div>}
+                    </div>))}
+                </td>
+              </tr>))}
+            </tbody>
+          </table></div>
+        )}
+        <div className="muted small">Vergleich der zwischengespeicherten Konfiguration nach Objektnamen. Fehlende Objekte lassen sich per Vorlage oder Sammelantrag nachziehen.</div>
+      </div>
+    </Modal>
+  )
+}
+
 function GroupModal({ group, onClose, onSaved }) {
   const [name, setName] = useState(group?.name || '')
   const [description, setDescription] = useState(group?.description || '')
@@ -56,6 +104,7 @@ export default function Firewalls() {
   const [groups, , reloadGroups] = useLoad(() => api('/groups'), [])
   const [adding, setAdding] = useState(false)
   const [groupEdit, setGroupEdit] = useState(null)
+  const [drift, setDrift] = useState(null)
   const [q, setQ] = useState('')
   const manage = can(me, 'firewall.manage')
   const mayAdd = canAnywhere(me, 'firewall.manage')
@@ -92,7 +141,10 @@ export default function Firewalls() {
             <h3>{group.name}</h3>
             {group.central && <span className="badge b-info">Sophos Central</span>}
             <span className="muted small">{items.length} Firewall{items.length === 1 ? '' : 's'}</span>
-            {manage && group.id && <button className="ghost sm right" onClick={() => setGroupEdit(group)}>Bearbeiten</button>}
+            <div className="right row">
+              {group.id && items.length >= 2 && <button className="ghost sm" onClick={() => setDrift({ group, items })}>Abgleich</button>}
+              {manage && group.id && <button className="ghost sm" onClick={() => setGroupEdit(group)}>Bearbeiten</button>}
+            </div>
           </div>
           {items.length > 0 && (
             <div className="table-wrap">
@@ -119,6 +171,7 @@ export default function Firewalls() {
         <FirewallForm groups={groups || []} onCancel={() => setAdding(false)}
           onSaved={(fw) => { setAdding(false); reload(); nav(`/firewalls/${fw.id}`) }} />
       </Modal>}
+      {drift && <DriftModal group={drift.group} firewalls={drift.items} onClose={() => setDrift(null)} />}
       {groupEdit && <GroupModal group={groupEdit.id ? groupEdit : null} onClose={() => setGroupEdit(null)}
         onSaved={() => { setGroupEdit(null); reloadGroups(); reload() }} />}
     </>

@@ -137,6 +137,16 @@ export default function ChangeDetail() {
           <div><span>Schreibweg</span>{{ rest: 'SFOS REST-API', central: 'Sophos Central', xmlapi: 'XML-API (alt)' }[cr.connector] || cr.connector}</div>
         </div>
       </div>
+      {cr.batch?.length > 0 && (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div className="panel-head"><h3>Sammelantrag · {cr.batch.length} Firewalls</h3>
+            <span className="muted small">gemeinsam genehmigt, je Firewall ausgerollt</span></div>
+          <div className="table-wrap"><table><tbody>{cr.batch.map((m) => (
+            <tr key={m.id}><td><Link to={`/changes/${m.id}`}>{crNo(m.number)}</Link>{m.id === cr.id && <span className="muted small"> (dieser)</span>}</td>
+              <td>{m.firewall}</td><td><Status value={m.status} /></td><td className="small text-error">{m.error}</td></tr>))}
+          </tbody></table></div>
+        </div>
+      )}
       {cr.reverts && <div className="alert info small">Dieser Antrag nimmt <Link to={`/changes/${cr.reverts.id}`}>{crNo(cr.reverts.number)}</Link> zurück.</div>}
       {cr.reverted_by && <div className="alert warn small">Rücknahme beantragt bzw. erfolgt: <Link to={`/changes/${cr.reverted_by.id}`}>{crNo(cr.reverted_by.number)}</Link> ({STATUS_LABEL[cr.reverted_by.status] || cr.reverted_by.status})</div>}
       {reverting && <RevertModal cr={cr} onClose={() => setReverting(false)}

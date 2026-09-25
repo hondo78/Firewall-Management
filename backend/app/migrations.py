@@ -16,6 +16,8 @@ POSTGRES = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_email BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR(40) NOT NULL DEFAULT ''",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS api_key_warned_days INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS batch_id VARCHAR(36)",
+    "CREATE INDEX IF NOT EXISTS ix_change_requests_batch_id ON change_requests (batch_id)",
 ]
 
 

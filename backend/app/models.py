@@ -193,11 +193,26 @@ class ChangeRequest(Base):
     deploy_log: Mapped[list] = mapped_column(JSON, default=list)
     # Rücknahme: verweist auf den ausgerollten Antrag, der umgekehrt wird
     reverts_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # Sammelantrag: gleiche Änderung auf mehreren Firewalls – gemeinsam genehmigt, je Firewall ausgerollt
+    batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     error: Mapped[str] = mapped_column(Text, default="")
 
     firewall: Mapped[Firewall] = relationship()
     creator: Mapped[User] = relationship(foreign_keys=[created_by])
     events: Mapped[list["ChangeEvent"]] = relationship(order_by="ChangeEvent.ts", cascade="all, delete-orphan")
+
+
+class ChangeTemplate(Base):
+    """Wiederverwendbare Änderung (z. B. Standardregel für Filialen) – wird in einen Entwurf übernommen."""
+    __tablename__ = "change_templates"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    # "rest" oder "xml" – Vorlagen passen nur auf Firewalls mit gleichem Format
+    format: Mapped[str] = mapped_column(String(10))
+    operations: Mapped[list] = mapped_column(JSON, default=list)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
 
 
 class ChangeEvent(Base):

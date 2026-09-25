@@ -39,8 +39,12 @@ export function OperationCard({ op, onRemove }) {
   )
 }
 
-function SubmitModal({ draft, onClose, onDone, requireTicket, settings }) {
+function SubmitModal({ draft, onClose, onDone, requireTicket, settings, fw }) {
   const [form, setForm] = useState({ title: draft.title || '', justification: '', ticket_ref: '', deploy_after: '', expires_at: '' })
+  const [extra, setExtra] = useState([])
+  const [fws] = useLoad(() => api('/firewalls'), [])
+  // gleiche Formate, Recht zum Beantragen, bereits synchronisiert
+  const candidates = (fws || []).filter((f) => f.id !== fw.id && f.last_sync_at && f.capabilities.format === fw.capabilities.format && f.permissions.includes('change.create'))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
@@ -48,7 +52,7 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings }) {
     setBusy(true)
     try {
       const body = { ...form, deploy_after: form.deploy_after ? new Date(form.deploy_after).toISOString() : null,
-        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null }
+        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null, extra_firewall_ids: extra }
       const r = await api(`/changes/${draft.id}/submit`, { method: 'POST', body })
       onDone(r)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -71,6 +75,18 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings }) {
           {settings?.temp_revert_preapproved ? ' und rollt sie ohne erneute Freigabe aus – die Befristung ist Teil dieser Genehmigung.' : ', die erneut genehmigt werden muss.'}</div>}
         <Field label="Begründung"><textarea rows={3} value={form.justification} onChange={set('justification')}
           placeholder="Warum wird die Änderung benötigt? Wer hat sie angefordert?" /></Field>
+        {candidates.length > 0 && (
+          <details>
+            <summary>Auch auf weiteren Firewalls ausrollen (Sammelantrag){extra.length ? ` – ${extra.length} ausgewählt` : ''}</summary>
+            <div className="stack" style={{ marginTop: 8 }}>
+              <div className="muted small">Gleiche Änderungen, einmal genehmigt, je Firewall einzeln geprüft und ausgerollt. Passt eine Änderung auf eine Firewall nicht, wird nichts eingereicht.</div>
+              <div className="perm-grid">{candidates.map((f) => (
+                <label key={f.id} className="check"><input type="checkbox" checked={extra.includes(f.id)}
+                  onChange={(e) => setExtra(e.target.checked ? [...extra, f.id] : extra.filter((x) => x !== f.id))} />
+                  <span>{f.name}{f.group && <span className="muted small"> · {f.group}</span>}</span></label>))}</div>
+            </div>
+          </details>
+        )}
         {draft.analysis?.length > 0 && <div className="panel panel-pad stack" style={{ borderColor: 'var(--warn)' }}>
           <h3 style={{ margin: 0 }}>Regel-Prüfung</h3>
           <div className="muted small">Diese Befunde sieht auch der Approver. Bitte prüfen oder in der Begründung erklären.</div>
@@ -88,7 +104,12 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings }) {
   )
 }
 
-function DraftBar({ draft, onChanged, requireTicket, settings }) {
+function DraftBar({ draft, onChanged, requireTicket, settings, fw }) {
+  const [tplName, setTplName] = useState('')
+  const [tplMsg, setTplMsg] = useState(null)
+  const saveTemplate = async () => {
+    try { await api('/templates', { method: 'POST', body: { name: tplName, change_id: draft.id } }); setTplMsg({ kind: 'ok', text: `Vorlage „${tplName}“ gespeichert.` }); setTplName('') } catch (e) { setTplMsg({ kind: 'error', text: e.message }) }
+  }
   const nav = useNavigate()
   const { refreshCounts } = useAuth()
   const [show, setShow] = useState(false)
@@ -115,6 +136,11 @@ function DraftBar({ draft, onChanged, requireTicket, settings }) {
       {show && (
         <Modal title={`Entwurf ${crNo(draft.number)}`} onClose={() => setShow(false)} wide>
           {draft.operations.map((op, i) => <OperationCard key={i} op={op} onRemove={() => removeOp(i)} />)}
+          <div className="row" style={{ marginTop: 8 }}>
+            <input placeholder="Name der Vorlage" value={tplName} onChange={(e) => setTplName(e.target.value)} style={{ maxWidth: 280 }} />
+            <button className="sm" disabled={!tplName.trim()} onClick={saveTemplate}>Als Vorlage speichern</button>
+            {tplMsg && <span className={`small ${tplMsg.kind === 'ok' ? 'text-ok' : 'text-error'}`}>{tplMsg.text}</span>}
+          </div>
           <ErrorBox error={error} />
           <div className="modal-foot">
             <button className="danger" onClick={discard}>Entwurf verwerfen</button>
@@ -123,7 +149,7 @@ function DraftBar({ draft, onChanged, requireTicket, settings }) {
           </div>
         </Modal>
       )}
-      {submitting && <SubmitModal draft={draft} requireTicket={requireTicket} settings={settings} onClose={() => setSubmitting(false)}
+      {submitting && <SubmitModal draft={draft} requireTicket={requireTicket} settings={settings} fw={fw} onClose={() => setSubmitting(false)}
         onDone={(cr) => { setSubmitting(false); refreshCounts(); nav(`/changes/${cr.id}`) }} />}
     </>
   )
@@ -312,6 +338,7 @@ function ConfigTab({ fw, cfg, draft, reload }) {
           <input placeholder="Filtern …" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 180 }} />
           {draftOps.length > 0 && <label className="check small"><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />mit meinem Entwurf</label>}
           <div className="right row">
+            {mayEdit && <TemplatePicker fw={fw} format={cfg.format} onApplied={(r) => { reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: r.skipped.length ? `Vorlage übernommen, übersprungen: ${r.skipped.join('; ')}` : 'Vorlage in den Entwurf übernommen.' }) }} onError={(t) => setMsg({ kind: 'error', text: t })} />}
             {mayEdit && (rest || entity === 'FirewallRule' || FORM_ENTITIES.includes(entity) || ['Zone', 'Schedule', 'MACHost', 'NATRule', 'FirewallRuleGroup'].includes(entity)) &&
               <button className="primary sm" onClick={() => setEditing({ obj: null })}>+ Neu</button>}
           </div>
@@ -336,6 +363,22 @@ function ConfigTab({ fw, cfg, draft, reload }) {
           onClose={() => setEditing(null)} onSubmit={addOp} />)}
       {detail && <ObjectDetail fw={fw} entity={entity} obj={detail} onClose={() => setDetail(null)} />}
     </div>
+  )
+}
+
+function TemplatePicker({ fw, format, onApplied, onError }) {
+  const [tpls] = useLoad(() => api('/templates'), [])
+  const list = (tpls || []).filter((t) => t.format === format)
+  if (!list.length) return null
+  const apply = async (id) => {
+    if (!id) return
+    try { onApplied(await api(`/firewalls/${fw.id}/templates/${id}/apply`, { method: 'POST' })) } catch (e) { onError(e.message) }
+  }
+  return (
+    <select className="sm" value="" onChange={(e) => apply(e.target.value)} style={{ width: 190 }} aria-label="Vorlage anwenden">
+      <option value="">Vorlage anwenden …</option>
+      {list.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.operations.length})</option>)}
+    </select>
   )
 }
 
@@ -475,7 +518,7 @@ export default function FirewallView() {
       {tab === 'firmware' && <FirmwareTab fw={fw} />}
       {tab === 'central' && <CentralTab fw={fw} />}
       {tab === 'settings' && <SettingsTab fw={fw} onSaved={(f) => { setFw({ ...fw, ...f }); reload() }} />}
-      <DraftBar draft={draft} onChanged={reload} requireTicket={settings?.require_ticket} settings={settings} />
+      <DraftBar draft={draft} onChanged={reload} requireTicket={settings?.require_ticket} settings={settings} fw={fw} />
     </>
   )
 }

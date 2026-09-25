@@ -64,6 +64,7 @@ def change_summary(cr: ChangeRequest) -> dict:
         "approvals": len({e.user_id for e in cr.events if e.kind == "approved"}),
         "required_approvals": cr.required_approvals,
         "entities": sorted({o["entity"] for o in cr.operations or []}),
+        "batch_id": cr.batch_id,
     }
 
 
@@ -103,6 +104,8 @@ def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
         },
         "own": is_owner,
         "analysis": _analysis(db, cr) if cr.status in ("draft", "pending", "approved") else [],
+        "batch": [{"id": m.id, "number": m.number, "firewall": m.firewall.name, "status": m.status,
+                   "error": m.error} for m in changes.batch_members(db, cr)] if cr.batch_id else [],
         "reverts": {"id": reverts.id, "number": reverts.number} if reverts else None,
         "reverted_by": {"id": reverted_by.id, "number": reverted_by.number, "status": reverted_by.status}
         if reverted_by else None,
