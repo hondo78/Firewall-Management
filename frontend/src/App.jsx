@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { api, canAnywhere, getToken, setToken } from './api'
+import ErrorBoundary from './components/ErrorBoundary'
 import Audit from './pages/Audit'
 import ChangeDetail from './pages/ChangeDetail'
 import Changes from './pages/Changes'
@@ -72,7 +73,7 @@ function Layout({ children }) {
           <button className="link" onClick={logout}>Abmelden</button>
         </div>
       </aside>
-      <main className="content">{children}</main>
+      <main className="content"><ErrorBoundary key={loc.pathname}>{children}</ErrorBoundary></main>
     </div>
   )
 }

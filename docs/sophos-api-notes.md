@@ -13,6 +13,12 @@ Die Firewall selbst bietet unter *Administration › API access* ebenfalls einen
 | Codebeispiele | `GET /webconsole/APIController` mit Bearer-Key | das ist die **alte XML-API**; die Beispiele sind falsch |
 | Auth | `Authorization: Bearer <api-key>` | dito; ohne/mit falschem Key: `401 {"error":"unauthenticated","message":"Token missing or invalid."}` |
 
+Abweichungen der echten Firewall (SFOS, 25.09.2026) von der Spezifikation:
+- Ports in Diensten kommen als **Text** (`"destinationPort": "1719"`, `"sourcePort": "1:65535"`), nicht als `{from, to}`.
+  Das Tool zeigt beide Varianten an und schreibt neue Ports im Format, das die Firewall liefert.
+- Zusätzliche Felder: `ruleId` (Regeln; wird wie `id` nicht gespeichert) und `isInternal` (eingebaute Objekte –
+  Löschen wird im Tool gesperrt).
+
 Weitere Eigenschaften (aus der Spezifikation):
 - Objekte werden per Name **oder** UUID adressiert (`/{idOrName}`). Listen sind seitenweise (`page`, `pageSize` Std. 50,
   `pageTotal`) → `{items, pages:{current,total,size,maxSize}}`. Filter: `nameContains`, `nameNotEquals`.

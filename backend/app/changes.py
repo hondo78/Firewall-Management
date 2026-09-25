@@ -126,6 +126,9 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
         raise HTTPException(400, "Löschen ist über Sophos Central nicht möglich – Objekt stattdessen deaktivieren "
                                  "oder die Firewall über die REST-API anbinden")
     existing = _index(config).get(entity, {})
+    if action == "remove" and (existing.get(name) or {}).get("isInternal"):
+        raise HTTPException(400, f"{entities.LABELS[entity]} „{name}“ ist ein eingebautes Objekt der Firewall "
+                                 "und kann nicht gelöscht werden")
     if action == "add" and name in existing:
         raise HTTPException(409, f"{entities.LABELS[entity]} „{name}“ existiert bereits")
     if action in ("update", "remove") and name not in existing:

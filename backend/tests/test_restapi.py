@@ -116,3 +116,13 @@ def test_rest_references_and_diff():
     preview = restapi.request_preview("/firewall/rules/ipv4", "update", {**RULE, "enabled": False}, "R1",
                                       {"type": "top"}, RULE, True)
     assert preview.startswith("PATCH /api/firewall-config/v1/firewall/rules/ipv4/R1") and "/move" in preview
+
+
+def test_real_sfos_shapes():
+    """Echte SFOS-Antworten weichen von der Spezifikation ab: Ports als Text, ruleId/isInternal zusätzlich."""
+    from app.sophos import connector as conn
+    svc = {"id": "u", "name": "H323", "isInternal": True, "type": "tcpOrUdp", "ruleId": 5,
+           "services": [{"destinationPort": "1719", "protocol": "udp", "sourcePort": "1:65535"}]}
+    stored = conn.strip_read_only(svc)
+    assert "ruleId" not in stored and "id" not in stored and stored["isInternal"] is True
+    assert restapi.patch_body(stored, {**stored, "description": "x"}) == {"description": "x"}

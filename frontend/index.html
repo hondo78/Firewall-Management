@@ -8,6 +8,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Falls das Programm nicht startet (z. B. veraltete Seite im Browser-Cache): Hinweis statt weißer Seite
+      setTimeout(function () {
+        var r = document.getElementById('root')
+        if (r && !r.childElementCount) r.innerHTML = '<div style="font-family:system-ui,sans-serif;padding:48px 16px;text-align:center">' +
+          '<h2>Die Anwendung konnte nicht geladen werden</h2><p>Bitte die Seite neu laden (Strg+F5 bzw. Cmd+Shift+R).</p>' +
+          '<button onclick="location.reload(true)" style="padding:8px 16px">Neu laden</button></div>'
+      }, 8000)
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

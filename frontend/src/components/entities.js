@@ -133,7 +133,12 @@ export function restRuleView(rule) {
 
 export const anyRuleView = (entity, rule) => (isRestEntity(entity) ? restRuleView(rule) : ruleView(rule))
 
-const port = (p) => (!p ? 'alle' : p.from === p.to || p.to == null ? `${p.from}` : `${p.from}–${p.to}`)
+// Ports: echte SFOS liefert Text („443“, „1:65535“), die Spezifikation {from, to}
+const port = (p) => {
+  if (p == null || p === '') return 'alle'
+  if (typeof p !== 'object') return String(p).replace(':', '–')
+  return p.from === p.to || p.to == null ? `${p.from}` : `${p.from}–${p.to}`
+}
 
 export function restSummary(entity, o) {
   switch (entity) {

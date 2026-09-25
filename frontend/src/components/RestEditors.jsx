@@ -175,14 +175,16 @@ function Ipv4Form({ data, setData, isNew }) {
   )
 }
 
-function RestServiceForm({ data, setData, isNew }) {
+function RestServiceForm({ data, setData, isNew, portsAsText }) {
   const rows = asList(data.services)
   const setRows = (r) => setData({ ...data, services: r })
-  const portStr = (p) => (!p ? '' : p.from === p.to ? `${p.from}` : `${p.from}:${p.to}`)
+  const portStr = (p) => (p == null ? '' : typeof p !== 'object' ? String(p) : p.from === p.to ? `${p.from}` : `${p.from}:${p.to}`)
+  // Im Format der Firewall zurückschreiben: Text („443“, „8000:8080“) wie von SFOS geliefert, sonst {from, to}
   const parsePort = (v) => {
     if (!v.trim()) return undefined
     const [a, b] = v.split(/[:-]/).map((x) => Number(x.trim()))
-    return { from: a, to: Number.isFinite(b) ? b : a }
+    const to = Number.isFinite(b) ? b : a
+    return portsAsText ? (a === to ? `${a}` : `${a}:${to}`) : { from: a, to }
   }
   const upd = (i, k, v) => setRows(rows.map((r, j) => {
     if (j !== i) return r
@@ -205,7 +207,7 @@ function RestServiceForm({ data, setData, isNew }) {
             </tr>))}
           </tbody>
         </table>
-        <div><button className="sm" onClick={() => setRows([...rows, { protocol: 'tcp', destinationPort: { from: 80, to: 80 } }])}>+ Port hinzufügen</button></div>
+        <div><button className="sm" onClick={() => setRows([...rows, { protocol: 'tcp', destinationPort: portsAsText ? '80' : { from: 80, to: 80 } }])}>+ Port hinzufügen</button></div>
       </>}
     </div>
   )
@@ -223,7 +225,13 @@ function RefGroupForm({ data, setData, isNew, field, options, label }) {
 
 export function RestObjectEditor({ entity, label, config, object, onClose, onSubmit }) {
   const isNew = !object
-  const [data, setData] = useState(() => structuredClone(object || NEW_REST[entity] || { name: '' }))
+  // Liefert die Firewall Ports als Text, neue Dienste ebenso anlegen
+  const portsAsText = useMemo(() => (config.services || []).some((s) => asList(s.services).some((d) => typeof d.destinationPort === 'string')), [config])
+  const [data, setData] = useState(() => {
+    const base = structuredClone(object || NEW_REST[entity] || { name: '' })
+    if (!object && entity === 'services' && portsAsText) base.services = [{ protocol: 'tcp', sourcePort: '1:65535', destinationPort: '443' }]
+    return base
+  })
   const opts = useMemo(() => restRefOptions(config), [config])
   const props = { data, setData, isNew }
   const forms = {
@@ -232,7 +240,7 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
     addressesFqdn: <div className="stack"><NameDesc {...props} /><Field label="FQDN" hint="Wildcards wie *.example.com erlaubt">
       <input value={data.fqdn || ''} onChange={(e) => setData({ ...data, fqdn: e.target.value })} /></Field></div>,
     addressGroupsFqdn: <RefGroupForm {...props} field="fqdns" options={opts.fqdn} label="Mitglieder (FQDN-Adressen)" />,
-    services: <RestServiceForm {...props} />,
+    services: <RestServiceForm {...props} portsAsText={portsAsText} />,
     serviceGroups: <RefGroupForm {...props} field="services" options={opts.serviceItems} label="Mitglieder (Dienste)" />,
   }
   return (

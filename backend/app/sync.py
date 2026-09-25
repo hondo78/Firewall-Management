@@ -1,5 +1,6 @@
 """Synchronisation: Firewall-Konfiguration einlesen (Cache + Versionsstände) und Inventar aus Sophos Central."""
 import logging
+import threading
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
@@ -12,6 +13,15 @@ from .sophos.central import CentralError, normalize_status
 from .sophos import entities
 
 log = logging.getLogger("fwm.sync")
+# Worker und manuelle Synchronisation dürfen den Cache derselben Firewall nicht gleichzeitig ersetzen
+# (sonst UniqueViolation auf config_objects). Nur EIN Prozess – ein Lock je Firewall genügt.
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock_for(firewall_id: str) -> threading.Lock:
+    with _locks_guard:
+        return _locks.setdefault(firewall_id, threading.Lock())
 
 
 def cached_config(db: DbSession, fw: Firewall) -> dict[str, list[dict]]:
@@ -31,6 +41,14 @@ def latest_snapshot(db: DbSession, fw: Firewall) -> ConfigSnapshot | None:
 def store_config(db: DbSession, fw: Firewall, config: dict[str, list[dict]], *, reason: str,
                  change_id: str | None = None, actor: User | None = None) -> dict:
     """Cache ersetzen und bei inhaltlicher Änderung einen neuen Versionsstand anlegen."""
+    with _lock_for(fw.id):
+        # config_hash kann inzwischen von einer parallelen Synchronisation stammen → aktuellen Wert lesen
+        fw.config_hash = db.execute(select(Firewall.config_hash).where(Firewall.id == fw.id)).scalar() or ""
+        return _store_config(db, fw, config, reason=reason, change_id=change_id, actor=actor)
+
+
+def _store_config(db: DbSession, fw: Firewall, config: dict[str, list[dict]], *, reason: str,
+                  change_id: str | None, actor: User | None) -> dict:
     new_hash = diff.config_hash(config)
     db.execute(delete(ConfigObject).where(ConfigObject.firewall_id == fw.id))
     for entity, objs in config.items():

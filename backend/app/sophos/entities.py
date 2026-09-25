@@ -42,8 +42,10 @@ REST_RESOURCES: dict[str, tuple[str, str, str]] = {
     "schedules": ("/administration/schedules", "Zeitpläne", "System"),
 }
 REST_MANAGED = [(e, label, section) for e, (_, label, section) in REST_RESOURCES.items()]
-# Nur lesend von der API geliefert – nie mitsenden und nicht speichern (sonst Diff-Rauschen)
-REST_READ_ONLY = ("id", "createdAt", "updatedAt")
+# Nur lesend von der API geliefert – nie mitsenden und nicht speichern (sonst Diff-Rauschen).
+# ruleId liefert die echte Firewall zusätzlich (nicht in der Spezifikation). isInternal (eingebautes Objekt)
+# bleibt gespeichert, damit die Oberfläche Löschen ausblenden kann; per PATCH wird es nie gesendet (unverändert).
+REST_READ_ONLY = ("id", "createdAt", "updatedAt", "ruleId")
 
 LABELS = {e: label for e, label, _ in XML_MANAGED + REST_MANAGED}
 

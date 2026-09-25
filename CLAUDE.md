@@ -21,7 +21,7 @@ cd frontend && npm install && npx vite build          # frontend build check; `n
 
 ## Architecture
 
-Services: `db` (Postgres 16), `backend` (FastAPI, **one** uvicorn worker, because the login lockout and `changes._deploy_lock` are in-process), `frontend` (React/Vite in nginx, proxies `/api/`, dynamic Docker DNS resolver), `sophos-mock` (profile `mock`, in-memory, resets on restart).
+Services: `db` (Postgres 16), `backend` (FastAPI, **one** uvicorn worker, because the login lockout and `changes._deploy_lock` are in-process), `frontend` (React/Vite in nginx, proxies `/api/`, dynamic Docker DNS resolver; `index.html` is `no-cache`, and `/assets/` is immutable with a **404 for missing files**. Otherwise a browser with a stale `index.html` gets HTML as JS and shows a white page. An `ErrorBoundary` plus an 8-second fallback in `index.html` replace the white page with a message), `sophos-mock` (profile `mock`, in-memory, resets on restart).
 
 ### Sophos connectors (`app/sophos/`)
 Three connectors per firewall (`Firewall.connector`):

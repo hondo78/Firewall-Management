@@ -225,8 +225,9 @@ function ObjectTable({ entity, rows, fw, mayEdit, pendingBy, draftBy, onEdit, on
               <td className="actions">
                 {mayEdit && state !== 'remove' && <>
                   <button className="ghost sm" onClick={() => onEdit(obj)}>Bearbeiten</button>
-                  {fw.capabilities.remove && <button className="ghost sm" style={{ color: 'var(--danger)' }}
+                  {fw.capabilities.remove && !obj.isInternal && <button className="ghost sm" style={{ color: 'var(--danger)' }}
                     onClick={() => onOp({ entity, action: 'remove', name: oname(obj) })}>Löschen</button>}
+                  {obj.isInternal && <span className="badge" title="Eingebautes Objekt der Firewall">vordefiniert</span>}
                 </>}
               </td>
             </tr>
