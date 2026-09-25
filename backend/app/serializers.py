@@ -67,6 +67,15 @@ def change_summary(cr: ChangeRequest) -> dict:
     }
 
 
+def _analysis(db: DbSession, cr: ChangeRequest) -> list[dict]:
+    """Regel-Analyse: Befunde, die dieser Antrag gegenüber dem aktuellen Stand neu einführt."""
+    from . import changes, lint, sync
+    if not cr.operations:
+        return []
+    before = sync.cached_config(db, cr.firewall)
+    return lint.for_change(before, changes.effective_config(before, cr.operations), cr.operations)
+
+
 def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
     from . import changes
     fw = cr.firewall
@@ -93,6 +102,7 @@ def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
             "submit": cr.status == "draft" and is_owner,
         },
         "own": is_owner,
+        "analysis": _analysis(db, cr) if cr.status in ("draft", "pending", "approved") else [],
         "reverts": {"id": reverts.id, "number": reverts.number} if reverts else None,
         "reverted_by": {"id": reverted_by.id, "number": reverted_by.number, "status": reverted_by.status}
         if reverted_by else None,

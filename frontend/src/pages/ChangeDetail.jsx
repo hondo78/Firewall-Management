@@ -4,6 +4,7 @@ import { useAuth } from '../App'
 import { EVENT_LABEL, STATUS_LABEL, api, crNo, fmt } from '../api'
 import { ErrorBox, Field, Modal, Progress, Status, useLoad } from '../components/ui'
 import { OperationCard } from './FirewallView'
+import Findings from '../components/Findings'
 
 function DecisionBox({ cr, onDone }) {
   const [comment, setComment] = useState('')
@@ -148,6 +149,12 @@ export default function ChangeDetail() {
       <div className="grid detail-grid">
         <div className="stack">
           {cr.can.approve && <DecisionBox cr={cr} onDone={(r) => { setCr(r); refreshCounts() }} />}
+          {['pending', 'approved', 'draft'].includes(cr.status) && (
+            <div className="panel panel-pad stack" style={cr.analysis.some((f) => f.severity === 'high') ? { borderColor: 'var(--danger)' } : undefined}>
+              <h3 style={{ margin: 0 }}>Regel-Prüfung</h3>
+              <Findings findings={cr.analysis} empty="Keine neuen Auffälligkeiten durch diesen Antrag." compact />
+            </div>
+          )}
           <div className="panel panel-pad">
             <h3 style={{ marginTop: 0 }}>Begründung</h3>
             <div style={{ whiteSpace: 'pre-wrap' }}>{cr.justification || <span className="muted">–</span>}</div>

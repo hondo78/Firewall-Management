@@ -487,3 +487,13 @@ def export_json(firewall_id: str, request: Request, user: User = Depends(get_cur
             .isoformat(), "objects": config}
     return Response(json.dumps(body, indent=2, ensure_ascii=False), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="firewall-config.json"'})
+
+
+@router.get("/firewalls/{firewall_id}/analysis")
+def analysis(firewall_id: str, user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
+    """Regel-Analyse der aktuellen (zwischengespeicherten) Konfiguration."""
+    from .. import lint
+    fw = firewall_or_404(db, user, firewall_id)
+    findings = lint.analyze(sync.cached_config(db, fw))
+    return {"findings": findings, "counts": {s: sum(1 for f in findings if f["severity"] == s)
+                                             for s in ("high", "medium", "info")}}

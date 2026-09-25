@@ -9,7 +9,9 @@ import FirewallForm from '../components/FirewallForm'
 import { Chips, DiffTable, Empty, ErrorBox, Field, Modal, Status, Tabs, useLoad } from '../components/ui'
 import { SyncState } from './Firewalls'
 import Diagnose from '../components/Diagnose'
+import AnalysisTab from './firewall/AnalysisTab'
 import CentralTab from './firewall/CentralTab'
+import Findings from '../components/Findings'
 import CompareTab from './firewall/CompareTab'
 import FirmwareTab from './firewall/FirmwareTab'
 
@@ -69,6 +71,11 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings }) {
           {settings?.temp_revert_preapproved ? ' und rollt sie ohne erneute Freigabe aus – die Befristung ist Teil dieser Genehmigung.' : ', die erneut genehmigt werden muss.'}</div>}
         <Field label="Begründung"><textarea rows={3} value={form.justification} onChange={set('justification')}
           placeholder="Warum wird die Änderung benötigt? Wer hat sie angefordert?" /></Field>
+        {draft.analysis?.length > 0 && <div className="panel panel-pad stack" style={{ borderColor: 'var(--warn)' }}>
+          <h3 style={{ margin: 0 }}>Regel-Prüfung</h3>
+          <div className="muted small">Diese Befunde sieht auch der Approver. Bitte prüfen oder in der Begründung erklären.</div>
+          <Findings findings={draft.analysis} compact />
+        </div>}
         <h3>{draft.operations.length} Änderung(en)</h3>
         {draft.operations.map((op, i) => <OperationCard key={i} op={op} />)}
         <ErrorBox error={error} />
@@ -425,7 +432,7 @@ export default function FirewallView() {
   }
   if (error) return <ErrorBox error={error} />
   if (!fw) return null
-  const tabs = [['config', 'Konfiguration'], ['compare', 'Vergleich & Versionen'], ['changes', 'Anträge'],
+  const tabs = [['config', 'Konfiguration'], ['analysis', 'Analyse'], ['compare', 'Vergleich & Versionen'], ['changes', 'Anträge'],
     fw.central_id && ['firmware', 'Firmware'], fw.central_id && ['central', 'Lizenzen & Alerts'], can(me, 'firewall.manage', fw) && ['settings', 'Einstellungen']]
 
   return (
@@ -462,6 +469,7 @@ export default function FirewallView() {
       {syncMsg && <div className={`alert ${syncMsg.kind} small`}>{syncMsg.text}</div>}
       <Tabs tabs={tabs} value={tab} onChange={(t) => nav(`/firewalls/${id}/${t}`)} />
       {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <ConfigTab key={cfg.format} fw={fw} cfg={cfg} draft={draft} reload={reload} />)}
+      {tab === 'analysis' && <AnalysisTab fw={fw} />}
       {tab === 'compare' && <CompareTab fw={fw} />}
       {tab === 'changes' && <ChangesTab fw={fw} />}
       {tab === 'firmware' && <FirmwareTab fw={fw} />}
