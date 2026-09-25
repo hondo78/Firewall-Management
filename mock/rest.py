@@ -213,7 +213,7 @@ async def rest_api(serial: str, path: str, request: Request):
         return err(404, "notFound", "Unknown firewall")
     path = "/" + path
     if path == "/administration/api-settings":
-        return {"enabled": True, "allowedIpHosts": [{"name": "HO_Merlin"}]}
+        return {"enabled": True, "allowedIpHosts": [{"name": "Admin-Host"}]}
     entity, rest = resolve(path)
     if entity is None:
         return err(404, "notFound", "Resource not found")

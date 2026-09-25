@@ -206,7 +206,7 @@ def test_rest_connector_workflow(client, admin, monkeypatch):
         state.update(ch.effective_config(state, ops))
     monkeypatch.setattr(conn, "apply", apply)
     r = client.post("/api/firewalls", headers=admin, json={
-        "name": "FW-REST", "connector": "rest", "api_url": "10.0.1.1", "api_password": "sfos_x",
+        "name": "FW-REST", "connector": "rest", "api_url": "192.0.2.1", "api_password": "sfos_x",
         "api_key_expires_at": "2027-09-25"})
     assert r.status_code == 200, r.text
     fw = r.json()

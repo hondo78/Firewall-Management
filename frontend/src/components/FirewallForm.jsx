@@ -61,7 +61,7 @@ export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
             Der Key hat die Rechte dieses Admins.
           </div>
           <div className="form-grid">
-            <Field label="Adresse" hint="z. B. 10.0.1.1 (Port 4444 wird ergänzt) oder https://fw.example.local:4444">
+            <Field label="Adresse" hint="z. B. 192.168.1.1 (Port 4444 wird ergänzt) oder https://fw.example.local:4444">
               <input value={form.api_url} onChange={set('api_url')} placeholder="https://firewall:4444" />
             </Field>
             <Field label="API-Key" hint={fw?.has_api_password && fw?.connector === 'rest' ? 'leer lassen = unverändert' : 'beginnt mit sfos_ – wird verschlüsselt gespeichert'}>
