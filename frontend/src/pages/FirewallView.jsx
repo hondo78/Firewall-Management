@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { ACTION_LABEL, api, can, crNo, download, fmt } from '../api'
 import { FORM_ENTITIES, ObjectEditor, RuleEditor } from '../components/Editors'
-import { canonical, ruleView, summary } from '../components/entities'
+import { PRIMARY_RULES, RULE_TABLE_ENTITIES, anyRuleView, anySummary, canonical, isRestEntity, oname } from '../components/entities'
+import { RestObjectEditor, RestRuleEditor } from '../components/RestEditors'
 import FirewallForm from '../components/FirewallForm'
 import { Chips, DiffTable, Empty, ErrorBox, Field, Modal, Status, Tabs, useLoad } from '../components/ui'
 import { SyncState } from './Firewalls'
@@ -30,7 +31,7 @@ export function OperationCard({ op, onRemove }) {
       </div>
       <div className="op-body">
         {op.action === 'remove' ? <div className="muted small">Objekt wird gelöscht.</div> : <DiffTable rows={op.diff} />}
-        <details><summary>API-Aufruf (XML)</summary><pre className="xml">{op.xml}</pre></details>
+        <details><summary>API-Aufruf ({op.xml?.startsWith('<') ? 'XML' : 'REST'})</summary><pre className="xml">{op.xml}</pre></details>
       </div>
     </div>
   )
@@ -134,30 +135,31 @@ function PendingBadges({ pending, draftAction }) {
 function buildRows(entity, objects, preview, showDraft, draftOps) {
   const orig = objects[entity] || []
   if (!showDraft) return orig.map((o) => ({ obj: o, state: '' }))
-  const origBy = Object.fromEntries(orig.map((o) => [o.Name, o]))
+  const origBy = Object.fromEntries(orig.map((o) => [oname(o), o]))
   const opBy = Object.fromEntries(draftOps.filter((o) => o.entity === entity).map((o) => [o.name, o.action]))
   const rows = (preview[entity] || []).map((o) => ({
     obj: o,
-    state: !origBy[o.Name] ? 'add' : (opBy[o.Name] === 'update' || canonical(origBy[o.Name]) !== canonical(o)) ? 'update' : '',
+    state: !origBy[oname(o)] ? 'add' : (opBy[oname(o)] === 'update' || canonical(origBy[oname(o)]) !== canonical(o)) ? 'update' : '',
   }))
   orig.forEach((o, i) => {
-    if (opBy[o.Name] === 'remove') rows.splice(Math.min(i, rows.length), 0, { obj: o, state: 'remove' })
+    if (opBy[oname(o)] === 'remove') rows.splice(Math.min(i, rows.length), 0, { obj: o, state: 'remove' })
   })
   return rows
 }
 
 function ObjectDetail({ fw, entity, obj, onClose }) {
-  const [d] = useLoad(() => api(`/firewalls/${fw.id}/objects/${entity}/${encodeURIComponent(obj.Name)}/xml`), [entity, obj.Name])
+  const [d] = useLoad(() => api(`/firewalls/${fw.id}/objects/${entity}/${encodeURIComponent(oname(obj))}/xml`), [entity, oname(obj)])
   return (
-    <Modal title={obj.Name} onClose={onClose} wide>
+    <Modal title={oname(obj)} onClose={onClose} wide>
       {d?.used_by?.length > 0 && <div className="alert info small">Verwendet von: {d.used_by.join(', ')}</div>}
       <pre className="xml">{d?.xml || 'Lade …'}</pre>
     </Modal>
   )
 }
 
-function RuleTable({ rows, fw, mayEdit, pendingBy, draftBy, onEdit, onOp, onShow }) {
-  const names = rows.filter((r) => r.state !== 'remove').map((r) => r.obj.Name)
+function RuleTable({ entity, rows, fw, mayEdit, pendingBy, draftBy, onEdit, onOp, onShow }) {
+  const names = rows.filter((r) => r.state !== 'remove').map((r) => oname(r.obj))
+  const rest = isRestEntity(entity)
   if (!rows.length) return <Empty>Keine Firewall-Regeln.</Empty>
   return (
     <div className="table-wrap">
@@ -165,17 +167,20 @@ function RuleTable({ rows, fw, mayEdit, pendingBy, draftBy, onEdit, onOp, onShow
         <thead><tr><th>#</th><th>Regel</th><th>Quelle</th><th>Ziel</th><th>Dienste</th><th>Aktion</th><th /></tr></thead>
         <tbody>
           {rows.map(({ obj, state }, i) => {
-            const v = ruleView(obj)
-            const idx = names.indexOf(obj.Name)
+            const v = anyRuleView(entity, obj)
+            const name = oname(obj)
+            const desc = rest ? obj.description : obj.Description
+            const idx = names.indexOf(name)
             const cls = state ? `row-${state}` : !v.enabled ? 'row-disabled' : ''
             return (
-              <tr key={`${obj.Name}-${state}`} className={cls}>
+              <tr key={`${name}-${state}`} className={cls}>
                 <td className="muted small">{state === 'remove' ? '–' : idx + 1}</td>
                 <td className="name">
-                  <button className="link" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }} onClick={() => onShow(obj)}>{obj.Name}</button>
+                  <button className="link" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }} onClick={() => onShow(obj)}>{name}</button>
                   {!v.enabled && <span className="badge st-Disable" style={{ marginLeft: 6 }}>inaktiv</span>}
-                  {obj.Description && <div className="small muted">{obj.Description}</div>}
-                  <div style={{ marginTop: 3 }}><PendingBadges pending={pendingBy[obj.Name]} draftAction={draftBy[obj.Name]} /></div>
+                  {v.type === 'waf' && <span className="badge b-info" style={{ marginLeft: 6 }}>WAF</span>}
+                  {desc && <div className="small muted">{desc}</div>}
+                  <div style={{ marginTop: 3 }}><PendingBadges pending={pendingBy[name]} draftAction={draftBy[name]} /></div>
                 </td>
                 <td><Chips items={v.srcZones} kind="zone" /><div style={{ marginTop: 3 }}><Chips items={v.srcNets} /></div></td>
                 <td><Chips items={v.dstZones} kind="zone" /><div style={{ marginTop: 3 }}><Chips items={v.dstNets} /></div></td>
@@ -185,14 +190,14 @@ function RuleTable({ rows, fw, mayEdit, pendingBy, draftBy, onEdit, onOp, onShow
                 <td className="actions">
                   {mayEdit && state !== 'remove' && <>
                     <button className="ghost sm" title="Nach oben" disabled={idx <= 0}
-                      onClick={() => onOp({ entity: 'FirewallRule', action: 'update', name: obj.Name, data: obj, position: { type: 'before', ref: names[idx - 1] } })}>↑</button>
+                      onClick={() => onOp({ entity, action: 'update', name, data: obj, position: { type: 'before', ref: names[idx - 1] } })}>↑</button>
                     <button className="ghost sm" title="Nach unten" disabled={idx >= names.length - 1}
-                      onClick={() => onOp({ entity: 'FirewallRule', action: 'update', name: obj.Name, data: obj, position: { type: 'after', ref: names[idx + 1] } })}>↓</button>
-                    <button className="ghost sm" onClick={() => onOp({ entity: 'FirewallRule', action: 'update', name: obj.Name, data: { ...obj, Status: v.enabled ? 'Disable' : 'Enable' } })}>
+                      onClick={() => onOp({ entity, action: 'update', name, data: obj, position: { type: 'after', ref: names[idx + 1] } })}>↓</button>
+                    <button className="ghost sm" onClick={() => onOp({ entity, action: 'update', name, data: rest ? { ...obj, enabled: !v.enabled } : { ...obj, Status: v.enabled ? 'Disable' : 'Enable' } })}>
                       {v.enabled ? 'Deaktivieren' : 'Aktivieren'}</button>
                     <button className="ghost sm" onClick={() => onEdit(obj)}>Bearbeiten</button>
                     {fw.capabilities.remove && <button className="ghost sm" style={{ color: 'var(--danger)' }}
-                      onClick={() => onOp({ entity: 'FirewallRule', action: 'remove', name: obj.Name })}>Löschen</button>}
+                      onClick={() => onOp({ entity, action: 'remove', name })}>Löschen</button>}
                   </>}
                 </td>
               </tr>
@@ -212,16 +217,16 @@ function ObjectTable({ entity, rows, fw, mayEdit, pendingBy, draftBy, onEdit, on
         <thead><tr><th>Name</th><th>Details</th><th>Beschreibung</th><th /></tr></thead>
         <tbody>
           {rows.map(({ obj, state }) => (
-            <tr key={`${obj.Name}-${state}`} className={state ? `row-${state}` : ''}>
-              <td className="name"><button className="link" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }} onClick={() => onShow(obj)}>{obj.Name}</button>
-                <div><PendingBadges pending={pendingBy[obj.Name]} draftAction={draftBy[obj.Name]} /></div></td>
-              <td className="small">{summary(entity, obj)}</td>
-              <td className="small muted">{obj.Description || ''}</td>
+            <tr key={`${oname(obj)}-${state}`} className={state ? `row-${state}` : ''}>
+              <td className="name"><button className="link" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }} onClick={() => onShow(obj)}>{oname(obj)}</button>
+                <div><PendingBadges pending={pendingBy[oname(obj)]} draftAction={draftBy[oname(obj)]} /></div></td>
+              <td className="small">{anySummary(entity, obj)}</td>
+              <td className="small muted">{obj.Description || obj.description || ''}</td>
               <td className="actions">
                 {mayEdit && state !== 'remove' && <>
                   <button className="ghost sm" onClick={() => onEdit(obj)}>Bearbeiten</button>
                   {fw.capabilities.remove && <button className="ghost sm" style={{ color: 'var(--danger)' }}
-                    onClick={() => onOp({ entity, action: 'remove', name: obj.Name })}>Löschen</button>}
+                    onClick={() => onOp({ entity, action: 'remove', name: oname(obj) })}>Löschen</button>}
                 </>}
               </td>
             </tr>
@@ -234,7 +239,9 @@ function ObjectTable({ entity, rows, fw, mayEdit, pendingBy, draftBy, onEdit, on
 
 function ConfigTab({ fw, cfg, draft, reload }) {
   const { me } = useAuth()
-  const [entity, setEntity] = useState('FirewallRule')
+  const [entity, setEntity] = useState(PRIMARY_RULES[cfg.format] || 'FirewallRule')
+  const isRuleTable = RULE_TABLE_ENTITIES.has(entity)
+  const rest = cfg.format === 'rest'
   const [showDraft, setShowDraft] = useState(true)
   const [editing, setEditing] = useState(null)   // {obj|null}
   const [detail, setDetail] = useState(null)
@@ -291,21 +298,25 @@ function ConfigTab({ fw, cfg, draft, reload }) {
           <input placeholder="Filtern …" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 180 }} />
           {draftOps.length > 0 && <label className="check small"><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />mit meinem Entwurf</label>}
           <div className="right row">
-            {mayEdit && (entity === 'FirewallRule' || FORM_ENTITIES.includes(entity) || ['Zone', 'Schedule', 'MACHost', 'NATRule', 'FirewallRuleGroup'].includes(entity)) &&
+            {mayEdit && (rest || entity === 'FirewallRule' || FORM_ENTITIES.includes(entity) || ['Zone', 'Schedule', 'MACHost', 'NATRule', 'FirewallRuleGroup'].includes(entity)) &&
               <button className="primary sm" onClick={() => setEditing({ obj: null })}>+ Neu</button>}
           </div>
         </div>
         {msg && <div style={{ padding: '0 16px' }}><div className={`alert ${msg.kind} small`}>{msg.text}</div></div>}
         {!fw.last_sync_at && <div className="alert warn" style={{ margin: 16 }}>Noch keine Konfiguration geladen – bitte „Jetzt synchronisieren“.</div>}
-        {entity === 'FirewallRule'
-          ? <RuleTable rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
+        {isRuleTable
+          ? <RuleTable entity={entity} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
             onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={setDetail} />
           : <ObjectTable entity={entity} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
             onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={setDetail} />}
         {!fw.capabilities.remove && mayEdit && <div className="muted small" style={{ padding: '8px 16px' }}>
-          Löschen ist über den Sophos-Central-Import nicht möglich – Regeln stattdessen deaktivieren oder die Firewall zusätzlich per XML-API anbinden.</div>}
+          Löschen ist über den Sophos-Central-Import nicht möglich – Regeln stattdessen deaktivieren oder die Firewall per REST-API anbinden.</div>}
       </div>
-      {editing && (entity === 'FirewallRule'
+      {editing && rest && (entity.startsWith('firewallRules')
+        ? <RestRuleEditor entity={entity} config={editorConfig} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
+        : <RestObjectEditor entity={entity} label={meta.label} config={editorConfig} object={editing.obj}
+          onClose={() => setEditing(null)} onSubmit={addOp} />)}
+      {editing && !rest && (entity === 'FirewallRule'
         ? <RuleEditor config={editorConfig} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
         : <ObjectEditor entity={entity} label={meta.label} config={editorConfig} object={editing.obj}
           onClose={() => setEditing(null)} onSubmit={addOp} />)}
@@ -418,8 +429,11 @@ export default function FirewallView() {
           <h1>{fw.name}</h1>
         </div>
         <div className="right row">
-          <button className="sm" onClick={() => download(`/firewalls/${fw.id}/export.xml`, `Entities-${fw.name}.xml`)}
-            title="Zwischengespeicherte Konfiguration als Entities.xml – z. B. für Sophos Config Studio">Entities.xml</button>
+          {fw.capabilities.format === 'rest'
+            ? <button className="sm" onClick={() => download(`/firewalls/${fw.id}/export.json`, `Konfiguration-${fw.name}.json`)}
+              title="Zwischengespeicherte Konfiguration im Format der REST-API">JSON-Export</button>
+            : <button className="sm" onClick={() => download(`/firewalls/${fw.id}/export.xml`, `Entities-${fw.name}.xml`)}
+            title="Zwischengespeicherte Konfiguration als Entities.xml – z. B. für Sophos Config Studio">Entities.xml</button>}
           <button className="primary sm" disabled={syncing} onClick={sync}>{syncing ? 'Synchronisiere …' : 'Jetzt synchronisieren'}</button>
         </div>
       </div>
@@ -427,6 +441,9 @@ export default function FirewallView() {
         <div className="meta">
           <div><span>Status</span><SyncState fw={fw} /></div>
           <div><span>Anbindung</span>{fw.connector_label}</div>
+          {fw.connector === 'rest' && <div><span>API-Key gültig bis</span>{fw.api_key_expires_at
+            ? <span className={new Date(fw.api_key_expires_at) - Date.now() < 30 * 86400000 ? 'text-error' : ''}>{fmt(fw.api_key_expires_at).split(',')[0]}</span>
+            : <span className="muted">nicht hinterlegt</span>}</div>}
           <div><span>Modell</span>{fw.model?.split('_')[0] || '–'}</div>
           <div><span>Firmware</span>{fw.firmware || '–'}</div>
           <div><span>Seriennummer</span>{fw.serial || '–'}</div>
@@ -437,7 +454,7 @@ export default function FirewallView() {
       {fw.last_sync_error && <div className="alert error small">Letzte Synchronisation fehlgeschlagen: {fw.last_sync_error}</div>}
       {syncMsg && <div className={`alert ${syncMsg.kind} small`}>{syncMsg.text}</div>}
       <Tabs tabs={tabs} value={tab} onChange={(t) => nav(`/firewalls/${id}/${t}`)} />
-      {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <ConfigTab fw={fw} cfg={cfg} draft={draft} reload={reload} />)}
+      {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <ConfigTab key={cfg.format} fw={fw} cfg={cfg} draft={draft} reload={reload} />)}
       {tab === 'compare' && <CompareTab fw={fw} />}
       {tab === 'changes' && <ChangesTab fw={fw} />}
       {tab === 'firmware' && <FirmwareTab fw={fw} />}

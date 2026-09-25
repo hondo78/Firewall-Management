@@ -2,6 +2,8 @@
 import hashlib
 import json
 
+from .sophos.entities import oname
+
 
 def canonical(value) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -18,7 +20,10 @@ def flatten(value, prefix: str = "") -> dict[str, str]:
         for k, v in value.items():
             out.update(flatten(v, f"{prefix} › {k}" if prefix else k))
     elif isinstance(value, list):
-        if all(not isinstance(v, (dict, list)) for v in value):
+        # REST-Verweislisten [{"name": "LAN"}, …] kompakt als „LAN, DMZ“ darstellen
+        if value and all(isinstance(v, dict) and list(v) == ["name"] for v in value):
+            out[prefix] = ", ".join(str(v["name"]) for v in value)
+        elif all(not isinstance(v, (dict, list)) for v in value):
             out[prefix] = ", ".join(str(v) for v in value)
         else:
             for i, v in enumerate(value, 1):
@@ -41,8 +46,8 @@ def compare_configs(old: dict[str, list[dict]], new: dict[str, list[dict]]) -> d
     """Pro Entität: hinzugefügt / entfernt / geändert / unverändert (wie der Vergleich im Config Studio)."""
     result = {}
     for entity in list(dict.fromkeys([*old.keys(), *new.keys()])):
-        o = {x["Name"]: x for x in old.get(entity, [])}
-        n = {x["Name"]: x for x in new.get(entity, [])}
+        o = {oname(x): x for x in old.get(entity, [])}
+        n = {oname(x): x for x in new.get(entity, [])}
         added = [name for name in n if name not in o]
         removed = [name for name in o if name not in n]
         modified = [{"name": name, "fields": diff_objects(o[name], n[name])}

@@ -13,6 +13,7 @@ from . import sync
 from .models import CentralAccount, Firewall
 from .sophos import connector, entities, xmlconv
 from .sophos.central import CentralError
+from .sophos.restapi import RestApiError
 from .sophos.xmlapi import XmlApiError
 
 
@@ -32,7 +33,7 @@ class Report:
             result, detail = fn()
             self.add(name, True, detail, method=method, path=path, ms=int((time.monotonic() - t) * 1000))
             return result
-        except (CentralError, XmlApiError, KeyError, ValueError) as e:
+        except (CentralError, XmlApiError, RestApiError, KeyError, ValueError) as e:
             self.add(name, False, str(e), method=method, path=path, status=getattr(e, "status", None),
                      ms=int((time.monotonic() - t) * 1000))
             return None
@@ -147,6 +148,8 @@ def firewall(db: DbSession, fw: Firewall) -> dict:
             return rep.out()
         result = central(db, acc)
         return result
+    if fw.connector == "rest":
+        return rest(db, fw)
     rep = Report()
     client = connector.xml_client(fw)
     if not rep.run("Anmeldung an der XML-API", lambda: (client.test(), f"API-Version {client.api_version or '?'}"),
@@ -160,4 +163,39 @@ def firewall(db: DbSession, fw: Firewall) -> dict:
             "Das Geräteprofil des API-Administrators muss Lese-/Schreibzugriff auf Firewall und Objekte haben.")
     rep.add("Zwischenspeicher", None, f"{sum(len(v) for v in cached.values())} Objekte im Cache, "
             f"letzte Synchronisation {fw.last_sync_at.isoformat() if fw.last_sync_at else 'nie'}")
+    return rep.out()
+
+
+def rest(db: DbSession, fw: Firewall) -> dict:
+    """SFOS REST-API: Anmeldung, Profilrechte des Keys und Lesen aller verwalteten Ressourcen."""
+    from datetime import datetime, timezone
+    rep = Report()
+    client = connector.rest_client(fw)
+    if not rep.run("Anmeldung per API-Key", lambda: (client.test(), f"{client.base_url}{client.prefix}"),
+                   method="GET", path="/network/zones"):
+        return rep.out()
+    if client.prefix != "/api/firewall-config/v1":
+        rep.add("Basis-Pfad", None, f"Firewall antwortet unter {client.prefix} (nicht wie in der Spezifikation)",
+                kind="endpoint")
+    rep.run("API-Einstellungen", lambda: (lambda r: (r, ", ".join(f"{k}={v}" for k, v in r.items()
+                                                                   if not isinstance(v, (dict, list)))[:200] or "ok"))(
+        client.request("GET", "/administration/api-settings")), method="GET", path="/administration/api-settings")
+    for entity, (path, label, _) in entities.REST_RESOURCES.items():
+        t = time.monotonic()
+        try:
+            n = len(client.list(path))
+            rep.add(f"Lesen: {label}", True, f"{n} Objekt(e)", method="GET", path=path,
+                    ms=int((time.monotonic() - t) * 1000))
+        except RestApiError as e:
+            # 404: Ressource gibt es auf dieser Firmware nicht; 403: Admin-Profil erlaubt es nicht
+            rep.add(f"Lesen: {label}", None if e.status == 404 else False, str(e), method="GET", path=path,
+                    status=e.status, ms=int((time.monotonic() - t) * 1000))
+    if fw.api_key_expires_at:
+        days = (fw.api_key_expires_at - datetime.now(timezone.utc)).days
+        rep.add("Ablauf des API-Keys", days > 30 if days >= 0 else False,
+                f"läuft am {fw.api_key_expires_at.date().isoformat()} ab (in {days} Tagen)")
+    else:
+        rep.add("Ablauf des API-Keys", None, "Ablaufdatum nicht hinterlegt – bitte in den Einstellungen eintragen")
+    rep.add("Schreibrechte", None, "Werden erst beim Ausrollen geprüft (kein schreibender Test im Probelauf). "
+            "Das Geräteprofil des Admins, der den Key erzeugt hat, braucht Lese-/Schreibzugriff auf Regeln und Objekte.")
     return rep.out()

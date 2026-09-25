@@ -19,6 +19,11 @@ export default function Dashboard() {
         <h1>Übersicht</h1>
         <span className="sub">Hallo {me.display_name || me.username}</span>
       </div>
+      {d.keys_expiring?.length > 0 && (
+        <div className="alert warn">API-Keys laufen bald ab oder sind abgelaufen: {d.keys_expiring.map((k) => (
+          <Link key={k.id} to={`/firewalls/${k.id}/settings`} style={{ marginRight: 10 }}>{k.name} ({fmt(k.expires_at).split(',')[0]})</Link>))}
+          – neuen Key auf der Firewall erzeugen und in den Einstellungen eintragen.</div>
+      )}
       <div className="grid tiles">
         <Link className="panel tile" to="/firewalls"><div className="num">{d.firewalls}</div><div className="lbl">Firewalls</div></Link>
         <Link className="panel tile" to="/changes?tab=approve">

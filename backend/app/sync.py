@@ -9,7 +9,7 @@ from .audit import audit
 from .models import (CentralAccount, ConfigObject, ConfigSnapshot, Firewall, FirewallGroup, User, utcnow)
 from .sophos import connector
 from .sophos.central import CentralError, normalize_status
-from .sophos.entities import NAMES
+from .sophos import entities
 
 log = logging.getLogger("fwm.sync")
 
@@ -17,7 +17,7 @@ log = logging.getLogger("fwm.sync")
 def cached_config(db: DbSession, fw: Firewall) -> dict[str, list[dict]]:
     rows = db.execute(select(ConfigObject).where(ConfigObject.firewall_id == fw.id)
                       .order_by(ConfigObject.entity, ConfigObject.position)).scalars()
-    out: dict[str, list[dict]] = {e: [] for e in NAMES}
+    out: dict[str, list[dict]] = {e: [] for e in entities.names(entities.fmt_for(fw.connector))}
     for r in rows:
         out.setdefault(r.entity, []).append(r.data)
     return out
@@ -35,7 +35,7 @@ def store_config(db: DbSession, fw: Firewall, config: dict[str, list[dict]], *, 
     db.execute(delete(ConfigObject).where(ConfigObject.firewall_id == fw.id))
     for entity, objs in config.items():
         for pos, obj in enumerate(objs):
-            db.add(ConfigObject(firewall_id=fw.id, entity=entity, name=obj["Name"], position=pos, data=obj))
+            db.add(ConfigObject(firewall_id=fw.id, entity=entity, name=entities.oname(obj), position=pos, data=obj))
     fw.last_sync_at = utcnow()
     fw.last_sync_error = ""
     result = {"changed": False, "summary": {}}

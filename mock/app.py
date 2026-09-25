@@ -7,6 +7,7 @@ Central        GET  /whoami/v1, /firewall/v1/... (Firewalls, Gruppen, Firmware, 
                /firewall/v1/firewall-config/… wie in der OpenAPI-Spezifikation 1.5.0),
                /licenses/v1/licenses/firewalls, /common/v1/alerts
 Pre-signed     GET/PUT /presigned/{token}
+REST-API       /fw/{serial}/api/firewall-config/v1/…          (Bearer MOCK_API_KEY, siehe rest.py)
 XML-API        POST /fw/{serial}/webconsole/APIController   (Formularfeld reqxml)
 Test-Helfer    POST /mock/fw/{serial}/tamper   (Änderung „an der Firewall vorbei“ → Drift)
                POST /mock/reset
@@ -26,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
+import rest
 import seed
 
 PUBLIC_URL = os.environ.get("MOCK_PUBLIC_URL", "http://sophos-mock:8000").rstrip("/")
@@ -39,6 +41,7 @@ API_VERSION = "2100.1"
 TENANT_ID = "3e382b8e-49fd-4cd9-8360-a364371d7650"
 
 app = FastAPI(title="Sophos-Attrappe")
+app.include_router(rest.router)
 lock = threading.RLock()
 state: dict = {}
 
@@ -574,12 +577,14 @@ async def xml_api(serial: str, request: Request):
 @app.post("/mock/reset")
 def mock_reset():
     reset()
+    rest.reset()
     return {"ok": True}
 
 
 @app.post("/mock/fw/{serial}/tamper")
 def tamper(serial: str):
-    """Simuliert eine Änderung direkt an der Firewall: Beschreibung der ersten Regel ändern."""
+    """Simuliert eine Änderung direkt an der Firewall: Beschreibung der ersten Regel ändern (XML und REST)."""
+    rest.tamper(serial)
     fw = state["firewalls"].get(serial)
     if not fw or not fw["objects"].get("FirewallRule"):
         raise HTTPException(404, "Nichts zu ändern")

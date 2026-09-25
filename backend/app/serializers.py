@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from . import diff, permissions
 from .models import ChangeRequest, Firewall, FirewallGroup, User
-from .sophos import connector, entities, xmlapi
+from .sophos import connector, entities, restapi, xmlapi
 
 
 def user_out(u: User) -> dict:
@@ -29,6 +29,7 @@ def firewall_out(db: DbSession, fw: Firewall, user: User) -> dict:
         "central_account_id": fw.central_account_id, "central_id": fw.central_id,
         "central_status": fw.central_status or {}, "external_ips": fw.external_ips or [],
         "api_url": fw.api_url, "api_username": fw.api_username, "has_api_password": bool(fw.api_password_enc),
+        "api_key_expires_at": fw.api_key_expires_at,
         "verify_tls": fw.verify_tls, "api_version": fw.api_version,
         "last_sync_at": fw.last_sync_at, "last_sync_error": fw.last_sync_error,
         "permissions": sorted(p for p in permissions.PERMISSIONS
@@ -41,7 +42,10 @@ def op_out(fw: Firewall, o: dict) -> dict:
         **o,
         "label": entities.LABELS.get(o["entity"], o["entity"]),
         "diff": diff.diff_objects(o.get("before"), o.get("data")) if o["action"] != "remove" else [],
-        "xml": xmlapi.request_preview(o["entity"], o["action"], o.get("data"), o["name"], o.get("position")),
+        "xml": (restapi.request_preview(entities.REST_RESOURCES[o["entity"]][0], o["action"], o.get("data"), o["name"],
+                                        o.get("position"), o.get("before"), o["entity"] in entities.RULE_ENTITIES)
+                if o["entity"] in entities.REST_RESOURCES else
+                xmlapi.request_preview(o["entity"], o["action"], o.get("data"), o["name"], o.get("position"))),
     }
 
 

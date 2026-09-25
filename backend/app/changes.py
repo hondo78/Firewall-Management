@@ -1,7 +1,7 @@
 """Änderungsanträge: Entwurf → Einreichen → Vier-Augen-Genehmigung → Ausrollen (mit Drift-Prüfung).
 
 Eine Operation: {"entity", "action": add|update|remove, "name", "data" (neues Objekt), "before" (Stand beim
-Einreichen), "position"/"before_position" (nur FirewallRule: {"type": top|bottom|after|before, "ref"})}.
+Einreichen), "position"/"before_position" (nur Regeln: {"type": top|bottom|after|before, "ref"})}.
 """
 import copy
 import logging
@@ -46,12 +46,12 @@ def get_draft(db: DbSession, user: User, fw: Firewall, create: bool = False) -> 
 # --- Validierung ---------------------------------------------------------------------------------------------
 
 def _index(config: dict[str, list[dict]]) -> dict[str, dict[str, dict]]:
-    return {e: {o["Name"]: o for o in objs} for e, objs in config.items()}
+    return {e: {entities.oname(o): o for o in objs} for e, objs in config.items()}
 
 
-def rule_position(config: dict[str, list[dict]], name: str) -> dict:
+def rule_position(config: dict[str, list[dict]], name: str, entity: str = "FirewallRule") -> dict:
     """Aktuelle Position einer Regel als Positionsangabe (nach Vorgänger bzw. ganz oben)."""
-    names = [r["Name"] for r in config.get("FirewallRule", [])]
+    names = [entities.oname(r) for r in config.get(entity, [])]
     if name not in names:
         return {"type": "bottom"}
     i = names.index(name)
@@ -63,7 +63,7 @@ def effective_config(config: dict[str, list[dict]], ops: list[dict]) -> dict[str
     out = copy.deepcopy(config)
     for o in ops:
         lst = out.setdefault(o["entity"], [])
-        idx = next((i for i, x in enumerate(lst) if x["Name"] == o["name"]), None)
+        idx = next((i for i, x in enumerate(lst) if entities.oname(x) == o["name"]), None)
         if o["action"] == "remove":
             if idx is not None:
                 lst.pop(idx)
@@ -71,9 +71,9 @@ def effective_config(config: dict[str, list[dict]], ops: list[dict]) -> dict[str
         if idx is not None:
             lst.pop(idx)
         pos = o.get("position")
-        if o["entity"] == "FirewallRule" and pos:
+        if o["entity"] in entities.RULE_ENTITIES and pos:
             kind = pos.get("type", "bottom")
-            names = [x["Name"] for x in lst]
+            names = [entities.oname(x) for x in lst]
             if kind == "top":
                 idx = 0
             elif kind in ("after", "before") and pos.get("ref") in names:
@@ -84,75 +84,47 @@ def effective_config(config: dict[str, list[dict]], ops: list[dict]) -> dict[str
     return out
 
 
-def references(entity: str, obj: dict) -> list[tuple[str, str]]:
-    """[(Art, Name)] der Objekte, auf die ein Objekt verweist."""
-    refs: list[tuple[str, str]] = []
-    if entity == "FirewallRule":
-        r = entities.rule_references(obj)
-        refs += [("zone", z) for z in r["zones"]] + [("network", n) for n in r["networks"]]
-        refs += [("service", s) for s in r["services"]] + [("schedule", s) for s in r["schedule"]]
-    elif entity == "IPHostGroup":
-        hosts = (obj.get("HostList") or {}).get("Host") or []
-        refs += [("network", h) for h in (hosts if isinstance(hosts, list) else [hosts])]
-    elif entity == "ServiceGroup":
-        svcs = (obj.get("ServiceList") or {}).get("Service") or []
-        refs += [("service", s) for s in (svcs if isinstance(svcs, list) else [svcs])]
-    elif entity == "FQDNHostGroup":
-        hosts = (obj.get("FQDNHostList") or {}).get("FQDNHost") or []
-        refs += [("network", h) for h in (hosts if isinstance(hosts, list) else [hosts])]
-    return refs
-
-
-_REF_ENTITIES = {
-    "zone": ("Zone",),
-    "network": ("IPHost", "IPHostGroup", "FQDNHost", "FQDNHostGroup", "MACHost"),
-    "service": ("Services", "ServiceGroup"),
-    "schedule": ("Schedule",),
-}
-
-
-def _kind_of(entity: str) -> str | None:
-    return next((k for k, ents in _REF_ENTITIES.items() if entity in ents), None)
+references = entities.references
 
 
 def check_references(config: dict[str, list[dict]]) -> list[str]:
     """Hinweise auf Verweise zu Objekten, die (im Cache) nicht existieren."""
     idx = _index(config)
     warnings = []
-    for entity in ("FirewallRule", "IPHostGroup", "ServiceGroup", "FQDNHostGroup"):
+    for entity in entities.REFERRING_ENTITIES:
         for obj in config.get(entity, []):
             for kind, name in references(entity, obj):
                 if name in entities.BUILTIN_REFS:
                     continue
-                if not any(name in idx.get(e, {}) for e in _REF_ENTITIES[kind]):
-                    warnings.append(f"{entities.LABELS[entity]} „{obj['Name']}“ verweist auf unbekanntes Objekt "
-                                    f"„{name}“ – vordefiniertes Objekt der Firewall?")
+                if not any(name in idx.get(e, {}) for e in entities.REF_ENTITIES[kind]):
+                    warnings.append(f"{entities.LABELS[entity]} „{entities.oname(obj)}“ verweist auf unbekanntes "
+                                    f"Objekt „{name}“ – vordefiniertes Objekt der Firewall?")
     return warnings
 
 
 def used_by(config: dict[str, list[dict]], entity: str, name: str) -> list[str]:
-    kind = _kind_of(entity)
+    kind = entities.kind_of(entity)
     if not kind:
         return []
     out = []
-    for ent in ("FirewallRule", "IPHostGroup", "ServiceGroup", "FQDNHostGroup"):
+    for ent in entities.REFERRING_ENTITIES:
         for obj in config.get(ent, []):
             if (kind, name) in references(ent, obj):
-                out.append(f"{entities.LABELS[ent]} „{obj['Name']}“")
+                out.append(f"{entities.LABELS[ent]} „{entities.oname(obj)}“")
     return out
 
 
 def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) -> dict:
     entity, action, name = op.get("entity"), op.get("action"), (op.get("name") or "").strip()
-    if entity not in entities.NAMES:
-        raise HTTPException(400, f"Unbekannte Entität: {entity}")
+    if entity not in entities.names(entities.fmt_for(fw.connector)):
+        raise HTTPException(400, f"Entität {entity} passt nicht zur Anbindung dieser Firewall")
     if action not in ("add", "update", "remove"):
         raise HTTPException(400, "Aktion muss add, update oder remove sein")
     if not name:
         raise HTTPException(400, "Name fehlt")
     if action == "remove" and not connector.capabilities(fw)["remove"]:
         raise HTTPException(400, "Löschen ist über Sophos Central nicht möglich – Objekt stattdessen deaktivieren "
-                                 "oder die Firewall über die XML-API anbinden")
+                                 "oder die Firewall über die REST-API anbinden")
     existing = _index(config).get(entity, {})
     if action == "add" and name in existing:
         raise HTTPException(409, f"{entities.LABELS[entity]} „{name}“ existiert bereits")
@@ -163,20 +135,21 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
         data = op.get("data")
         if not isinstance(data, dict):
             raise HTTPException(400, "Objektdaten fehlen")
-        data = {k: v for k, v in data.items() if k not in ("Position", "After", "Before")}
-        if data.get("Name") != name:
+        drop = ("Position", "After", "Before") + entities.REST_READ_ONLY
+        data = {k: v for k, v in data.items() if k not in drop}
+        if data.get(entities.name_key(entity)) != name:
             raise HTTPException(400, "Umbenennen ist nicht möglich – neues Objekt anlegen und altes löschen")
         clean["data"] = data
         if action == "update" and diff.canonical(data) == diff.canonical(existing[name]) and not op.get("position"):
             raise HTTPException(400, "Keine Änderung gegenüber dem aktuellen Stand")
-    if entity == "FirewallRule" and op.get("position") and action != "remove":
+    if entity in entities.RULE_ENTITIES and op.get("position") and action != "remove":
         pos = op["position"]
         if pos.get("type") not in ("top", "bottom", "after", "before"):
             raise HTTPException(400, "Ungültige Position")
         if pos.get("type") in ("after", "before") and pos.get("ref") == name:
             raise HTTPException(400, "Eine Regel kann nicht relativ zu sich selbst positioniert werden")
         clean["position"] = {"type": pos["type"], **({"ref": pos["ref"]} if pos.get("ref") else {})}
-    elif entity == "FirewallRule" and action == "add":
+    elif entity in entities.RULE_ENTITIES and action == "add":
         clean["position"] = {"type": "bottom"}
     return clean
 
@@ -205,8 +178,8 @@ def with_before(ops: list[dict], config: dict[str, list[dict]]) -> list[dict]:
         o = {k: v for k, v in o.items() if k not in ("before", "before_position")}
         if o["action"] in ("update", "remove"):
             o["before"] = idx.get(o["entity"], {}).get(o["name"])
-            if o["entity"] == "FirewallRule":
-                o["before_position"] = rule_position(config, o["name"])
+            if o["entity"] in entities.RULE_ENTITIES:
+                o["before_position"] = rule_position(config, o["name"], o["entity"])
         out.append(o)
     return out
 

@@ -82,7 +82,7 @@ export default function Firewalls() {
       {fws && !fws.length && (
         <div className="panel"><Empty>
           Noch keine Firewalls. {me.is_superadmin || me.permissions.global.includes('admin')
-            ? <>Firewalls über <Link to="/admin/central">Sophos Central</Link> übernehmen oder direkt per XML-API hinzufügen.</>
+            ? <>Firewalls per REST-API (API-Key) hinzufügen oder über <Link to="/admin/central">Sophos Central</Link> übernehmen.</>
             : 'Bitte einen Administrator, Firewalls anzubinden oder Ihnen Rechte zu geben.'}
         </Empty></div>
       )}
@@ -115,7 +115,7 @@ export default function Firewalls() {
           )}
         </div>
       ))}
-      {adding && <Modal title="Firewall per XML-API hinzufügen" onClose={() => setAdding(false)} wide>
+      {adding && <Modal title="Firewall hinzufügen" onClose={() => setAdding(false)} wide>
         <FirewallForm groups={groups || []} onCancel={() => setAdding(false)}
           onSaved={(fw) => { setAdding(false); reload(); nav(`/firewalls/${fw.id}`) }} />
       </Modal>}

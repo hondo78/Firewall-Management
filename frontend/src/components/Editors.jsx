@@ -1,24 +1,31 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
-import { asList, listOf, policy, refOptions, setList, toXml } from './entities'
+import { asList, isRestEntity, listOf, policy, refOptions, setList, toXml } from './entities'
 import { ErrorBox, Field, Modal, Picker, Seg } from './ui'
 
-/** Rahmen für alle Editoren: Formular ⇄ XML-Expertenansicht, Speichern = in den Entwurf übernehmen. */
-function EditorShell({ title, entity, data, setData, isNew, form, onClose, onSubmit, extraFoot, positionField }) {
+/** Formular ⇄ Experten-Ansicht (XML bzw. JSON beim REST-Format); Speichern = in den Entwurf übernehmen. */
+export function EditorShell({ title, entity, data, setData, isNew, form, onClose, onSubmit, extraFoot, positionField }) {
+  const json = isRestEntity(entity)
   const [mode, setMode] = useState(form ? 'form' : 'xml')
-  const [xml, setXml] = useState('')
+  const [xml, setXml] = useState(() => (form ? '' : json ? JSON.stringify(data, null, 2) : toXml(entity, data)))
+
+  // Experten-Text → Objekt (JSON lokal, XML serverseitig wie die Firewall es liest)
+  const parse = async () => {
+    if (!json) return (await api('/xml/parse', { method: 'POST', body: { entity, xml } })).data
+    let obj
+    try { obj = JSON.parse(xml) } catch (e) { throw new Error(`JSON ungültig: ${e.message}`) }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj) || !obj.name) throw new Error('Objekt benötigt ein Feld „name“')
+    return obj
+  }
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState([])
   const [busy, setBusy] = useState(false)
 
   const switchMode = async (m) => {
     setError('')
-    if (m === 'xml') setXml(toXml(entity, data))
+    if (m === 'xml') setXml(json ? JSON.stringify(data, null, 2) : toXml(entity, data))
     if (m === 'form' && mode === 'xml') {
-      try {
-        const r = await api('/xml/parse', { method: 'POST', body: { entity, xml } })
-        setData(r.data)
-      } catch (e) { setError(e.message); return }
+      try { setData(await parse()) } catch (e) { setError(e.message); return }
     }
     setMode(m)
   }
@@ -28,7 +35,7 @@ function EditorShell({ title, entity, data, setData, isNew, form, onClose, onSub
     setError('')
     try {
       let payload = data
-      if (mode === 'xml') payload = (await api('/xml/parse', { method: 'POST', body: { entity, xml } })).data
+      if (mode === 'xml') payload = await parse()
       const r = await onSubmit(payload)
       if (r?.warnings?.length) setWarnings(r.warnings)
       else onClose()
@@ -38,14 +45,16 @@ function EditorShell({ title, entity, data, setData, isNew, form, onClose, onSub
   return (
     <Modal title={title} onClose={onClose} wide>
       <div className="row between" style={{ marginBottom: 12 }}>
-        {form ? <Seg options={[['form', 'Formular'], ['xml', 'XML (Experte)']]} value={mode} onChange={switchMode} />
-          : <span className="muted small">Für diesen Objekttyp gibt es nur den XML-Editor.</span>}
+        {form ? <Seg options={[['form', 'Formular'], ['xml', json ? 'JSON (Experte)' : 'XML (Experte)']]} value={mode} onChange={switchMode} />
+          : <span className="muted small">Für diesen Objekttyp gibt es nur den {json ? 'JSON' : 'XML'}-Editor.</span>}
         <span className="muted small">{isNew ? 'Neues Objekt' : 'Änderung'} wird in Ihren Entwurf übernommen – erst nach Genehmigung aktiv.</span>
       </div>
       {mode === 'form' ? form : (
         <div className="stack">
           <textarea className="code" value={xml} spellCheck={false} onChange={(e) => setXml(e.target.value)} />
-          <div className="muted small">Struktur wie in der Sophos-XML-API bzw. Entities.xml. Umbenennen ist nicht möglich.</div>
+          <div className="muted small">{json
+            ? 'Struktur wie in der SFOS REST-API (Felder id/createdAt/updatedAt werden ignoriert). Umbenennen ist nicht möglich.'
+            : 'Struktur wie in der Sophos-XML-API bzw. Entities.xml. Umbenennen ist nicht möglich.'}</div>
         </div>
       )}
       {mode === 'xml' && positionField}
@@ -74,7 +83,7 @@ const NEW_RULE = {
   },
 }
 
-function PositionField({ position, setPosition, rules, name, isNew }) {
+export function PositionField({ position, setPosition, rules, name, isNew }) {
   const others = rules.filter((r) => r !== name)
   return (
     <div className="form-grid" style={{ marginTop: 12 }}>

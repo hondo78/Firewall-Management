@@ -187,3 +187,53 @@ def test_removed_firewall_keeps_history(client, admin, fake):
     assert fw_id not in {f["id"] for f in client.get("/api/firewalls", headers=admin).json()}
     cr = client.get(f"/api/changes/{cid}", headers=admin).json()
     assert cr["status"] == "deployed" and cr["firewall_archived"] is True
+
+
+def test_rest_connector_workflow(client, admin, monkeypatch):
+    """Firewall per REST-API: Entwurf im REST-Format, Vier-Augen-Freigabe, Ausrollen."""
+    from app.sophos import connector as conn
+    from app import changes as ch
+    state = {"zones": [{"name": "LAN", "type": "lan"}, {"name": "WAN", "type": "wan"}],
+             "addressesIpv4": [], "firewallRulesIpv4": [{"name": "Alt", "ruleType": "firewall", "enabled": True,
+                                                         "action": "accept", "sourceZones": {"any": True},
+                                                         "destinationZones": {"any": True}}]}
+    applied = []
+    monkeypatch.setattr(conn, "fetch_config", lambda db, fw, log=None: (
+        {e: [dict(o) for o in state.get(e, [])] for e in conn.entities.REST_NAMES}, "REST v1"))
+
+    def apply(db, fw, ops, log):
+        applied.append(ops)
+        state.update(ch.effective_config(state, ops))
+    monkeypatch.setattr(conn, "apply", apply)
+    r = client.post("/api/firewalls", headers=admin, json={
+        "name": "FW-REST", "connector": "rest", "api_url": "10.0.1.1", "api_password": "sfos_x",
+        "api_key_expires_at": "2027-09-25"})
+    assert r.status_code == 200, r.text
+    fw = r.json()
+    assert fw["capabilities"]["format"] == "rest" and fw["api_key_expires_at"].startswith("2027-09-25")
+    client.post(f"/api/firewalls/{fw['id']}/sync", headers=admin)
+    cfg = client.get(f"/api/firewalls/{fw['id']}/config", headers=admin).json()
+    assert cfg["format"] == "rest" and cfg["entities"][0]["entity"] == "firewallRulesIpv4"
+    # XML-Entität passt nicht zur REST-Anbindung
+    bad = client.post(f"/api/firewalls/{fw['id']}/draft/operations", headers=admin, json={
+        "entity": "IPHost", "action": "add", "name": "X", "data": {"Name": "X"}})
+    assert bad.status_code == 400
+    op = make_user(client, admin, "operator", [("Operator", None)])
+    r = client.post(f"/api/firewalls/{fw['id']}/draft/operations", headers=op, json={
+        "entity": "addressesIpv4", "action": "add", "name": "Srv",
+        "data": {"name": "Srv", "type": "ipv4Address", "ipv4Address": "10.0.0.5", "id": "ignored"}})
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/firewalls/{fw['id']}/draft/operations", headers=op, json={
+        "entity": "firewallRulesIpv4", "action": "add", "name": "Neu",
+        "data": {"name": "Neu", "ruleType": "firewall", "enabled": True, "action": "accept",
+                 "sourceZones": {"zones": [{"name": "LAN"}]}, "destinationZones": {"zones": [{"name": "WAN"}]},
+                 "destinationNetworks": {"ipv4Addresses": [{"name": "Srv"}]}}, "position": {"type": "top"}})
+    assert r.status_code == 200 and r.json()["warnings"] == []
+    draft = r.json()["draft"]
+    assert "id" not in draft["operations"][0]["data"]
+    assert draft["operations"][1]["xml"].startswith("POST /api/firewall-config/v1/firewall/rules/ipv4")
+    client.post(f"/api/changes/{draft['id']}/submit", headers=op, json={"title": "REST", "justification": "Test"})
+    client.post(f"/api/changes/{draft['id']}/decision", headers=admin, json={"decision": "approve"})
+    deploy_sync(draft["id"])
+    assert client.get(f"/api/changes/{draft['id']}", headers=op).json()["status"] == "deployed"
+    assert [r["name"] for r in state["firewallRulesIpv4"]] == ["Neu", "Alt"]

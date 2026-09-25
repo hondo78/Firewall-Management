@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session as DbSession
 from .. import permissions
 from ..audit import audit, verify_chain
 from ..db import get_db
-from ..models import AuditLog, ChangeRequest, Firewall, User
+from datetime import timedelta
+
+from ..models import AuditLog, ChangeRequest, Firewall, User, utcnow
 from ..permissions import require_global
 from ..security import client_ip, get_current_user
 
@@ -99,6 +101,10 @@ def dashboard(user: User = Depends(get_current_user), db: DbSession = Depends(ge
         "firewalls_error": sum(1 for f in fws if f.last_sync_error),
         "firewalls_never_synced": sum(1 for f in fws if not f.last_sync_at),
         "firewalls_disconnected": sum(1 for f in fws if f.central_status and f.central_status.get("connected") is False),
+        # API-Keys, die in den nächsten 30 Tagen ablaufen (oder abgelaufen sind)
+        "keys_expiring": [{"id": f.id, "name": f.name, "expires_at": f.api_key_expires_at} for f in fws
+                          if f.connector == "rest" and f.api_key_expires_at
+                          and f.api_key_expires_at < utcnow() + timedelta(days=30)],
         "pending": sum(1 for c in crs if c.status == "pending"),
         "approved": sum(1 for c in crs if c.status in ("approved", "deploying")),
         "failed": sum(1 for c in crs if c.status in ("failed", "conflict")),

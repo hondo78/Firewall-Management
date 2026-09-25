@@ -1,5 +1,7 @@
 """Firewalls, Firewall-Gruppen, Konfigurationsansicht, Versionsstände/Vergleich und Firmware."""
 from fastapi import APIRouter, Depends, HTTPException, Request
+from datetime import date, datetime, time, timezone
+
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
@@ -12,7 +14,7 @@ from ..models import (CentralAccount, ChangeRequest, ConfigObject, ConfigSnapsho
 from ..permissions import firewall_or_404
 from ..security import client_ip, get_current_user
 from ..serializers import change_summary, firewall_out, group_out
-from ..sophos import connector, entities, xmlapi, xmlconv
+from ..sophos import connector, entities, restapi, xmlapi, xmlconv
 from ..sophos.central import CentralError
 
 router = APIRouter(prefix="/api", tags=["firewalls"])
@@ -77,10 +79,12 @@ def delete_group(group_id: str, request: Request, user: User = Depends(permissio
 class FirewallIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     group_id: str | None = None
-    connector: str = "xmlapi"
+    connector: str = "rest"
     api_url: str = ""
     api_username: str = ""
+    # XML-API: Passwort · REST-API: API-Key (beides verschlüsselt im selben Feld)
     api_password: str | None = None
+    api_key_expires_at: date | None = None
     verify_tls: bool = True
     central_account_id: str | None = None
     central_id: str = ""
@@ -113,19 +117,42 @@ def _check_manage_target(db: DbSession, user: User, group_id: str | None) -> Non
 
 
 def _apply_fw(db: DbSession, fw: Firewall, body: FirewallIn) -> None:
-    if body.connector not in ("xmlapi", "central"):
-        raise HTTPException(400, "Connector muss xmlapi oder central sein")
+    if body.connector not in ("rest", "xmlapi", "central"):
+        raise HTTPException(400, "Connector muss rest, xmlapi oder central sein")
     if body.group_id and not db.get(FirewallGroup, body.group_id):
         raise HTTPException(400, "Unbekannte Gruppe")
+    old_fmt = entities.fmt_for(fw.connector) if fw.connector else None
+    new_fmt = entities.fmt_for(body.connector)
+    if fw.last_sync_at and old_fmt and old_fmt != new_fmt:
+        # REST- und XML-Format sind nicht kompatibel: Cache neu aufbauen, offene Anträge blockieren den Wechsel
+        if db.execute(select(ChangeRequest.id).where(
+                ChangeRequest.firewall_id == fw.id,
+                ChangeRequest.status.in_(("pending", "approved", "deploying")))).first():
+            raise HTTPException(409, "Wechsel zwischen REST- und XML-Anbindung erst, wenn keine Anträge mehr offen sind")
+        for cr in db.execute(select(ChangeRequest).where(ChangeRequest.firewall_id == fw.id,
+                                                         ChangeRequest.status == "draft")).scalars():
+            cr.status = "withdrawn"
+        db.execute(delete(ConfigObject).where(ConfigObject.firewall_id == fw.id))
+        fw.config_hash, fw.last_sync_at = "", None
     fw.name, fw.group_id, fw.connector = body.name.strip(), body.group_id, body.connector
     fw.api_url, fw.api_username, fw.verify_tls = body.api_url.strip(), body.api_username.strip(), body.verify_tls
     if body.api_password is not None and body.api_password != "":
-        sync.encrypt_firewall_password(fw, body.api_password)
+        sync.encrypt_firewall_password(fw, body.api_password.strip())
+    if body.connector == "rest":
+        fw.api_key_expires_at = (datetime.combine(body.api_key_expires_at, time(23, 59), tzinfo=timezone.utc)
+                                 if body.api_key_expires_at else None)
     if body.central_account_id is not None:
         if body.central_account_id and not db.get(CentralAccount, body.central_account_id):
             raise HTTPException(400, "Unbekanntes Central-Konto")
         fw.central_account_id = body.central_account_id or None
         fw.central_id = body.central_id or fw.central_id
+    if fw.connector == "rest":
+        if not fw.api_url or not fw.api_password_enc:
+            raise HTTPException(400, "Für die REST-API sind Adresse und API-Key nötig")
+        try:
+            restapi.normalize_base_url(fw.api_url)
+        except restapi.RestApiError as e:
+            raise HTTPException(400, str(e))
     if fw.connector == "xmlapi":
         if not fw.api_url or not fw.api_username or not fw.api_password_enc:
             raise HTTPException(400, "Für die XML-API sind Adresse, Benutzer und Passwort nötig")
@@ -168,7 +195,7 @@ def update_firewall(firewall_id: str, body: FirewallIn, request: Request, user: 
           details={"before": before, "after": {"name": fw.name, "group_id": fw.group_id, "connector": fw.connector,
                                                "api_url": fw.api_url, "api_username": fw.api_username,
                                                "verify_tls": fw.verify_tls},
-                   "password_changed": bool(body.api_password)})
+                   "secret_changed": bool(body.api_password)})
     return firewall_out(db, fw, user)
 
 
@@ -240,9 +267,11 @@ def get_config(firewall_id: str, user: User = Depends(get_current_user), db: DbS
     draft = changes.get_draft(db, user, fw)
     draft_ops = draft.operations if draft else []
     preview = changes.effective_config(config, draft_ops) if draft_ops else config
+    fmt = entities.fmt_for(fw.connector)
     return {
+        "format": fmt,
         "entities": [{"entity": e, "label": label, "section": section, "count": len(config.get(e, []))}
-                     for e, label, section in entities.MANAGED],
+                     for e, label, section in entities.managed(fmt)],
         "objects": config,
         # Konfiguration inkl. eigenem Entwurf (Vorschau wie im Config-Studio-Editor)
         "preview": preview,
@@ -255,10 +284,14 @@ def get_config(firewall_id: str, user: User = Depends(get_current_user), db: DbS
 def object_xml(firewall_id: str, entity: str, name: str, user: User = Depends(get_current_user),
                db: DbSession = Depends(get_db)):
     fw = firewall_or_404(db, user, firewall_id)
-    obj = next((o for o in sync.cached_config(db, fw).get(entity, []) if o["Name"] == name), None)
+    obj = next((o for o in sync.cached_config(db, fw).get(entity, []) if entities.oname(o) == name), None)
     if obj is None:
         raise HTTPException(404, "Objekt nicht gefunden")
-    return {"xml": xmlconv.to_xml(entity, obj), "used_by": changes.used_by(sync.cached_config(db, fw), entity, name)}
+    used = changes.used_by(sync.cached_config(db, fw), entity, name)
+    if entity in entities.REST_RESOURCES:
+        import json
+        return {"format": "json", "xml": json.dumps(obj, indent=2, ensure_ascii=False), "used_by": used}
+    return {"format": "xml", "xml": xmlconv.to_xml(entity, obj), "used_by": used}
 
 
 class XmlParseIn(BaseModel):
@@ -288,6 +321,8 @@ def export_xml(firewall_id: str, request: Request, user: User = Depends(get_curr
     """Zwischengespeicherte Konfiguration als Entities.xml (z. B. zum Öffnen im Sophos Config Studio)."""
     from fastapi.responses import Response
     fw = firewall_or_404(db, user, firewall_id)
+    if entities.fmt_for(fw.connector) == "rest":
+        raise HTTPException(400, "Entities.xml gibt es nur für XML-/Central-Anbindung – REST: JSON-Export nutzen")
     config = sync.cached_config(db, fw)
     objs = [(e, o) for e in entities.NAMES for o in config.get(e, [])]
     audit(db, "config.exported", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
@@ -436,3 +471,19 @@ def central_info(firewall_id: str, user: User = Depends(get_current_user), db: D
     except CentralError as e:
         out["errors"].append(f"Alerts: {e}")
     return out
+
+
+@router.get("/firewalls/{firewall_id}/export.json")
+def export_json(firewall_id: str, request: Request, user: User = Depends(get_current_user),
+                db: DbSession = Depends(get_db)):
+    """Zwischengespeicherte Konfiguration als JSON (REST-Format bzw. XML-Dicts)."""
+    import json
+    from fastapi.responses import Response
+    fw = firewall_or_404(db, user, firewall_id)
+    config = sync.cached_config(db, fw)
+    audit(db, "config.exported", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
+          details={"firewall": fw.name, "objects": sum(len(v) for v in config.values()), "format": "json"})
+    body = {"firewall": fw.name, "format": entities.fmt_for(fw.connector), "exportedAt": datetime.now(timezone.utc)
+            .isoformat(), "objects": config}
+    return Response(json.dumps(body, indent=2, ensure_ascii=False), media_type="application/json",
+                    headers={"Content-Disposition": 'attachment; filename="firewall-config.json"'})

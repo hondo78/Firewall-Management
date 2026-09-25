@@ -1,4 +1,34 @@
-# Sophos-API: Abweichungen und nicht dokumentierte Punkte
+# Sophos-APIs: Abweichungen und nicht dokumentierte Punkte
+
+## SFOS REST-API (lokal auf der Firewall)
+
+Doku: <https://docs.sophos.com/nsg/sophos-firewall/rest-api/>. Eine herunterladbare Spezifikation gibt es dort
+nicht. Die Referenzseiten enthalten die OpenAPI-Daten aber komprimiert (docusaurus-openapi, `api:"eJ…"` = base64+zlib)
+in den JS-Chunks. Daraus zusammengesetzt: `docs/sfos-rest-openapi.json` (**709 Operationen auf 391 Pfaden**, Stand 25.09.2026).
+Die Firewall selbst bietet unter *Administration › API access* ebenfalls einen Download `OpenAPI.yaml` an.
+
+| Thema | Doku-Startseite | Spezifikation / echte Firewall |
+|---|---|---|
+| Basis-URL | `https://<fw>:<port>/firewall-config/v1` | `https://<fw>:<port>/api/firewall-config/v1` – nur diese antwortet (ohne `/api`: HTML-404, geprüft gegen SFOS am 25.09.2026) |
+| Codebeispiele | `GET /webconsole/APIController` mit Bearer-Key | das ist die **alte XML-API**; die Beispiele sind falsch |
+| Auth | `Authorization: Bearer <api-key>` | dito; ohne/mit falschem Key: `401 {"error":"unauthenticated","message":"Token missing or invalid."}` |
+
+Weitere Eigenschaften (aus der Spezifikation):
+- Objekte werden per Name **oder** UUID adressiert (`/{idOrName}`). Listen sind seitenweise (`page`, `pageSize` Std. 50,
+  `pageTotal`) → `{items, pages:{current,total,size,maxSize}}`. Filter: `nameContains`, `nameNotEquals`.
+- Regeln (`/firewall/rules/ipv4|ipv6`, `/nat/rules/…`, `/sd-wan/routes/…`, `/tls-inspection/rules/ipv4`): Anlegen
+  erfordert `position` (`top|bottom|after|before`) + `referenceItem.name`; `PATCH` kennt **keine** Position →
+  Verschieben über `POST …/move`. Massenlöschung: `POST …/delete` mit `{items:[{name}|{id}]}`.
+- Firewall-Regeln sind `oneOf` `ruleType: firewall | waf`. „Beliebig“ = `{"any": true}`, sonst z. B.
+  `{"zones":[{"name":"LAN"}]}` bzw. `{"ipv4Addresses":[…], "ipv4Groups":[…], "fqdnAddresses":[…], …}`.
+- Nur lesend: `id`, `createdAt`, `updatedAt` – das Tool speichert und sendet sie nicht.
+- Fehlerformat: `{"error", "message", "code"}`; 409 bei Namenskonflikt bzw. Objekt in Verwendung.
+- Rechte = Geräteprofil des Admins, der den Key erzeugt hat. Keys haben ein Ablaufdatum (in SFOS angezeigt).
+
+Das Tool verwaltet davon: Firewall-Regeln IPv4/IPv6, NAT-Regeln IPv4, IPv4/IPv6-Adressen und -Gruppen, FQDN-Adressen
+und -Gruppen, MAC-Adressen, Ländergruppen, Dienste, Dienstgruppen, Zonen, Zeitpläne (`app/sophos/entities.py`).
+
+## Sophos Central (Firewall Management API)
 
 Stand: 25.09.2026. Verglichen wurden der Leitfaden <https://developer.sophos.com/firewall-management/> und die
 OpenAPI-Spezifikation `https://developer.sophos.com/assets/specs/firewall-v1.yaml` (Version 1.5.0), die hinter

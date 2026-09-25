@@ -5,6 +5,7 @@ from .db import engine
 
 POSTGRES = [
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS api_key_expires_at TIMESTAMPTZ",
 ]
 
 

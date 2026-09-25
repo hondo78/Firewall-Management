@@ -57,6 +57,7 @@ services:
       MOCK_CLIENT_SECRET: ${MOCK_CLIENT_SECRET:-mock-secret}
       MOCK_FW_USER: ${MOCK_FW_USER:-apiadmin}
       MOCK_FW_PASSWORD: ${MOCK_FW_PASSWORD:-mock-password}
+      MOCK_API_KEY: ${MOCK_API_KEY:-sfos_mock_key}
     expose:
       - "8000"
 

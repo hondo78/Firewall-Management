@@ -3,3 +3,4 @@ backups/
 node_modules/
 dist/
 __pycache__/
+.sfos-key

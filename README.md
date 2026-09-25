@@ -6,15 +6,18 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 ## Funktionen
 
 - **Anbindung über REST-APIs**
+  - **SFOS REST-API** (empfohlen, `https://<fw>:4444/api/firewall-config/v1`, API-Key per Bearer-Token):
+    direktes Anlegen/Ändern/Verschieben/Löschen von Regeln und Objekten, Rechte über das Admin-Profil des Keys,
+    Warnung vor Ablauf des Keys.
   - **Sophos Central – Firewall Management API** (`/firewall/v1`): Inventar (Firewalls, Gruppen, Status),
     Firmware-Updates, Konfiguration lesen/schreiben über **Export/Import** (Archiv mit `Entities.xml`).
     Löschen ist über den Import nicht möglich.
     Zusätzlich Lizenzen (Licensing API) und offene Alerts (Common API) je Firewall.
-  - **Lokale XML-API der Firewall** (`https://<fw>:4444/webconsole/APIController`): vollständiges
-    Anlegen/Ändern/Löschen, auch für Firewalls ohne Sophos Central.
+  - **Alte XML-API der Firewall** (`/webconsole/APIController`, Benutzer/Passwort): nur noch für Firmware ohne
+    REST-API.
 - **Konfigurationsansicht im Stil des Sophos Config Studio**: Navigator nach Bereichen (Regeln, Hosts & Dienste,
-  Netzwerk, System), Regeltabelle wie in SFOS, Formular-Editoren für Regeln, IP-Hosts, Dienste, Gruppen und ein
-  XML-Experteneditor für alle Objekte; Download als `Entities.xml` (öffnet im Config Studio).
+  Netzwerk, System), Regeltabelle wie in SFOS, Formular-Editoren für Regeln, Adressen, Dienste, Gruppen und ein
+  Experteneditor (JSON bei REST, XML sonst) für alle Objekte; Export als JSON bzw. `Entities.xml` (Config Studio).
 - **Änderungsanträge (Vier-Augen-Prinzip)**: Änderungen landen in einem Entwurf (Vorschau direkt in der Tabelle),
   werden mit Titel, Begründung, Ticket und optionalem Wartungsfenster eingereicht und müssen von 1–3 *anderen*
   Personen genehmigt werden. Ablehnung nur mit Begründung. Danach automatisches oder manuelles Ausrollen.
@@ -46,8 +49,9 @@ XML-API von vier Demo-Firewalls nachbildet:
 
 - Sophos Central: *Administration › Sophos Central › Konto verbinden*, Client-ID `mock-client`,
   Secret `mock-secret`, unter „Erweitert“ beide URLs auf `http://sophos-mock:8000` → „Firewalls übernehmen“.
-- XML-API: *Firewalls › Firewall hinzufügen*, Adresse `http://sophos-mock:8000/fw/C0100LABOR00001`,
-  Benutzer `apiadmin`, Passwort `mock-password`, TLS-Prüfung aus.
+- REST-API: *Firewalls › Firewall hinzufügen*, Anbindung „SFOS REST-API“, Adresse
+  `http://sophos-mock:8000/fw/X21002ZENTRALE1` (oder eine andere Seriennummer), API-Key `sfos_mock_key`.
+- XML-API (alt): Adresse `http://sophos-mock:8000/fw/C0100LABOR00001`, Benutzer `apiadmin`, Passwort `mock-password`.
 - Drift simulieren: `docker compose exec backend python -c "import httpx; httpx.post('http://sophos-mock:8000/mock/fw/<SERIAL>/tamper')"`
 
 Für den Produktivbetrieb `COMPOSE_PROFILES=` leeren (Stand dieser Installation: Attrappe ist aus,
@@ -61,5 +65,9 @@ Vor dem ersten Antrag den **Probelauf** ausführen (Sophos Central: Administrati
 
 - **Sophos Central**: Service Principal unter *Globale Einstellungen › API-Anmeldeinformationen* anlegen.
   Partner-/Organisationskonten: Tenant nach dem Speichern auswählen.
-- **XML-API**: auf der Firewall *Backup & firmware › API* aktivieren, die IP dieses Servers erlauben und einen
+- **REST-API** (empfohlen): auf der Firewall unter *Administration › API access* die IP dieses Servers erlauben.
+  Einen eigenen API-Administrator mit passendem Geräteprofil (Lesen/Schreiben für Firewall-Regeln und Objekte)
+  anlegen, damit einen API-Key erzeugen und ihn samt Ablaufdatum unter *Firewall › Einstellungen* eintragen.
+  Der Key hat genau die Rechte dieses Administrators.
+- **XML-API** (alt): auf der Firewall *Backup & firmware › API* aktivieren, die IP dieses Servers erlauben und einen
   eigenen API-Administrator verwenden.

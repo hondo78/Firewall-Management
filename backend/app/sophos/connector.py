@@ -1,4 +1,8 @@
-"""Einheitlicher Zugriff auf eine Firewall – über Sophos Central (Import/Export) oder die lokale XML-API."""
+"""Einheitlicher Zugriff auf eine Firewall.
+
+Connectoren: "rest" (SFOS REST-API, empfohlen), "central" (Sophos Central Import/Export), "xmlapi" (alte XML-API).
+"rest" arbeitet im REST-Format (entities.REST_RESOURCES), die beiden anderen im XML-Format.
+"""
 from typing import Callable
 
 from sqlalchemy.orm import Session as DbSession
@@ -7,9 +11,10 @@ from .. import crypto
 from ..models import CentralAccount, Firewall
 from . import entities, xmlconv
 from .central import CentralClient, CentralError
+from .restapi import RestApiClient, RestApiError, patch_body
 from .xmlapi import XmlApiClient, XmlApiError
 
-ConnectorError = (CentralError, XmlApiError)
+ConnectorError = (CentralError, XmlApiError, RestApiError)
 Log = Callable[[str], None]
 
 
@@ -28,6 +33,11 @@ def xml_client(fw: Firewall) -> XmlApiClient:
     return XmlApiClient(fw.api_url, fw.api_username, password, fw.verify_tls)
 
 
+def rest_client(fw: Firewall) -> RestApiClient:
+    key = crypto.decrypt(fw.api_password_enc, f"firewall:{fw.id}") if fw.api_password_enc else ""
+    return RestApiClient(fw.api_url, key, fw.verify_tls)
+
+
 def _central_for(db: DbSession, fw: Firewall) -> tuple[CentralClient, str]:
     acc = db.get(CentralAccount, fw.central_account_id) if fw.central_account_id else None
     if not acc or not fw.central_id:
@@ -37,8 +47,10 @@ def _central_for(db: DbSession, fw: Firewall) -> tuple[CentralClient, str]:
 
 def capabilities(fw: Firewall) -> dict:
     if fw.connector == "central":
-        return {"remove": False, "label": "Sophos Central (Import/Export)"}
-    return {"remove": True, "label": "XML-API (direkt)"}
+        return {"remove": False, "label": "Sophos Central (Import/Export)", "format": "xml"}
+    if fw.connector == "rest":
+        return {"remove": True, "label": "SFOS REST-API", "format": "rest"}
+    return {"remove": True, "label": "XML-API (alt)", "format": "xml"}
 
 
 def fetch_config(db: DbSession, fw: Firewall, log: Log | None = None) -> tuple[dict[str, list[dict]], str]:
@@ -48,6 +60,23 @@ def fetch_config(db: DbSession, fw: Firewall, log: Log | None = None) -> tuple[d
         archive = client.export_config(cid, entities.NAMES, log)
         data, version = xmlconv.parse_entities_xml(xmlconv.read_tar_entities(archive), set(entities.NAMES))
         return {e: data.get(e, []) for e in entities.NAMES}, version
+    if fw.connector == "rest":
+        client = rest_client(fw)
+        out = {}
+        for entity, (path, _, _) in entities.REST_RESOURCES.items():
+            try:
+                items = client.list(path)
+            except RestApiError as e:
+                # Ressource auf dieser Firmware nicht vorhanden oder vom Admin-Profil nicht lesbar → leer lassen,
+                # damit der Rest funktioniert; Auth-/Netzfehler dagegen abbrechen
+                if e.status in (403, 404):
+                    if log:
+                        log(f"{entities.LABELS[entity]}: übersprungen ({e})")
+                    out[entity] = []
+                    continue
+                raise
+            out[entity] = [strip_read_only(o) for o in items]
+        return out, "REST v1"
     client = xml_client(fw)
     data = client.get_many(entities.NAMES)
     return data, client.api_version
@@ -60,6 +89,10 @@ def test_connection(db: DbSession, fw: Firewall) -> str:
         if cid not in ids:
             raise CentralError("Firewall ist im Central-Konto nicht (mehr) vorhanden")
         return "Sophos Central erreichbar, Firewall gefunden"
+    if fw.connector == "rest":
+        client = rest_client(fw)
+        client.test()
+        return f"Anmeldung per API-Key erfolgreich ({client.base_url}{client.prefix})"
     version = xml_client(fw).test()
     return f"Anmeldung erfolgreich (API-Version {version or 'unbekannt'})"
 
@@ -80,6 +113,9 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
         if result != "success":
             raise DeployError(f"Import auf der Firewall fehlgeschlagen (Ergebnis: {result})")
         log("Import erfolgreich abgeschlossen")
+        return
+    if fw.connector == "rest":
+        _rest_apply(rest_client(fw), ordered, log)
         return
     client = xml_client(fw)
     done: list[dict] = []
@@ -120,3 +156,72 @@ def _rollback(client: XmlApiClient, done: list[dict], log: Log) -> None:
             log(f"  zurückgerollt: {_label(o)}")
         except XmlApiError as e:
             log(f"  Rücknahme fehlgeschlagen für {_label(o)}: {e} – bitte manuell prüfen!")
+
+
+# --- REST ----------------------------------------------------------------------------------------------------
+
+def strip_read_only(obj: dict) -> dict:
+    return {k: v for k, v in obj.items() if k not in entities.REST_READ_ONLY}
+
+
+def _rest_one(client: RestApiClient, o: dict) -> str:
+    path = entities.REST_RESOURCES[o["entity"]][0]
+    is_rule = o["entity"] in entities.RULE_ENTITIES
+    if o["action"] == "remove":
+        client.delete(path, o["name"])
+        return "gelöscht"
+    if o["action"] == "add":
+        body = dict(o["data"])
+        if is_rule:
+            from .restapi import position_body
+            body.update(position_body(o.get("position")))
+        client.create(path, body)
+        return "angelegt"
+    body = patch_body(o.get("before"), o["data"])
+    done = []
+    if body:
+        client.update(path, o["name"], body)
+        done.append(f"geändert ({', '.join(body)})")
+    if is_rule and o.get("position"):
+        client.move(path, o["name"], o["position"])
+        done.append("verschoben")
+    return " und ".join(done) or "keine Änderung"
+
+
+def _rest_undo(client: RestApiClient, o: dict) -> None:
+    path = entities.REST_RESOURCES[o["entity"]][0]
+    is_rule = o["entity"] in entities.RULE_ENTITIES
+    if o["action"] == "add":
+        client.delete(path, o["name"])
+    elif o["action"] == "update":
+        body = patch_body(o["data"], o["before"])
+        if body:
+            client.update(path, o["name"], body)
+        if is_rule and o.get("position") and o.get("before_position"):
+            client.move(path, o["name"], o["before_position"])
+    else:
+        from .restapi import position_body
+        body = dict(o["before"])
+        if is_rule:
+            body.update(position_body(o.get("before_position")))
+        client.create(path, body)
+
+
+def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log) -> None:
+    done: list[dict] = []
+    for o in ordered:
+        try:
+            msg = _rest_one(client, o)
+        except RestApiError as e:
+            log(f"FEHLER bei {_label(o)}: {e}")
+            if done:
+                log(f"Rolle {len(done)} bereits angewendete Operation(en) zurück …")
+            for d in reversed(done):
+                try:
+                    _rest_undo(client, d)
+                    log(f"  zurückgerollt: {_label(d)}")
+                except RestApiError as ue:
+                    log(f"  Rücknahme fehlgeschlagen für {_label(d)}: {ue} – bitte manuell prüfen!")
+            raise DeployError(f"{_label(o)}: {e}") from e
+        done.append(o)
+        log(f"{_label(o)}: {msg}")
