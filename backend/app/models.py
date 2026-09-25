@@ -46,6 +46,13 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     # Benachrichtigungen: E-Mail an/aus, Telegram-Chat (per Einmal-Code aus dem Profil verknüpft)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Zwei-Faktor (TOTP): Geheimnis verschlüsselt; pending = während der Einrichtung, noch nicht bestätigt
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    totp_secret_enc: Mapped[str] = mapped_column(Text, default="", server_default="")
+    totp_pending_enc: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Herkunft: "local" (Passwort) oder "oidc" (SSO) – OIDC-Benutzer können sich nicht per Passwort anmelden
+    auth_source: Mapped[str] = mapped_column(String(10), default="local", server_default="local")
+    oidc_subject: Mapped[str] = mapped_column(String(255), default="", server_default="", index=True)
     telegram_chat_id: Mapped[str] = mapped_column(String(40), default="", server_default="")
 
     assignments: Mapped[list["RoleAssignment"]] = relationship(back_populates="user", cascade="all, delete-orphan")

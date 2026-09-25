@@ -29,6 +29,17 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 - **Dokumentation**: Audit-Log mit SHA-256-Hash-Kette (Integritätsprüfung, CSV-Export, optional Syslog),
   Verlauf/Kommentare je Antrag, Ausroll-Protokoll mit dem gesendeten XML, Versionsstände der Konfiguration
   inkl. Vergleich (auch zwischen Firewalls) und Erkennung von Änderungen außerhalb des Tools.
+- **Befristete Änderungen**: Antrag mit „gültig bis“ – danach legt das System automatisch die Rücknahme an
+  (wahlweise vorab genehmigt, weil die Befristung Teil der Freigabe war). Rücknahme ausgerollter Anträge auch durch
+  Approver/Superadmins, stets mit Vier-Augen-Freigabe.
+- **Sammelanträge & Vorlagen**: dieselbe Änderung auf mehreren Firewalls (einmal genehmigen, je Firewall ausrollen),
+  wiederverwendbare Vorlagen, Abgleich einer Gruppe gegen eine Referenz-Firewall.
+- **Regel-Prüfung**: Any-Any, offen aus dem Internet, verdeckte/redundante Regeln, fehlende Protokollierung,
+  ungenutzte/doppelte Objekte – beim Einreichen, für den Approver und als Tab „Analyse“.
+- **Benachrichtigungen**: E-Mail, Microsoft Teams, Telegram (mit Genehmigen-Knopf) für neue Anträge, Entscheidungen,
+  Ausrollen/Fehler, ablaufende Befristungen und API-Keys sowie Änderungen außerhalb des Tools.
+- **Anmeldung**: Zwei-Faktor (TOTP) wahlweise verpflichtend, SSO per OpenID Connect (Entra ID, Authentik, Keycloak …)
+  mit Rollen aus Gruppen, erneute Anmeldung vor dem Genehmigen.
 - **Probelauf**: prüft Anmeldung, Rechte und alle benötigten Endpunkte mit rein lesenden Aufrufen, für
   Central-Konten und einzelne Firewalls. Abweichungen zwischen Sophos-Leitfaden und OpenAPI-Spezifikation sowie
   die Suche nach nicht dokumentierten Endpunkten: siehe `docs/sophos-api-notes.md`.

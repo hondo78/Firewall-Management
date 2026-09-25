@@ -17,6 +17,12 @@ POSTGRES = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR(40) NOT NULL DEFAULT ''",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS api_key_warned_days INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS batch_id VARCHAR(36)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_enc TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_pending_enc TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_source VARCHAR(10) NOT NULL DEFAULT 'local'",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject VARCHAR(255) NOT NULL DEFAULT ''",
+    "CREATE INDEX IF NOT EXISTS ix_users_oidc_subject ON users (oidc_subject)",
     "CREATE INDEX IF NOT EXISTS ix_change_requests_batch_id ON change_requests (batch_id)",
 ]
 

@@ -25,12 +25,19 @@ export async function api(path, { method = 'GET', body, raw = false } = {}) {
   }
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`
+    let code = ''
     try {
       const j = await res.json()
       if (typeof j.detail === 'string') msg = j.detail
       else if (Array.isArray(j.detail)) msg = j.detail.map((d) => `${d.loc?.slice(-1)[0]}: ${d.msg}`).join(', ')
+      else if (j.detail?.message) { msg = j.detail.message; code = j.detail.code || '' }
     } catch { /* keine JSON-Antwort */ }
-    throw new Error(msg)
+    // Pflicht-Zwei-Faktor noch nicht eingerichtet → App leitet ins Profil
+    if (code === 'mfa_setup_required') window.dispatchEvent(new Event('fwm:mfa-setup'))
+    const err = new Error(msg)
+    err.code = code
+    err.status = res.status
+    throw err
   }
   if (raw) return res
   return res.status === 204 ? null : res.json()

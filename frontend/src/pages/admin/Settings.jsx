@@ -26,6 +26,19 @@ export default function SettingsPage() {
           <span>Genehmigte Anträge automatisch ausrollen <span className="muted small">(sonst manuell durch Berechtigte mit „change.deploy“)</span></span></label>
         <label className="check"><input type="checkbox" checked={form.require_ticket} onChange={(e) => setForm({ ...form, require_ticket: e.target.checked })} />
           <span>Ticket-Referenz beim Einreichen verpflichtend</span></label>
+        <h3 style={{ margin: '10px 0 0' }}>Anmeldung & Sicherheit</h3>
+        <Field label="Zwei-Faktor-Anmeldung verpflichtend für" hint="Betroffene müssen TOTP einrichten, bevor sie weiterarbeiten können. Vorher selbst einrichten!">
+          <select value={form.require_mfa} onChange={(e) => setForm({ ...form, require_mfa: e.target.value })} style={{ maxWidth: 360 }}>
+            <option value="none">niemanden (freiwillig)</option>
+            <option value="privileged">Genehmigen, Ausrollen, Verwalten, Admins</option>
+            <option value="all">alle Benutzer</option>
+          </select>
+        </Field>
+        <Field label="Vor dem Genehmigen neu anmelden nach (Minuten)" hint="0 = aus. Genehmigen per Telegram ist davon ausgenommen (eigener Faktor: verknüpftes Telefon).">
+          <input type="number" min={0} value={form.reauth_minutes} onChange={(e) => setForm({ ...form, reauth_minutes: Number(e.target.value) })} style={{ maxWidth: 200 }} />
+        </Field>
+        <label className="check"><input type="checkbox" checked={form.oidc_counts_as_mfa} onChange={(e) => setForm({ ...form, oidc_counts_as_mfa: e.target.checked })} />
+          <span>SSO-Anmeldungen erfüllen die Zwei-Faktor-Pflicht <span className="muted small">(MFA erzwingt der Identity Provider)</span></span></label>
         <h3 style={{ margin: '10px 0 0' }}>Befristete Änderungen</h3>
         <label className="check"><input type="checkbox" checked={form.temp_revert_preapproved} onChange={(e) => setForm({ ...form, temp_revert_preapproved: e.target.checked })} />
           <span>Automatische Rücknahme nach Ablauf ohne erneute Freigabe ausrollen <span className="muted small">(die Befristung ist Teil der ursprünglichen Genehmigung)</span></span></label>

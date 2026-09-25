@@ -17,6 +17,12 @@ DEFAULTS: dict = {
     "temp_revert_preapproved": True,
     # Maximale Befristung in Tagen (0 = unbegrenzt)
     "temp_max_days": 90,
+    # Zwei-Faktor-Pflicht: "none" | "privileged" (Genehmigen/Verwalten/Admin) | "all"
+    "require_mfa": "none",
+    # Vor dem Genehmigen/Ablehnen erneut anmelden, wenn die Anmeldung länger zurückliegt (Minuten, 0 = aus)
+    "reauth_minutes": 30,
+    # Anmeldungen per SSO (OIDC) erfüllen die Zwei-Faktor-Pflicht (MFA erledigt der Identity Provider)
+    "oidc_counts_as_mfa": True,
 }
 
 
@@ -36,6 +42,8 @@ def set_many(db: DbSession, values: dict) -> dict:
             continue
         default = DEFAULTS[key]
         value = type(default)(value)
+        if key == "require_mfa" and value not in ("none", "privileged", "all"):
+            raise ValueError("require_mfa")
         if key == "required_approvals":
             value = max(1, min(value, 5))
         if key == "sync_interval_minutes":

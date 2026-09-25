@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api, canAnywhere, getToken, setToken } from './api'
 import ErrorBoundary from './components/ErrorBoundary'
 import Audit from './pages/Audit'
@@ -12,6 +12,7 @@ import Login from './pages/Login'
 import Profile from './pages/Profile'
 import CentralAccounts from './pages/admin/CentralAccounts'
 import Notifications from './pages/admin/Notifications'
+import Sso from './pages/admin/Sso'
 import Roles from './pages/admin/Roles'
 import SettingsPage from './pages/admin/Settings'
 import Users from './pages/admin/Users'
@@ -42,7 +43,14 @@ function Layout({ children }) {
   const { me, logout, counts } = useAuth()
   const [open, setOpen] = useState(false)
   const loc = useLocation()
+  const nav = useNavigate()
   useEffect(() => setOpen(false), [loc.pathname])
+  // Pflicht-Zwei-Faktor fehlt → ins Profil zur Einrichtung
+  useEffect(() => {
+    const go = () => nav('/profile')
+    window.addEventListener('fwm:mfa-setup', go)
+    return () => window.removeEventListener('fwm:mfa-setup', go)
+  }, [nav])
   const isAdmin = me.is_superadmin || me.permissions.global.includes('admin')
   const link = (to, icon, label, extra) => (
     <NavLink to={to} end={to === '/'}><Icon d={I[icon]} />{label}{extra}</NavLink>
@@ -67,6 +75,7 @@ function Layout({ children }) {
             {link('/admin/roles', 'roles', 'Rollen & Rechte')}
             {link('/admin/central', 'cloud', 'Sophos Central')}
             {link('/admin/notifications', 'bell', 'Benachrichtigungen')}
+            {link('/admin/sso', 'roles', 'Anmeldung & SSO')}
             {link('/admin/settings', 'settings', 'Einstellungen')}
           </>}
         </nav>
@@ -76,7 +85,10 @@ function Layout({ children }) {
           <button className="link" onClick={logout}>Abmelden</button>
         </div>
       </aside>
-      <main className="content"><ErrorBoundary key={loc.pathname}>{children}</ErrorBoundary></main>
+      <main className="content">
+        {me.mfa_setup_required && <div className="alert warn">Für Ihre Rolle ist die Zwei-Faktor-Anmeldung Pflicht. Bitte im Profil einrichten – bis dahin sind andere Bereiche gesperrt.</div>}
+        <ErrorBoundary key={loc.pathname}>{children}</ErrorBoundary>
+      </main>
     </div>
   )
 }
@@ -127,6 +139,7 @@ export default function App() {
           <Route path="/admin/central" element={<CentralAccounts />} />
           <Route path="/admin/settings" element={<SettingsPage />} />
           <Route path="/admin/notifications" element={<Notifications />} />
+          <Route path="/admin/sso" element={<Sso />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

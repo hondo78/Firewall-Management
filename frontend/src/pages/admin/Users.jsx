@@ -66,6 +66,8 @@ function UserModal({ user, roles, groups, onClose, onSaved }) {
         <ErrorBox error={error} />
       </div>
       <div className="modal-foot">
+        {user?.totp_enabled && <button onClick={async () => { await api(`/auth/users/${user.id}/totp/reset`, { method: 'POST' }); onSaved() }}
+          title="z. B. bei Verlust des Telefons">2FA zurücksetzen</button>}
         {user && user.id !== me.id && user.active && (confirmDelete
           ? <button className="danger solid" onClick={deactivate}>Wirklich deaktivieren</button>
           : <button className="danger" onClick={() => setConfirmDelete(true)}>Deaktivieren</button>)}
@@ -96,7 +98,9 @@ export default function Users() {
             <tbody>
               {users.map((u) => (
                 <tr key={u.id} className="clickable" onClick={() => setEdit(u)}>
-                  <td><b>{u.username}</b>{u.display_name && <div className="small muted">{u.display_name}</div>}</td>
+                  <td><b>{u.username}</b>{u.auth_source === 'oidc' && <span className="badge b-info" style={{ marginLeft: 6 }}>SSO</span>}
+                    {u.totp_enabled && <span className="badge b-ok" style={{ marginLeft: 6 }}>2FA</span>}
+                    {u.display_name && <div className="small muted">{u.display_name}</div>}</td>
                   <td>{u.is_superadmin ? <span className="badge b-accent">Superadmin</span> : (
                     <span className="chips">{u.assignments.map((a) => <span key={a.id} className="chip">{a.role} · {a.group_id ? groupName(a.group_id) : 'global'}</span>)}
                       {!u.assignments.length && <span className="muted small">keine</span>}</span>

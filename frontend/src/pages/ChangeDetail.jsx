@@ -5,15 +5,20 @@ import { EVENT_LABEL, STATUS_LABEL, api, crNo, fmt } from '../api'
 import { ErrorBox, Field, Modal, Progress, Status, useLoad } from '../components/ui'
 import { OperationCard } from './FirewallView'
 import Findings from '../components/Findings'
+import { ReauthModal } from '../components/Reauth'
 
 function DecisionBox({ cr, onDone }) {
   const [comment, setComment] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [reauthFor, setReauthFor] = useState(null)
   const decide = async (decision) => {
     setBusy(true)
     setError('')
-    try { onDone(await api(`/changes/${cr.id}/decision`, { method: 'POST', body: { decision, comment } })) } catch (e) { setError(e.message) }
+    try { onDone(await api(`/changes/${cr.id}/decision`, { method: 'POST', body: { decision, comment } })) } catch (e) {
+      if (e.code === 'reauth_required') setReauthFor(decision)
+      else setError(e.message)
+    }
     setBusy(false)
   }
   return (
@@ -23,6 +28,8 @@ function DecisionBox({ cr, onDone }) {
         {cr.required_approvals - cr.approvals > 1 ? ` fehlen noch ${cr.required_approvals - cr.approvals - 1} weitere Genehmigung(en).` : ' wird der Antrag ausgerollt' + (cr.deploy_after ? ` (frühestens ${fmt(cr.deploy_after)}).` : '.')}</div>
       <Field label="Kommentar" hint="Bei Ablehnung Pflicht"><textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} /></Field>
       <ErrorBox error={error} />
+      {reauthFor && <ReauthModal onClose={() => setReauthFor(null)} onDone={() => { const d = reauthFor; setReauthFor(null); decide(d) }} />}
+      {cr.batch?.length > 1 && <div className="alert info small">Sammelantrag: Ihre Entscheidung gilt für alle {cr.batch.length} Firewalls.</div>}
       <div className="row">
         <button className="ok" disabled={busy} onClick={() => decide('approve')}>Genehmigen</button>
         <button className="danger" disabled={busy || !comment.trim()} onClick={() => decide('reject')}>Ablehnen</button>

@@ -1,22 +1,44 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { ErrorBox, Field } from '../components/ui'
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [mfaToken, setMfaToken] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sso, setSso] = useState(null)
+
+  useEffect(() => {
+    api('/auth/oidc/info').then(setSso).catch(() => {})
+    // Rückkehr vom Identity Provider: Einmal-Code gegen Sitzung tauschen
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('oidc_error')) setError(`SSO: ${q.get('oidc_error')}`)
+    if (q.get('oidc')) {
+      api('/auth/oidc/exchange', { method: 'POST', body: { code: q.get('oidc') } })
+        .then((r) => { window.history.replaceState(null, '', '/'); onLogin(r.token, r.user) })
+        .catch((e) => setError(e.message))
+    }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps -- nur beim Laden der Seite
 
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError('')
     try {
-      const r = await api('/auth/login', { method: 'POST', body: { username, password } })
-      onLogin(r.token, r.user)
+      if (mfaToken) {
+        const r = await api('/auth/login/totp', { method: 'POST', body: { mfa_token: mfaToken, code } })
+        onLogin(r.token, r.user)
+      } else {
+        const r = await api('/auth/login', { method: 'POST', body: { username, password } })
+        if (r.mfa_required) setMfaToken(r.mfa_token)
+        else onLogin(r.token, r.user)
+      }
     } catch (err) {
       setError(err.message)
+      if (mfaToken && err.status === 401 && /abgelaufen/.test(err.message)) setMfaToken(null)
     } finally {
       setBusy(false)
     }
@@ -32,15 +54,28 @@ export default function Login({ onLogin }) {
           </span>
           <span>Firewall-Management<small className="muted">Sophos Firewall · Vier-Augen-Prinzip</small></span>
         </div>
-        <Field label="Benutzername">
-          <input autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
-        </Field>
-        <Field label="Passwort">
-          <input type="password" autoComplete="current-password" value={password}
-            onChange={(e) => setPassword(e.target.value)} />
-        </Field>
+        {!mfaToken ? <>
+          <Field label="Benutzername">
+            <input autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          </Field>
+          <Field label="Passwort">
+            <input type="password" autoComplete="current-password" value={password}
+              onChange={(e) => setPassword(e.target.value)} />
+          </Field>
+        </> : (
+          <Field label="Code aus der Authenticator-App" hint="6 Ziffern – ändert sich alle 30 Sekunden">
+            <input autoFocus inputMode="numeric" autoComplete="one-time-code" value={code} maxLength={7}
+              onChange={(e) => setCode(e.target.value)} />
+          </Field>
+        )}
         <ErrorBox error={error} />
-        <button className="primary" disabled={busy || !username || !password}>Anmelden</button>
+        <button className="primary" disabled={busy || (mfaToken ? code.replace(' ', '').length < 6 : !username || !password)}>
+          {mfaToken ? 'Bestätigen' : 'Anmelden'}</button>
+        {mfaToken && <button type="button" className="link small" onClick={() => { setMfaToken(null); setCode('') }}>Zurück</button>}
+        {sso?.enabled && !mfaToken && <>
+          <div className="muted small" style={{ textAlign: 'center' }}>oder</div>
+          <button type="button" onClick={() => { window.location.href = '/api/auth/oidc/login' }}>{sso.label || 'Mit SSO anmelden'}</button>
+        </>}
       </form>
     </div>
   )

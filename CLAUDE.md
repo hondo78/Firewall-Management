@@ -42,6 +42,26 @@ They use **two data formats**. `rest` keeps REST JSON objects 1:1 (entities like
 - `xmlconv.py`: lossless XML⇄dict. Text-only → str, repeated tags → list. **List containers** (name ends in `s`/`List`, uniform children) are always `{Tag: [...]}`, even with a single child. `Position`/`After`/`Before` are write-only directives: they are stripped from stored objects and passed per operation (`with_position`).
 - `entities.py`: the managed entity list (`MANAGED`, export names = XML tags) and `order_operations` (rule removals first, then adds/updates in dependency order, then object removals).
 
+### Workflow extensions (`changes.py`, `worker.py`)
+- **Temporary changes:** `expires_at`/`expiry_state`. `worker._expire_due` → `changes.expire` creates a system revert (`created_by=NULL`, shown as "system"). It is pre-approved (`status=approved`, event `preapproved`) when the setting `temp_revert_preapproved` is on; otherwise it waits in `pending`. If the config has changed, `expiry_state="failed"` plus an audit entry and a notification.
+- **Batch requests:** `batch_id` on several `ChangeRequest`s, one per firewall. `submit(..., extra_firewall_ids)` validates every target first (`_prepare_batch`, all or nothing, same format required). `decide`/`withdraw` act on all pending members; `_check_decide` runs for every member before anything changes. Deploys stay per firewall.
+- Position refs (`after`/`before`) must exist in the target config (`validate_operation`).
+- **Templates:** `change_templates` (ops without `before`) applied via `draft_add`. The group diff is `GET /api/groups/{id}/drift?reference=`.
+- **Lint:** `lint.py` normalizes rules from both formats into `Rule` (sets, None = any). `for_change` reports only findings the request introduces (compared by `_key`, which ignores positions). `analyze` gives the full report. "unused" only checks rules, groups and NAT, not VPN or web filter, which is why the UI collapses these hints.
+
+### Notifications (`notify/`)
+- `notify.change_event(id, kind)` is called **inside** the workflow functions (submit/decide/deploy/expire…), so web and Telegram trigger the same messages. It runs in a thread pool; tests set `notify.SYNC = True` (SQLite StaticPool).
+- Channels: SMTP, a Teams workflow webhook with an Adaptive Card, and Telegram (long polling in a thread started by the worker, linked via a one-time code; `approve:<id>` callbacks go through `changes.decide`).
+- Config lives in `settings["notifications"]` with secrets encrypted (AAD `notify:<channel>.<field>`). `check_reminders` (worker) handles expiry within 24 h and API keys at 30/7/1 days (`api_key_warned_days`).
+- `public_url` there is also the base for OIDC redirects.
+
+### Authentication (`security.py`, `mfa.py`, `oidc.py`, `routers/auth.py`)
+- JWT claims: `iat` (login time), `mfa`, `src` (local|oidc). Purpose tokens (`purpose=login_totp`) are rejected as sessions.
+- `get_current_user` blocks everything except `/api/auth/me|totp/|password` while the MFA requirement (setting `require_mfa`: none|privileged|all) is unmet. The error is a 403 with `detail={"code":"mfa_setup_required"}`, and the frontend `api()` puts that `code` on the error.
+- `require_recent_auth` (decide endpoint, web only) returns a 403 `reauth_required` when `iat` is older than `reauth_minutes` → `POST /api/auth/reauth`.
+- TOTP is RFC 6238 without a dependency; `segno` renders the QR SVG.
+- OIDC uses code flow + PKCE + nonce. The ID token is verified against JWKS (no HS/none). Users are matched by `oidc_subject` and are never bound to the local superadmin. Roles are synced from the groups claim. The token reaches the SPA via a one-time exchange code, never in a URL. Tests fake the IdP by swapping `oidc._http` for an `httpx.MockTransport`.
+
 ### Removing firewalls
 `DELETE /api/firewalls/{id}` **archives** the firewall (`archived=True`, credentials and config cache cleared) instead of deleting it. Change requests and snapshots reference it via `ON DELETE CASCADE`, so a hard delete would erase history. Archived firewalls are hidden everywhere (`firewall_or_404`, lists, worker) and are not re-imported by the Central inventory sync.
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../App'
-import { api } from '../api'
+import { api, setToken } from '../api'
 import { ErrorBox, Field, useLoad } from '../components/ui'
 
 export default function Profile() {
@@ -33,6 +33,7 @@ export default function Profile() {
             </tbody></table>
           )}
         </div>
+        <TotpPanel me={me} setMe={setMe} />
         <NotifyPrefs me={me} setMe={setMe} />
         <div className="panel panel-pad stack">
           <h3 style={{ margin: 0 }}>Passwort ändern</h3>
@@ -80,6 +81,54 @@ function NotifyPrefs({ me, setMe }) {
           : link ? <span className="small">Code <b className="mono">{link.code}</b> – {link.url ? <a href={link.url} target="_blank" rel="noreferrer">Bot öffnen</a> : 'an den Bot senden'} mit <span className="mono">/start {link.code}</span> (10 min gültig) …</span>
             : <button className="sm" onClick={startLink}>Verknüpfen</button>}
       </div>
+      {msg && <div className={`alert ${msg.kind} small`}>{msg.text}</div>}
+    </div>
+  )
+}
+
+function TotpPanel({ me, setMe }) {
+  const [setup, setSetup] = useState(null)
+  const [code, setCode] = useState('')
+  const [pw, setPw] = useState('')
+  const [msg, setMsg] = useState(null)
+  if (me.auth_source === 'oidc') {
+    return <div className="panel panel-pad"><h3 style={{ marginTop: 0 }}>Zwei-Faktor-Anmeldung</h3>
+      <div className="muted small">Sie melden sich per SSO an – der zweite Faktor wird beim Identity Provider verwaltet.</div></div>
+  }
+  const start = async () => { setMsg(null); try { setSetup(await api('/auth/totp/setup', { method: 'POST' })) } catch (e) { setMsg({ kind: 'error', text: e.message }) } }
+  const enable = async () => {
+    try {
+      const r = await api('/auth/totp/enable', { method: 'POST', body: { code } })
+      setToken(r.token); setMe(r.user); setSetup(null); setCode('')
+      setMsg({ kind: 'ok', text: 'Zwei-Faktor-Anmeldung ist aktiv.' })
+    } catch (e) { setMsg({ kind: 'error', text: e.message }) }
+  }
+  const disable = async () => {
+    try { await api('/auth/totp/disable', { method: 'POST', body: { password: pw, code } }); setMe(await api('/auth/me')); setPw(''); setCode(''); setMsg({ kind: 'ok', text: 'Deaktiviert.' }) } catch (e) { setMsg({ kind: 'error', text: e.message }) }
+  }
+  return (
+    <div className="panel panel-pad stack" style={me.mfa_setup_required ? { borderColor: 'var(--warn)' } : undefined}>
+      <h3 style={{ margin: 0 }}>Zwei-Faktor-Anmeldung</h3>
+      {me.totp_enabled && !setup ? <>
+        <div><span className="badge b-ok">aktiv</span> <span className="muted small">Authenticator-App (TOTP)</span></div>
+        {!me.mfa_required && <details><summary>Deaktivieren</summary>
+          <div className="stack" style={{ marginTop: 8 }}>
+            <Field label="Passwort"><input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+            <Field label="Aktueller Code"><input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} /></Field>
+            <div><button className="danger" onClick={disable}>Deaktivieren</button></div>
+          </div></details>}
+        {me.mfa_required && <div className="muted small">Für Ihre Rolle verpflichtend. Bei Verlust des Telefons setzt ein Administrator den zweiten Faktor zurück.</div>}
+      </> : !setup ? <>
+        <div className="muted small">Schützt Ihr Konto zusätzlich mit einem Code aus einer Authenticator-App (z. B. Microsoft oder Google Authenticator, 1Password).</div>
+        <div><button className="primary" onClick={start}>Einrichten</button></div>
+      </> : <>
+        <div className="small">1. QR-Code mit der Authenticator-App scannen (oder Schlüssel manuell eingeben):</div>
+        {/* SVG stammt vom eigenen Backend (segno) */}
+        <div style={{ background: '#fff', padding: 8, borderRadius: 6, alignSelf: 'flex-start' }} dangerouslySetInnerHTML={{ __html: setup.qr_svg }} />
+        <code className="small" style={{ wordBreak: 'break-all' }}>{setup.secret}</code>
+        <Field label="2. Angezeigten Code eingeben"><input autoFocus inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" /></Field>
+        <div className="row"><button className="primary" disabled={code.length < 6} onClick={enable}>Aktivieren</button><button onClick={() => setSetup(null)}>Abbrechen</button></div>
+      </>}
       {msg && <div className={`alert ${msg.kind} small`}>{msg.text}</div>}
     </div>
   )

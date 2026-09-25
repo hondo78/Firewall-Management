@@ -11,7 +11,7 @@ from ..audit import audit
 from ..db import get_db
 from ..models import ChangeRequest, Firewall, User
 from ..permissions import firewall_or_404
-from ..security import client_ip, get_current_user
+from ..security import client_ip, get_current_user, require_recent_auth
 from ..serializers import change_out, change_summary
 
 router = APIRouter(prefix="/api", tags=["changes"])
@@ -156,6 +156,7 @@ def get_change(change_id: str, user: User = Depends(get_current_user), db: DbSes
 def decide(change_id: str, body: DecisionIn, request: Request, user: User = Depends(get_current_user),
            db: DbSession = Depends(get_db)):
     cr = _change_or_404(db, user, change_id)
+    require_recent_auth(request, db)
     changes.decide(db, user, cr, body.decision, body.comment, client_ip(request))
     return change_out(db, cr, user)
 
