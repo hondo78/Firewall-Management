@@ -24,16 +24,19 @@ def group_out(g: FirewallGroup) -> dict:
 
 
 def firewall_out(db: DbSession, fw: Firewall, user: User) -> dict:
+    # Verbindungsdaten (Adresse, Benutzer, Key-Status, TLS) sieht nur ein Superadmin
+    conn = user.is_superadmin
     return {
         "id": fw.id, "name": fw.name, "hostname": fw.hostname, "serial": fw.serial, "model": fw.model,
         "firmware": fw.firmware, "group_id": fw.group_id, "group": fw.group.name if fw.group else None,
         "connector": fw.connector, "connector_label": connector.capabilities(fw)["label"],
         "capabilities": connector.capabilities(fw),
-        "central_account_id": fw.central_account_id, "central_id": fw.central_id,
+        "central_account_id": fw.central_account_id if conn else None, "central_id": fw.central_id,
         "central_status": fw.central_status or {}, "external_ips": fw.external_ips or [],
-        "api_url": fw.api_url, "api_username": fw.api_username, "has_api_password": bool(fw.api_password_enc),
-        "api_key_expires_at": fw.api_key_expires_at,
-        "verify_tls": fw.verify_tls, "api_version": fw.api_version,
+        "api_url": fw.api_url if conn else None, "api_username": fw.api_username if conn else None,
+        "has_api_password": bool(fw.api_password_enc) if conn else None,
+        "api_key_expires_at": fw.api_key_expires_at if conn else None,
+        "verify_tls": fw.verify_tls if conn else None, "api_version": fw.api_version, "may_edit_connection": conn,
         "last_sync_at": fw.last_sync_at, "last_sync_error": fw.last_sync_error,
         "permissions": sorted(p for p in permissions.PERMISSIONS
                               if p not in permissions.GLOBAL_ONLY and permissions.can(db, user, p, fw)),

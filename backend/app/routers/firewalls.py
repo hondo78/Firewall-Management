@@ -90,6 +90,31 @@ class FirewallIn(BaseModel):
     central_id: str = ""
 
 
+CONNECTION_FIELDS = frozenset(("connector", "api_url", "api_username", "api_password", "api_key_expires_at", "verify_tls",
+                     "central_account_id", "central_id"))
+
+
+def _require_superadmin(user: User) -> None:
+    if not user.is_superadmin:
+        raise HTTPException(403, "Verbindungseinstellungen einer Firewall darf nur ein Superadmin sehen und ändern")
+
+
+def _keep_connection(fw: Firewall, body: FirewallIn) -> FirewallIn:
+    """Für Nicht-Superadmins: Verbindungsfelder unverändert übernehmen; ein Änderungsversuch wird abgelehnt."""
+    current = {"connector": fw.connector, "api_url": fw.api_url, "api_username": fw.api_username, "api_password": None,
+               "api_key_expires_at": fw.api_key_expires_at.date() if fw.api_key_expires_at else None,
+               "verify_tls": fw.verify_tls, "central_account_id": None, "central_id": fw.central_id}
+    for k in CONNECTION_FIELDS & body.model_fields_set:
+        v = getattr(body, k)
+        if k in ("api_password", "central_account_id") and not v:
+            continue
+        if isinstance(v, str):
+            v = v.strip()
+        if v != current[k]:
+            raise HTTPException(403, "Verbindungseinstellungen einer Firewall darf nur ein Superadmin ändern")
+    return body.model_copy(update=current)
+
+
 def _visible_firewalls(db: DbSession, user: User) -> list[Firewall]:
     fws = db.execute(select(Firewall).where(Firewall.archived.is_(False)).order_by(Firewall.name)).scalars().all()
     return [f for f in fws if permissions.can(db, user, "firewall.view", f)]
@@ -167,6 +192,7 @@ def _apply_fw(db: DbSession, fw: Firewall, body: FirewallIn) -> None:
 @router.post("/firewalls")
 def create_firewall(body: FirewallIn, request: Request, user: User = Depends(get_current_user),
                     db: DbSession = Depends(get_db)):
+    _require_superadmin(user)  # Anlegen heißt Verbindung einrichten
     _check_manage_target(db, user, body.group_id)
     fw = Firewall(id=new_id())
     _apply_fw(db, fw, body)
@@ -190,6 +216,8 @@ def update_firewall(firewall_id: str, body: FirewallIn, request: Request, user: 
         _check_manage_target(db, user, body.group_id)
     before = {"name": fw.name, "group_id": fw.group_id, "connector": fw.connector, "api_url": fw.api_url,
               "api_username": fw.api_username, "verify_tls": fw.verify_tls}
+    if not user.is_superadmin:
+        body = _keep_connection(fw, body)
     _apply_fw(db, fw, body)
     audit(db, "firewall.updated", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
           details={"before": before, "after": {"name": fw.name, "group_id": fw.group_id, "connector": fw.connector,
@@ -223,6 +251,7 @@ def delete_firewall(firewall_id: str, request: Request, user: User = Depends(get
 @router.post("/firewalls/{firewall_id}/test")
 def test_firewall(firewall_id: str, user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
     fw = firewall_or_404(db, user, firewall_id, "firewall.manage")
+    _require_superadmin(user)
     try:
         return {"ok": True, "message": connector.test_connection(db, fw)}
     except connector.ConnectorError as e:
@@ -443,6 +472,7 @@ def diagnose_firewall(firewall_id: str, request: Request, user: User = Depends(g
                       db: DbSession = Depends(get_db)):
     """Probelauf: prüft Anbindung und Rechte mit ausschließlich lesenden Aufrufen."""
     fw = firewall_or_404(db, user, firewall_id, "firewall.manage")
+    _require_superadmin(user)
     result = diagnose.firewall(db, fw)
     audit(db, "firewall.diagnosed", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
           details={"firewall": fw.name, "passed": result["passed"], "failed": result["failed"],

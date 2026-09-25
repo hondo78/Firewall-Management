@@ -296,3 +296,26 @@ def test_rest_connector_workflow(client, admin, monkeypatch):
     deploy_sync(draft["id"])
     assert client.get(f"/api/changes/{draft['id']}", headers=op).json()["status"] == "deployed"
     assert [r["name"] for r in state["firewallRulesIpv4"]] == ["Neu", "Alt"]
+
+
+def test_connection_settings_superadmin_only(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    fwa = make_user(client, admin, "fwadmin", [("Firewall-Administrator", None)])
+
+    # Firewall-Administrator sieht keine Verbindungsdaten …
+    fw = client.get(f"/api/firewalls/{fw_id}", headers=fwa).json()
+    assert fw["api_url"] is None and fw["api_username"] is None and fw["may_edit_connection"] is False
+    assert client.get(f"/api/firewalls/{fw_id}", headers=admin).json()["api_url"] == "fw.test"
+    # … darf Name/Gruppe ändern, aber nicht Adresse, Zugangsdaten oder Anbindung
+    r = client.put(f"/api/firewalls/{fw_id}", headers=fwa, json={"name": "Umbenannt"})
+    assert r.status_code == 200, r.text
+    assert client.get(f"/api/firewalls/{fw_id}", headers=admin).json()["api_url"] == "fw.test"
+    for change in ({"api_url": "evil.test"}, {"api_password": "neu"}, {"verify_tls": False}, {"connector": "rest"}):
+        r = client.put(f"/api/firewalls/{fw_id}", headers=fwa, json={"name": "Umbenannt", **change})
+        assert r.status_code == 403, change
+    # Anlegen, Verbindungstest und Probelauf nur als Superadmin
+    r = client.post("/api/firewalls", headers=fwa, json={"name": "X", "connector": "xmlapi", "api_url": "x.test",
+                                                          "api_username": "a", "api_password": "b"})
+    assert r.status_code == 403
+    assert client.post(f"/api/firewalls/{fw_id}/test", headers=fwa).status_code == 403
+    assert client.post(f"/api/firewalls/{fw_id}/diagnose", headers=fwa).status_code == 403

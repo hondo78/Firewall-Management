@@ -4,7 +4,6 @@ import { useAuth } from '../App'
 import { ACTION_LABEL, api, can, crNo, download, fmt } from '../api'
 import { FORM_ENTITIES, ObjectEditor, RuleEditor } from '../components/Editors'
 import { PRIMARY_RULES, RULE_TABLE_ENTITIES, anyRuleView, anySummary, canonical, isRestEntity, oname } from '../components/entities'
-import { RestObjectEditor, RestRuleEditor } from '../components/RestEditors'
 import FirewallForm from '../components/FirewallForm'
 import { Chips, DiffTable, Empty, ErrorBox, Field, Modal, Status, Tabs, useLoad } from '../components/ui'
 import { SyncState } from './Firewalls'
@@ -190,10 +189,11 @@ function SettingsTab({ fw, onSaved }) {
   return (
     <div className="grid two">
       <div className="panel panel-pad">
-        <h3 style={{ marginTop: 0 }}>Anbindung</h3>
+        <h3 style={{ marginTop: 0 }}>{fw.may_edit_connection ? 'Anbindung' : 'Allgemein'}</h3>
         {groups && <FirewallForm fw={fw} groups={groups} onSaved={onSaved} />}
       </div>
       <div className="stack">
+        {fw.may_edit_connection && <>
         <div className="panel panel-pad stack">
           <h3 style={{ margin: 0 }}>Verbindungstest</h3>
           <div><button onClick={runTest}>Verbindung testen</button></div>
@@ -204,6 +204,7 @@ function SettingsTab({ fw, onSaved }) {
           <div className="muted small">Prüft Anmeldung, Leserechte und alle benötigten Endpunkte, bevor Änderungen ausgerollt werden.</div>
           <Diagnose path={`/firewalls/${fw.id}/diagnose`} />
         </div>
+        </>}
         {fw.central_id && <div className="panel panel-pad small">
           <h3 style={{ marginTop: 0 }}>Sophos Central</h3>
           <div>Firewall-ID: <code>{fw.central_id}</code></div>
@@ -267,7 +268,7 @@ export default function FirewallView() {
         <div className="meta">
           <div><span>Status</span><SyncState fw={fw} /></div>
           <div><span>Anbindung</span>{fw.connector_label}</div>
-          {fw.connector === 'rest' && <div><span>API-Key gültig bis</span>{fw.api_key_expires_at
+          {fw.connector === 'rest' && fw.may_edit_connection && <div><span>API-Key gültig bis</span>{fw.api_key_expires_at
             ? <span className={new Date(fw.api_key_expires_at) - Date.now() < 30 * 86400000 ? 'text-error' : ''}>{fmt(fw.api_key_expires_at).split(',')[0]}</span>
             : <span className="muted">nicht hinterlegt</span>}</div>}
           <div><span>Modell</span>{fw.model?.split('_')[0] || '–'}</div>

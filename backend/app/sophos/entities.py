@@ -40,7 +40,18 @@ REST_RESOURCES: dict[str, tuple[str, str, str]] = {
     "serviceGroups": ("/network/service-groups", "Dienstgruppen", "Hosts & Dienste"),
     "zones": ("/network/zones", "Zonen", "Netzwerk"),
     "schedules": ("/administration/schedules", "Zeitpläne", "System"),
+    # Richtlinien – in Regeln auswählbar (Bearbeitung als JSON)
+    "webPolicies": ("/web/policies", "Web-Richtlinien", "Richtlinien"),
+    "applicationPolicies": ("/application/policies", "Anwendungs-Richtlinien", "Richtlinien"),
+    "ipsPolicies": ("/intrusion-prevention/policies", "IPS-Richtlinien", "Richtlinien"),
+    "trafficShapingPolicies": ("/traffic-shaping/policies", "Traffic-Shaping", "Richtlinien"),
+    # Benutzer & Schnittstellen – nur als Auswahl für Regeln/NAT (nicht über dieses Tool änderbar)
+    "userGroups": ("/authentication/user-groups", "Benutzergruppen", "Benutzer & Schnittstellen"),
+    "users": ("/authentication/users", "Benutzer", "Benutzer & Schnittstellen"),
+    "interfaces": ("/network/interfaces/network-interfaces", "Schnittstellen", "Benutzer & Schnittstellen"),
 }
+# Nur lesend – werden synchronisiert, aber nicht über Anträge geändert
+REST_READ_ONLY_ENTITIES = {"users", "interfaces"}
 REST_MANAGED = [(e, label, section) for e, (_, label, section) in REST_RESOURCES.items()]
 # Nur lesend von der API geliefert – nie mitsenden und nicht speichern (sonst Diff-Rauschen).
 # ruleId liefert die echte Firewall zusätzlich (nicht in der Spezifikation). isInternal (eingebautes Objekt)
@@ -85,7 +96,8 @@ WRITE_ORDER = ["Zone", "Schedule", "IPHost", "FQDNHost", "MACHost", "IPHostGroup
                "Services", "ServiceGroup", "NATRule", "FirewallRule", "FirewallRuleGroup",
                "zones", "schedules", "addressesIpv4", "addressesIpv6", "addressesFqdn", "addressesMac",
                "addressGroupsIpv4", "addressGroupsIpv6", "addressGroupsFqdn", "countryGroups",
-               "services", "serviceGroups", "natRulesIpv4", "firewallRulesIpv4", "firewallRulesIpv6"]
+               "services", "serviceGroups", "webPolicies", "applicationPolicies", "ipsPolicies",
+               "trafficShapingPolicies", "userGroups", "natRulesIpv4", "firewallRulesIpv4", "firewallRulesIpv6"]
 _RULE_LEVEL = {"NATRule", "FirewallRule", "FirewallRuleGroup", "natRulesIpv4", "firewallRulesIpv4",
                "firewallRulesIpv6"}
 
@@ -100,6 +112,13 @@ REF_ENTITIES = {
                 "addressGroupsFqdn", "addressesMac", "countryGroups"),
     "service": ("Services", "ServiceGroup", "services", "serviceGroups"),
     "schedule": ("Schedule", "schedules"),
+    "webpolicy": ("webPolicies",),
+    "apppolicy": ("applicationPolicies",),
+    "ipspolicy": ("ipsPolicies",),
+    "tspolicy": ("trafficShapingPolicies",),
+    "user": ("users", "userGroups"),
+    "interface": ("interfaces",),
+    "rule": ("firewallRulesIpv4", "firewallRulesIpv6"),
 }
 
 
@@ -164,6 +183,37 @@ def rest_rule_references(rule: dict) -> list[tuple[str, str]]:
     refs += [("service", n) for n in _names(svc.get("services")) + _names(svc.get("serviceGroups"))]
     if isinstance(rule.get("schedule"), dict) and rule["schedule"].get("name"):
         refs.append(("schedule", rule["schedule"]["name"]))
+    sec = rule.get("securityFeatures") or {}
+    for key, kind in (("webPolicy", "webpolicy"), ("applicationPolicy", "apppolicy"), ("ipsPolicy", "ipspolicy")):
+        if isinstance(sec.get(key), dict) and sec[key].get("name"):
+            refs.append((kind, sec[key]["name"]))
+    ts = (rule.get("qos") or {}).get("trafficShapingPolicy")
+    if isinstance(ts, dict) and ts.get("name"):
+        refs.append(("tspolicy", ts["name"]))
+    uo = ((rule.get("userAuthentication") or {}).get("usersOrGroups") or {})
+    refs += [("user", n) for n in _names(uo.get("users")) + _names(uo.get("userGroups"))]
+    return refs
+
+
+def rest_nat_references(nat: dict) -> list[tuple[str, str]]:
+    refs: list[tuple[str, str]] = []
+    for key in ("originalSourceNetworks", "originalDestinationNetworks"):
+        nets = nat.get(key) or {}
+        for k in _REST_NET_KEYS:
+            refs += [("network", n) for n in _names(nets.get(k))]
+    svc = nat.get("originalServicesOrGroups") or {}
+    refs += [("service", n) for n in _names(svc.get("services")) + _names(svc.get("serviceGroups"))]
+    for key in ("translatedSource", "translatedDestination"):
+        t = nat.get(key) or {}
+        for sub in ("ipv4Address", "fqdnAddress"):
+            if isinstance(t.get(sub), dict) and t[sub].get("name"):
+                refs.append(("network", t[sub]["name"]))
+    if isinstance(nat.get("translatedService"), dict) and nat["translatedService"].get("name"):
+        refs.append(("service", nat["translatedService"]["name"]))
+    for key in ("inboundInterfaces", "outboundInterfaces"):
+        refs += [("interface", n) for n in _names((nat.get(key) or {}).get("interfaces"))]
+    if isinstance(nat.get("linkedFirewallRule"), dict) and nat["linkedFirewallRule"].get("name"):
+        refs.append(("rule", nat["linkedFirewallRule"]["name"]))
     return refs
 
 
@@ -181,6 +231,8 @@ def references(entity: str, obj: dict) -> list[tuple[str, str]]:
         return [("network", h) for h in _as_list((obj.get("FQDNHostList") or {}).get("FQDNHost"))]
     if entity in ("firewallRulesIpv4", "firewallRulesIpv6"):
         return rest_rule_references(obj)
+    if entity == "natRulesIpv4":
+        return rest_nat_references(obj)
     if entity in ("addressGroupsIpv4", "addressGroupsIpv6"):
         return [("network", n) for n in _names(obj.get("ipv4Addresses") or obj.get("ipv6Addresses"))]
     if entity == "addressGroupsFqdn":
@@ -192,4 +244,4 @@ def references(entity: str, obj: dict) -> list[tuple[str, str]]:
 
 REFERRING_ENTITIES = ("FirewallRule", "IPHostGroup", "ServiceGroup", "FQDNHostGroup", "firewallRulesIpv4",
                       "firewallRulesIpv6", "addressGroupsIpv4", "addressGroupsIpv6", "addressGroupsFqdn",
-                      "serviceGroups")
+                      "serviceGroups", "natRulesIpv4")

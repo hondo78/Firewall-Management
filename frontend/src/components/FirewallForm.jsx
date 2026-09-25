@@ -8,8 +8,9 @@ const CONNECTORS = {
   central: 'Sophos Central – Import/Export (kein Löschen möglich)',
 }
 
-/** Anlegen/Bearbeiten der Anbindung einer Firewall. */
+/** Anlegen/Bearbeiten einer Firewall. Die Verbindungseinstellungen sieht und ändert nur ein Superadmin. */
 export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
+  const connection = !fw || fw.may_edit_connection
   const [form, setForm] = useState({
     name: fw?.name || '', group_id: fw?.group_id || '', connector: fw?.connector || 'rest',
     api_url: fw?.api_url || '', api_username: fw?.api_username || '', api_password: '',
@@ -28,8 +29,10 @@ export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
     setBusy(true)
     setError('')
     try {
-      const body = { ...form, group_id: form.group_id || null, api_password: form.api_password || null,
-        api_key_expires_at: rest && form.api_key_expires_at ? form.api_key_expires_at : null }
+      const body = connection
+        ? { ...form, group_id: form.group_id || null, api_password: form.api_password || null,
+          api_key_expires_at: rest && form.api_key_expires_at ? form.api_key_expires_at : null }
+        : { name: form.name, group_id: form.group_id || null }
       const saved = await api(fw ? `/firewalls/${fw.id}` : '/firewalls', { method: fw ? 'PUT' : 'POST', body })
       onSaved(saved)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -47,6 +50,9 @@ export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
             </select>
           </Field>
         </div>
+        {!connection && <div className="alert info small">Anbindung: <b>{fw.connector_label}</b>. Adresse, Zugangsdaten und
+          TLS-Einstellungen sieht und ändert nur ein Superadmin.</div>}
+        {connection && <>
         <Field label="Anbindung">
           <select value={form.connector} onChange={set('connector')}>
             {Object.entries(CONNECTORS).filter(([k]) => k !== 'central' || fromCentral).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
@@ -91,6 +97,7 @@ export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
           <label className="check"><input type="checkbox" checked={form.verify_tls} onChange={set('verify_tls')} />
             <span>TLS-Zertifikat prüfen <span className="muted small">(bei selbstsignierten Zertifikaten deaktivieren)</span></span></label>
         )}
+        </>}
         <ErrorBox error={error} />
       </div>
       <div className="modal-foot">

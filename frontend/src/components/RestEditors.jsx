@@ -1,126 +1,13 @@
 import { useMemo, useState } from 'react'
-import { EditorShell, PositionField } from './Editors'
-import { asList, restNetNames, restRefOptions } from './entities'
+import { EditorShell } from './Editors'
+import { asList, restRefOptions } from './entities'
 import { Field, Picker, Seg } from './ui'
+import { NEW_POLICY, policyForm } from './SophosPolicies'
 
 /** Editoren für das Format der SFOS REST-API (Objekte 1:1 wie von der API geliefert). */
 
 const toRefs = (names) => names.map((name) => ({ name }))
 const refNames = (items) => asList(items).map((i) => i?.name).filter(Boolean)
-
-/** Liste von Namen → { any: true } bzw. { zones: [...] } */
-function zonesValue(names) {
-  return names.length ? { zones: toRefs(names) } : { any: true }
-}
-
-/** Netzwerk-Namen → { any } bzw. { ipv4Addresses: [...], fqdnGroups: [...], … } (Schlüssel aus den Optionen) */
-function netsValue(names, options) {
-  if (!names.length) return { any: true }
-  const keyOf = Object.fromEntries(options.map((o) => [o.value, o.key]))
-  const out = {}
-  for (const n of names) {
-    const k = keyOf[n] || 'ipv4Addresses'
-    out[k] = [...(out[k] || []), { name: n }]
-  }
-  return out
-}
-
-function servicesValue(names, options) {
-  if (!names.length) return { any: true }
-  const keyOf = Object.fromEntries(options.map((o) => [o.value, o.key]))
-  const out = {}
-  for (const n of names) {
-    const k = keyOf[n] || 'services'
-    out[k] = [...(out[k] || []), { name: n }]
-  }
-  return out
-}
-
-function newRule(opts) {
-  const find = (want) => opts.zones.find((z) => z.value.toLowerCase() === want)?.value
-  const lan = find('lan')
-  const wan = find('wan')
-  return {
-    name: '', description: '', ruleType: 'firewall', enabled: true, action: 'accept',
-    sourceZones: lan ? { zones: [{ name: lan }] } : { any: true },
-    destinationZones: wan ? { zones: [{ name: wan }] } : { any: true },
-    sourceNetworks: { any: true }, destinationNetworks: { any: true }, servicesOrGroups: { any: true },
-    logTraffic: true,
-  }
-}
-
-export function RestRuleEditor({ entity, config, rule, onClose, onSubmit }) {
-  const isNew = !rule
-  const opts = useMemo(() => restRefOptions(config), [config])
-  const rules = (config[entity] || []).map((r) => r.name)
-  const [data, setData] = useState(() => structuredClone(rule || newRule(opts)))
-  const [position, setPosition] = useState(isNew ? { type: 'top' } : { type: 'keep' })
-  const set = (k) => (e) => setData({ ...data, [k]: e.target.value })
-  const svc = data.servicesOrGroups || {}
-  const isWaf = data.ruleType === 'waf'
-
-  const posField = <PositionField position={position} setPosition={setPosition} rules={rules} name={data.name} isNew={isNew} />
-  const form = isWaf ? null : (
-    <div className="stack">
-      <div className="form-grid">
-        <Field label="Regelname"><input value={data.name} disabled={!isNew} onChange={set('name')} autoFocus={isNew} maxLength={60} /></Field>
-        <Field label="Beschreibung"><input value={data.description || ''} onChange={set('description')} maxLength={255} /></Field>
-      </div>
-      <div className="form-grid">
-        <Field label="Aktion">
-          <Seg options={[['accept', 'Zulassen'], ['drop', 'Verwerfen'], ['reject', 'Ablehnen']]} value={data.action}
-            onChange={(v) => setData({ ...data, action: v })} />
-        </Field>
-        <Field label="Status">
-          <Seg options={[[true, 'Aktiv'], [false, 'Inaktiv']]} value={data.enabled !== false}
-            onChange={(v) => setData({ ...data, enabled: v })} />
-        </Field>
-        <Field label="Protokollierung">
-          <Seg options={[[true, 'An'], [false, 'Aus']]} value={!!data.logTraffic} onChange={(v) => setData({ ...data, logTraffic: v })} />
-        </Field>
-        <Field label="Zeitplan">
-          <select value={data.schedule?.name || ''} onChange={(e) => {
-            const next = { ...data }
-            if (e.target.value) next.schedule = { name: e.target.value }
-            else delete next.schedule
-            setData(next)
-          }}>
-            <option value="">– immer –</option>
-            {opts.schedules.map((s) => <option key={s}>{s}</option>)}
-          </select>
-        </Field>
-      </div>
-      <div className="grid two">
-        <div className="panel panel-pad stack">
-          <h3 style={{ margin: 0 }}>Quelle</h3>
-          <Field label="Zonen"><Picker value={data.sourceZones?.any ? [] : refNames(data.sourceZones?.zones)} options={opts.zones}
-            onChange={(v) => setData({ ...data, sourceZones: zonesValue(v) })} /></Field>
-          <Field label="Netzwerke und Geräte"><Picker value={restNetNames(data.sourceNetworks)} options={opts.networks}
-            onChange={(v) => setData({ ...data, sourceNetworks: netsValue(v, opts.networks) })} /></Field>
-        </div>
-        <div className="panel panel-pad stack">
-          <h3 style={{ margin: 0 }}>Ziel</h3>
-          <Field label="Zonen"><Picker value={data.destinationZones?.any ? [] : refNames(data.destinationZones?.zones)} options={opts.zones}
-            onChange={(v) => setData({ ...data, destinationZones: zonesValue(v) })} /></Field>
-          <Field label="Netzwerke"><Picker value={restNetNames(data.destinationNetworks)} options={opts.networks}
-            onChange={(v) => setData({ ...data, destinationNetworks: netsValue(v, opts.networks) })} /></Field>
-          <Field label="Dienste"><Picker value={svc.any ? [] : [...refNames(svc.services), ...refNames(svc.serviceGroups)]}
-            options={opts.services} onChange={(v) => setData({ ...data, servicesOrGroups: servicesValue(v, opts.services) })} /></Field>
-        </div>
-      </div>
-      <div className="muted small">Weitere Einstellungen (Sicherheitsfunktionen, QoS, Benutzer, Ausnahmen) bleiben erhalten und sind im JSON-Modus bearbeitbar.</div>
-      {posField}
-    </div>
-  )
-  return (
-    <EditorShell title={isNew ? 'Neue Firewall-Regel' : `Regel „${rule.name}“ bearbeiten`} entity={entity}
-      data={data} setData={setData} isNew={isNew} form={form} onClose={onClose} positionField={posField}
-      onSubmit={(payload) => onSubmit({
-        entity, action: isNew ? 'add' : 'update', name: payload.name, data: payload,
-        position: position.type === 'keep' ? null : position,
-      })} />
-  )
-}
 
 // --- Objekte -------------------------------------------------------------------------------------------------
 
@@ -131,8 +18,103 @@ const NEW_REST = {
   addressGroupsFqdn: { name: '', description: '', fqdns: [] },
   services: { name: '', description: '', type: 'tcpOrUdp', services: [{ protocol: 'tcp', destinationPort: { from: 443, to: 443 } }] },
   serviceGroups: { name: '', description: '', services: [] },
+  zones: { name: '', type: 'lan', description: '', services: [] },
+  schedules: { name: '', description: '', type: 'recurring', timeSlots: [{ dayOfWeek: 'weekdays', startTime: '08:00', endTime: '18:00' }] },
+  addressesMac: { name: '', description: '', type: 'macAddress', macAddress: '' },
+  addressesIpv6: { name: '', description: '', type: 'ipv6Address', ipv6Address: '' },
+  ...NEW_POLICY,
 }
-export const REST_FORM_ENTITIES = Object.keys(NEW_REST)
+
+// Gerätezugriff je Zone (Administration › Device access in SFOS)
+const ZONE_SERVICES = [['https', 'Web-Admin (HTTPS)'], ['ssh', 'SSH'], ['ping', 'Ping/Ping6'], ['ping6', 'Ping6'], ['dns', 'DNS'],
+  ['userPortal', 'Benutzerportal'], ['vpnPortal', 'VPN-Portal'], ['sslVpn', 'SSL VPN'], ['ipsec', 'IPsec'], ['webProxy', 'Web-Proxy'],
+  ['captivePortal', 'Captive Portal'], ['clientAuthentication', 'Client-Authentifizierung'], ['adSso', 'AD SSO'], ['radiusSso', 'RADIUS SSO'],
+  ['chromebookSso', 'Chromebook SSO'], ['dynamicRouting', 'Dynamisches Routing'], ['smtpRelay', 'SMTP-Relay'], ['snmp', 'SNMP'],
+  ['red', 'RED'], ['wirelessProtection', 'Wireless Protection']]
+const DAYS = [['allDays', 'Alle Tage'], ['weekdays', 'Mo–Fr'], ['weekdaysWithSaturday', 'Mo–Sa'], ['mon', 'Montag'], ['tue', 'Dienstag'],
+  ['wed', 'Mittwoch'], ['thu', 'Donnerstag'], ['fri', 'Freitag'], ['sat', 'Samstag'], ['sun', 'Sonntag']]
+
+function ZoneForm({ data, setData, isNew }) {
+  const on = new Set(refNames(data.services))
+  const toggle = (k) => { const n = new Set(on); n.has(k) ? n.delete(k) : n.add(k); setData({ ...data, services: toRefs([...n]) }) }
+  return (
+    <div className="stack">
+      <NameDesc data={data} setData={setData} isNew={isNew} />
+      <Field label="Typ">
+        <select value={data.type} disabled={!isNew} onChange={(e) => setData({ ...data, type: e.target.value })}>
+          <option value="lan">LAN</option><option value="dmz">DMZ</option>
+          {!['lan', 'dmz'].includes(data.type) && <option value={data.type}>{data.type}</option>}
+        </select>
+      </Field>
+      <div><b className="small">Gerätezugriff</b> <span className="muted small">– welche Dienste der Firewall aus dieser Zone erreichbar sind</span></div>
+      <div className="sf-checks">{ZONE_SERVICES.map(([k, l]) => (
+        <label key={k} className="check"><input type="checkbox" checked={on.has(k)} onChange={() => toggle(k)} />{l}</label>))}</div>
+    </div>
+  )
+}
+
+function ScheduleForm({ data, setData, isNew }) {
+  const slots = asList(data.timeSlots)
+  const setSlots = (t) => setData({ ...data, timeSlots: t })
+  const upd = (i, k, v) => setSlots(slots.map((s, j) => (j === i ? { ...s, [k]: v } : s)))
+  return (
+    <div className="stack">
+      <NameDesc data={data} setData={setData} isNew={isNew} />
+      <Field label="Typ"><Seg options={[['recurring', 'Wiederkehrend'], ['oneTime', 'Einmalig']]} value={data.type} onChange={(t) => setData({ ...data, type: t })} /></Field>
+      {data.type === 'oneTime' && <div className="form-grid">
+        <Field label="Von (Datum)"><input type="date" value={data.startDate || ''} onChange={(e) => setData({ ...data, startDate: e.target.value })} /></Field>
+        <Field label="Bis (Datum)"><input type="date" value={data.endDate || ''} onChange={(e) => setData({ ...data, endDate: e.target.value })} /></Field>
+      </div>}
+      <table><thead><tr><th>Tage</th><th>Von</th><th>Bis</th><th /></tr></thead><tbody>
+        {slots.map((t, i) => (
+          <tr key={i}>
+            <td><select value={t.dayOfWeek} onChange={(e) => upd(i, 'dayOfWeek', e.target.value)}>{DAYS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></td>
+            <td><input type="time" value={t.startTime} onChange={(e) => upd(i, 'startTime', e.target.value)} /></td>
+            <td><input type="time" value={t.endTime} onChange={(e) => upd(i, 'endTime', e.target.value)} /></td>
+            <td><button className="ghost" disabled={slots.length === 1} onClick={() => setSlots(slots.filter((_, j) => j !== i))}>×</button></td>
+          </tr>))}
+      </tbody></table>
+      <div><button className="sm" onClick={() => setSlots([...slots, { dayOfWeek: 'allDays', startTime: '00:00', endTime: '23:59' }])}>+ Zeitfenster</button></div>
+    </div>
+  )
+}
+
+function MacForm({ data, setData, isNew }) {
+  return (
+    <div className="stack">
+      <NameDesc data={data} setData={setData} isNew={isNew} />
+      <Field label="MAC-Adresse" hint="z. B. AA:BB:CC:DD:EE:FF"><input value={data.macAddress || ''} onChange={(e) => setData({ ...data, type: 'macAddress', macAddress: e.target.value })} /></Field>
+    </div>
+  )
+}
+
+function Ipv6Form({ data, setData, isNew }) {
+  const set = (k, num) => (e) => setData({ ...data, [k]: num ? Number(e.target.value) : e.target.value })
+  const setType = (t) => {
+    const base = { name: data.name, description: data.description, type: t }
+    if (t === 'ipv6Address') base.ipv6Address = data.ipv6Address || ''
+    if (t === 'ipv6Network') Object.assign(base, { ipv6NetworkAddress: data.ipv6NetworkAddress || '', prefixLength: data.prefixLength ?? 64 })
+    if (t === 'ipv6Range') Object.assign(base, { ipv6AddressStart: data.ipv6AddressStart || '', ipv6AddressEnd: data.ipv6AddressEnd || '' })
+    setData(base)
+  }
+  return (
+    <div className="stack">
+      <NameDesc data={data} setData={setData} isNew={isNew} />
+      <Field label="Typ"><Seg options={[['ipv6Address', 'Host'], ['ipv6Network', 'Netzwerk'], ['ipv6Range', 'Bereich']]} value={data.type} onChange={setType} /></Field>
+      <div className="form-grid">
+        {data.type === 'ipv6Address' && <Field label="IPv6-Adresse"><input value={data.ipv6Address || ''} onChange={set('ipv6Address')} placeholder="2001:db8::1" /></Field>}
+        {data.type === 'ipv6Network' && <>
+          <Field label="Netzadresse"><input value={data.ipv6NetworkAddress || ''} onChange={set('ipv6NetworkAddress')} placeholder="2001:db8::" /></Field>
+          <Field label="Präfixlänge"><input type="number" min={0} max={128} value={data.prefixLength ?? ''} onChange={set('prefixLength', true)} /></Field>
+        </>}
+        {data.type === 'ipv6Range' && <>
+          <Field label="Start"><input value={data.ipv6AddressStart || ''} onChange={set('ipv6AddressStart')} /></Field>
+          <Field label="Ende"><input value={data.ipv6AddressEnd || ''} onChange={set('ipv6AddressEnd')} /></Field>
+        </>}
+      </div>
+    </div>
+  )
+}
 
 function NameDesc({ data, setData, isNew }) {
   return (
@@ -242,10 +224,15 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
     addressGroupsFqdn: <RefGroupForm {...props} field="fqdns" options={opts.fqdn} label="Mitglieder (FQDN-Adressen)" />,
     services: <RestServiceForm {...props} portsAsText={portsAsText} />,
     serviceGroups: <RefGroupForm {...props} field="services" options={opts.serviceItems} label="Mitglieder (Dienste)" />,
+    addressGroupsIpv6: <RefGroupForm {...props} field="ipv6Addresses" options={opts.ipv6} label="Mitglieder (IPv6-Adressen)" />,
+    zones: <ZoneForm {...props} />,
+    schedules: <ScheduleForm {...props} />,
+    addressesMac: <MacForm {...props} />,
+    addressesIpv6: <Ipv6Form {...props} />,
   }
   return (
     <EditorShell title={isNew ? `${label}: neu` : `${label} „${object.name}“ bearbeiten`} entity={entity}
-      data={data} setData={setData} isNew={isNew} form={forms[entity]} onClose={onClose}
+      data={data} setData={setData} isNew={isNew} form={forms[entity] || policyForm(entity, props)} onClose={onClose}
       onSubmit={(payload) => onSubmit({ entity, action: isNew ? 'add' : 'update', name: payload.name, data: payload })} />
   )
 }

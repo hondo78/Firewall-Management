@@ -18,7 +18,7 @@ PERMISSIONS: dict[str, str] = {
     "change.create": "Änderungen beantragen",
     "change.approve": "Änderungen genehmigen oder ablehnen (nie eigene)",
     "change.deploy": "Genehmigte Änderungen manuell ausrollen / erneut versuchen",
-    "firewall.manage": "Firewalls verbinden, bearbeiten und synchronisieren",
+    "firewall.manage": "Firewalls bearbeiten (Name, Gruppe), entfernen und synchronisieren – Verbindung nur Superadmin",
     "firmware.manage": "Firmware-Updates planen",
     "audit.view": "Audit-Log einsehen (nur global)",
     "admin": "Benutzer, Rollen, Central-Konten und Einstellungen verwalten (nur global)",

@@ -5,10 +5,12 @@ import { ACTION_LABEL, api, can, crNo, download, upload } from '../../api'
 import { BULK, BULK_KIND, parseBulk } from '../../components/bulk'
 import { COLUMNS, searchText } from '../../components/columns'
 import { ObjectEditor, RuleEditor } from '../../components/Editors'
-import { RULE_TABLE_ENTITIES, PRIMARY_RULES, anyRuleView, asList, canonical, isRestEntity, oname } from '../../components/entities'
+import { READ_ONLY_ENTITIES, RULE_TABLE_ENTITIES, PRIMARY_RULES, anyRuleView, asList, canonical, isRestEntity, oname } from '../../components/entities'
 import Icon, { ENTITY_ICON } from '../../components/icons'
-import { RestObjectEditor, RestRuleEditor } from '../../components/RestEditors'
-import { DiffTable, Empty, ErrorBox, Modal, useLoad } from '../../components/ui'
+import { RestObjectEditor } from '../../components/RestEditors'
+import { ObjectView } from '../../components/SophosPolicies'
+import { FeatureBadges, RuleDetails, SophosNatEditor, SophosRuleEditor, natView } from '../../components/SophosRules'
+import { DiffTable, Empty, ErrorBox, Modal, Seg, useLoad } from '../../components/ui'
 import { OperationCard } from '../FirewallView'
 
 /** Konfigurations-Editor im Stil des Sophos Firewall Config Studio. */
@@ -95,12 +97,33 @@ function IconButton({ icon, title, onClick, danger, disabled }) {
   )
 }
 
+function StructuredView({ entity, obj }) {
+  if (entity.startsWith('firewallRules')) return <><div style={{ marginBottom: 10 }}><FeatureBadges rule={obj} /></div><RuleDetails rule={obj} /></>
+  if (entity === 'natRulesIpv4') {
+    const n = natView(obj)
+    const L = ({ label, children }) => <div className="sf-line"><span>{label}</span><div>{children}</div></div>
+    return (
+      <div className="sf-details">
+        <div><h5>Original</h5><L label="Quelle">{n.oSrc.join(', ') || 'Beliebig'}</L><L label="Ziel">{n.oDst.join(', ') || 'Beliebig'}</L><L label="Dienste">{n.oSvc.join(', ') || 'Beliebig'}</L></div>
+        <div><h5>Übersetzt</h5><L label="Quelle">{n.tSrc}</L><L label="Ziel">{n.tDst}</L><L label="Dienst">{n.tSvc}</L></div>
+        <div><h5>Schnittstellen</h5><L label="Eingehend">{n.inIf || 'Beliebig'}</L><L label="Ausgehend">{n.outIf || 'Beliebig'}</L></div>
+        <div><h5>Weitere</h5><L label="Status">{n.enabled ? 'aktiv' : 'inaktiv'}</L><L label="Verknüpfte Regel">{n.linked || '–'}</L></div>
+      </div>
+    )
+  }
+  return <ObjectView entity={entity} obj={obj} />
+}
+
 function ObjectDetail({ fw, entity, obj, onClose }) {
   const [d] = useLoad(() => api(`/firewalls/${fw.id}/objects/${entity}/${encodeURIComponent(oname(obj))}/xml`), [entity, oname(obj)])
+  const view = isRestEntity(entity) ? StructuredView({ entity, obj }) : null
+  const [mode, setMode] = useState(view ? 'view' : 'raw')
+  const raw = isRestEntity(entity) ? 'JSON' : 'XML'
   return (
     <Modal title={oname(obj)} onClose={onClose} wide>
       {d?.used_by?.length > 0 && <div className="alert info small">Verwendet von: {d.used_by.join(', ')}</div>}
-      <pre className="xml">{d?.xml || 'Lade …'}</pre>
+      {view && <div style={{ marginBottom: 10 }}><Seg options={[['view', 'Ansicht'], ['raw', raw]]} value={mode} onChange={setMode} /></div>}
+      {mode === 'view' ? view : <pre className="xml">{d?.xml || 'Lade …'}</pre>}
     </Modal>
   )
 }
@@ -289,7 +312,11 @@ function ColumnPicker({ cols, visible, onChange }) {
 
 function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, findings, onEdit, onOp, onShow, onBulkDelete, onAdd, onBulkAdd }) {
   const isRule = RULE_TABLE_ENTITIES.has(entity)
+  const isNat = entity === 'natRulesIpv4'
   const rest = isRestEntity(entity)
+  const restRule = rest && isRule
+  const [open, setOpen] = useState(new Set())
+  const toggleOpen = (n) => { const s = new Set(open); s.has(n) ? s.delete(n) : s.add(n); setOpen(s) }
   const cols = COLUMNS[entity] || []
   const [visible, setVisible] = useState(() => store.get(`fwm.cols.${entity}`, cols.filter((c) => !c.hidden).map((c) => c.key)))
   const [q, setQ] = useState('')
@@ -328,7 +355,9 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
             <thead><tr>
               {mayEdit && <th style={{ width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Alle auswählen" /></th>}
               <th style={{ width: 40 }}>#</th><th>Name</th>
-              {isRule ? <><th>Quelle</th><th>Ziel</th><th>Dienste</th><th>Aktion</th></> : activeCols.map((c) => <th key={c.key}>{c.label}</th>)}
+              {isRule ? <><th>Quelle</th><th>Ziel</th><th>Dienste</th><th>Aktion</th>{restRule && <th>Sicherheit</th>}</>
+                : isNat ? <><th>Original</th><th>Übersetzt</th><th>Schnittstellen</th><th>Firewall-Regel</th></>
+                : activeCols.map((c) => <th key={c.key}>{c.label}</th>)}
               <th><button className={`th-filter ${onlyFindings ? 'on' : ''}`} onClick={() => setOnlyFindings(!onlyFindings)} title="Nur Objekte mit Hinweisen">
                 Konfig-Analyse <Icon name="alert" size={12} /></button></th>
               <th className="actions">Aktionen</th>
@@ -338,14 +367,19 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
                 const name = oname(obj)
                 const idx = names.indexOf(name)
                 const desc = obj.description ?? obj.Description
-                const v = isRule ? anyRuleView(entity, obj) : null
+                const v = isRule ? anyRuleView(entity, obj) : isNat ? natView(obj) : null
                 const cls = state ? `row-${state}` : v && !v.enabled ? 'row-disabled' : ''
+                const expanded = restRule && open.has(name)
                 return (
-                  <tr key={`${name}-${state}`} className={cls}>
+                  <Fragment key={`${name}-${state}`}>
+                  <tr className={cls}>
                     {mayEdit && <td><input type="checkbox" disabled={!deletable({ obj, state })} checked={sel.has(name)} onChange={() => toggle(name)} aria-label={`${name} auswählen`} /></td>}
                     <td className="muted small">{state === 'remove' ? '–' : idx + 1}</td>
                     <td className="name">
-                      <button className="link cs-name" onClick={() => onShow(obj)}>{name}</button>
+                      <span className="nowrap">
+                        {restRule && <button className={`ghost expander ${expanded ? 'open' : ''}`} onClick={() => toggleOpen(name)} title="Details" aria-expanded={expanded}><Icon name="chevron" size={12} /></button>}
+                        <button className="link cs-name" onClick={() => onShow(obj)}>{name}</button>
+                      </span>
                       {obj.isInternal && <span className="badge" style={{ marginLeft: 6 }}>System</span>}
                       {v && !v.enabled && <span className="badge st-Disable" style={{ marginLeft: 6 }}>inaktiv</span>}
                       {v?.type === 'waf' && <span className="badge b-info" style={{ marginLeft: 6 }}>WAF</span>}
@@ -360,11 +394,20 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
                     {isRule ? <>
                       <td className="nowrap"><span className={`badge st-${v.action}`}>{{ Accept: 'Zulassen', Drop: 'Verwerfen', Reject: 'Ablehnen' }[v.action] || v.action}</span>
                         {v.log && <div className="small muted">protokolliert</div>}</td>
+                      {restRule && <td><FeatureBadges rule={obj} /></td>}
+                    </> : isNat ? <>
+                      <td className="small"><div><span className="muted">Quelle</span> {v.oSrc.join(', ') || 'Beliebig'}</div>
+                        <div><span className="muted">Ziel</span> {v.oDst.join(', ') || 'Beliebig'}</div>
+                        <div><span className="muted">Dienst</span> {v.oSvc.join(', ') || 'Beliebig'}</div></td>
+                      <td className="small"><div><span className="muted">Quelle</span> {v.tSrc === 'MASQ' ? <span className="badge b-info">MASQ</span> : v.tSrc}</div>
+                        <div><span className="muted">Ziel</span> {v.tDst}</div><div><span className="muted">Dienst</span> {v.tSvc}</div></td>
+                      <td className="small"><div><span className="muted">Ein</span> {v.inIf || 'Beliebig'}</div><div><span className="muted">Aus</span> {v.outIf || 'Beliebig'}</div></td>
+                      <td className="small">{v.linked || <span className="muted">–</span>}</td>
                     </> : activeCols.map((c) => <td key={c.key} className="small">{String(c.get(obj) ?? '') || <span className="muted">–</span>}</td>)}
                     <td><Analysis findings={findings[name]} /></td>
                     <td className="actions">
                       {mayEdit && state !== 'remove' && <>
-                        {isRule && <>
+                        {(isRule || isNat) && <>
                           <IconButton icon="up" title="Nach oben" disabled={idx <= 0}
                             onClick={() => onOp({ entity, action: 'update', name, data: obj, position: { type: 'before', ref: names[idx - 1] } })} />
                           <IconButton icon="down" title="Nach unten" disabled={idx >= names.length - 1}
@@ -378,6 +421,8 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
                       <IconButton icon="code" title={rest ? 'JSON anzeigen' : 'XML anzeigen'} onClick={() => onShow(obj)} />
                     </td>
                   </tr>
+                  {expanded && <tr className="sf-expand"><td colSpan={99}><RuleDetails rule={obj} /></td></tr>}
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -543,13 +588,16 @@ export default function Editor({ fw, cfg, draft, reload }) {
         {msg && <div className={`alert ${msg.kind} small`}>{msg.text}</div>}
         {!fw.last_sync_at && <div className="alert warn">Noch keine Konfiguration geladen – bitte „Jetzt synchronisieren“.</div>}
         {draftOps.length > 0 && <label className="check small" style={{ margin: '0 0 8px' }}><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />Tabelle mit meinem Entwurf anzeigen</label>}
-        <EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
+        {READ_ONLY_ENTITIES.has(entity) && <div className="alert info small">{meta.label} werden direkt auf der Firewall gepflegt und hier nur angezeigt.</div>}
+        <EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
           findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
           onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} />
       </div>
 
       {editing && rest && (entity.startsWith('firewallRules')
-        ? <RestRuleEditor entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
+        ? <SophosRuleEditor entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
+        : entity === 'natRulesIpv4'
+        ? <SophosNatEditor entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
         : <RestObjectEditor entity={entity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />)}
       {editing && !rest && (entity === 'FirewallRule'
         ? <RuleEditor config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />

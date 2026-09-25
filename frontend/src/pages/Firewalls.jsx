@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { ago, api, can, canAnywhere } from '../api'
+import { ago, api, can } from '../api'
 import FirewallForm from '../components/FirewallForm'
 import { Empty, ErrorBox, Field, Modal, useLoad } from '../components/ui'
 
@@ -107,7 +107,8 @@ export default function Firewalls() {
   const [drift, setDrift] = useState(null)
   const [q, setQ] = useState('')
   const manage = can(me, 'firewall.manage')
-  const mayAdd = canAnywhere(me, 'firewall.manage')
+  // Anlegen heißt Verbindung einrichten → nur Superadmin
+  const mayAdd = !!me.is_superadmin
 
   const f = q.toLowerCase()
   const shown = (fws || []).filter((x) => !f || `${x.name} ${x.hostname} ${x.serial} ${x.model}`.toLowerCase().includes(f))
@@ -132,7 +133,7 @@ export default function Firewalls() {
         <div className="panel"><Empty>
           Noch keine Firewalls. {me.is_superadmin || me.permissions.global.includes('admin')
             ? <>Firewalls per REST-API (API-Key) hinzufügen oder über <Link to="/admin/central">Sophos Central</Link> übernehmen.</>
-            : 'Bitte einen Administrator, Firewalls anzubinden oder Ihnen Rechte zu geben.'}
+            : 'Bitte einen Superadmin, Firewalls anzubinden oder Ihnen Rechte zu geben.'}
         </Empty></div>
       )}
       {[...byGroup.values()].filter((g) => g.items.length || (manage && g.group.id)).map(({ group, items }) => (

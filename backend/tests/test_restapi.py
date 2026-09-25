@@ -126,3 +126,31 @@ def test_real_sfos_shapes():
     stored = conn.strip_read_only(svc)
     assert "ruleId" not in stored and "id" not in stored and stored["isInternal"] is True
     assert restapi.patch_body(stored, {**stored, "description": "x"}) == {"description": "x"}
+
+
+def test_policy_and_nat_references():
+    from app import changes
+    rule = {**RULE, "securityFeatures": {"webPolicy": {"name": "Allow All"}, "ipsPolicy": {"name": "LAN TO WAN"}},
+            "qos": {"trafficShapingPolicy": {"name": "Voice"}},
+            "userAuthentication": {"usersOrGroups": {"userGroups": [{"name": "Admins"}]}}}
+    nat = {"name": "DNAT", "originalDestinationNetworks": {"ipv4Addresses": [{"name": "WAN-IP"}]},
+           "translatedDestination": {"ipv4Address": {"name": "Server"}}, "translatedService": {"name": "HTTPS"},
+           "inboundInterfaces": {"interfaces": [{"name": "Port2"}]}, "linkedFirewallRule": {"name": "R1"}}
+    cfg = {"firewallRulesIpv4": [rule], "natRulesIpv4": [nat], "webPolicies": [{"name": "Allow All"}],
+           "addressesIpv4": [{"name": "Server"}]}
+    assert changes.used_by(cfg, "webPolicies", "Allow All") == ["Firewall-Regeln IPv4 „R1“"]
+    assert changes.used_by(cfg, "addressesIpv4", "Server") == ["NAT-Regeln IPv4 „DNAT“"]
+    refs = entities.references("natRulesIpv4", nat)
+    assert ("interface", "Port2") in refs and ("rule", "R1") in refs and ("service", "HTTPS") in refs
+
+
+def test_read_only_entities_rejected(client, admin, monkeypatch):
+    from app.sophos import connector as conn
+    monkeypatch.setattr(conn, "fetch_config", lambda db, fw, log=None: (
+        {e: [] for e in conn.entities.REST_NAMES}, "REST v1"))
+    fw = client.post("/api/firewalls", headers=admin, json={"name": "R", "connector": "rest", "api_url": "x.test",
+                                                           "api_password": "k"}).json()
+    client.post(f"/api/firewalls/{fw['id']}/sync", headers=admin)
+    r = client.post(f"/api/firewalls/{fw['id']}/draft/operations", headers=admin, json={
+        "entity": "users", "action": "add", "name": "u", "data": {"name": "u"}})
+    assert r.status_code == 400 and "auf der Firewall gepflegt" in r.json()["detail"]

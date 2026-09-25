@@ -57,20 +57,25 @@ def _store_config(db: DbSession, fw: Firewall, config: dict[str, list[dict]], *,
     fw.last_sync_at = utcnow()
     fw.last_sync_error = ""
     result = {"changed": False, "summary": {}}
+    kind, summary = "", {}
     if new_hash != fw.config_hash:
         prev = latest_snapshot(db, fw)
         summary = diff.summarize(diff.compare_configs(prev.data, config)) if prev else {}
         kind = reason if prev else "initial"
+        if prev and reason == "sync" and set(config) - set(prev.data):
+            # Neue Objekttypen durch ein Update dieses Tools – keine Änderung an der Firewall
+            summary = {e: s for e, s in summary.items() if e in prev.data}
+            kind = "extended" if not summary else kind
         db.add(ConfigSnapshot(firewall_id=fw.id, hash=new_hash, reason=kind, change_id=change_id,
                               summary=summary, data=config))
         fw.config_hash = new_hash
         result = {"changed": True, "summary": summary}
-        if prev and reason == "sync":
+        if prev and kind == "sync" and summary:
             # Änderung, die nicht über dieses Tool kam (z. B. direkt in der Web-Oberfläche der Firewall)
             audit(db, "config.drift_detected", actor=actor, target_type="firewall", target_id=fw.id,
                   details={"firewall": fw.name, "summary": summary}, commit=False)
     db.commit()
-    if result["changed"] and summary and reason == "sync":
+    if result["changed"] and summary and kind == "sync":
         from . import notify
         notify.drift_detected(fw.id, summary)
     return result

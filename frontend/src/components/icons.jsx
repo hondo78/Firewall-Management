@@ -32,6 +32,8 @@ const P = {
   sync: 'M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4',
   bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z',
   alert: 'M12 3l10 18H2zM12 10v5M12 18v.5',
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  plug: 'M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4',
 }
 
 export const ENTITY_ICON = {
@@ -41,6 +43,8 @@ export const ENTITY_ICON = {
   addressesFqdn: 'globe', FQDNHostGroup: 'cloud', addressGroupsFqdn: 'cloud', MACHost: 'mac', addressesMac: 'mac',
   countryGroups: 'flag', Services: 'wrench', services: 'wrench', ServiceGroup: 'services', serviceGroups: 'services',
   Zone: 'zone', zones: 'zone', Schedule: 'clock', schedules: 'clock',
+  webPolicies: 'globe', applicationPolicies: 'services', ipsPolicies: 'shield', trafficShapingPolicies: 'sync',
+  userGroups: 'group', users: 'user', interfaces: 'plug',
 }
 
 export default function Icon({ name, size = 16, className, title }) {

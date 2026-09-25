@@ -16,8 +16,11 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   - **Alte XML-API der Firewall** (`/webconsole/APIController`, Benutzer/Passwort): nur noch für Firmware ohne
     REST-API.
 - **Konfigurationsansicht im Stil des Sophos Config Studio**: Navigator nach Bereichen (Regeln, Hosts & Dienste,
-  Netzwerk, System), Regeltabelle wie in SFOS, Formular-Editoren für Regeln, Adressen, Dienste, Gruppen und ein
-  Experteneditor (JSON bei REST, XML sonst) für alle Objekte; Export als JSON bzw. `Entities.xml` (Config Studio).
+  Netzwerk, System, Richtlinien, Benutzer & Schnittstellen), Regeltabelle wie in SFOS mit Sicherheits-Spalte
+  (Web/App/IPS/AV/…) und aufklappbaren Details, NAT-Tabelle Original → Übersetzt. Formulare wie auf der Firewall
+  für Firewall-/NAT-Regeln (inkl. Web-Filter, IPS, Anwendungskontrolle, Heartbeat, QoS, Benutzer, Ausnahmen),
+  Web-/Anwendungs-/IPS-/Traffic-Shaping-Richtlinien, Zonen (Gerätezugriff), Zeitpläne und alle Adress-/Dienst-Objekte.
+  JSON (REST) bzw. XML bleibt als zweite Option „Experte“; Export als JSON bzw. `Entities.xml` (Config Studio).
 - **Änderungsanträge (Vier-Augen-Prinzip)**: Änderungen landen in einem Entwurf (Vorschau direkt in der Tabelle),
   werden mit Titel, Begründung, Ticket und optionalem Wartungsfenster eingereicht und müssen von 1–3 *anderen*
   Personen genehmigt werden. Ablehnung nur mit Begründung. Danach automatisches oder manuelles Ausrollen.
@@ -25,7 +28,8 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   (Drift-Prüfung → Status *Konflikt*). XML-API: bei Fehlern werden bereits angewendete Schritte zurückgerollt.
   „Rückgängig machen“ erzeugt einen Gegen-Antrag.
 - **Rollen & Rechte**: frei definierbare Rollen aus Einzelrechten, pro Benutzer global oder je Firewall-Gruppe
-  zugewiesen (z. B. „Firewall-Administrator“ für Filialen, „Betrachter“ für die Zentrale).
+  zugewiesen (z. B. „Firewall-Administrator“ für Filialen, „Betrachter“ für die Zentrale). Die Verbindungs-
+  einstellungen einer Firewall (Adresse, API-Key/Passwort, TLS, Anbindung) sieht und ändert nur ein Superadmin.
 - **Dokumentation**: Audit-Log mit SHA-256-Hash-Kette (Integritätsprüfung, CSV-Export, optional Syslog),
   Verlauf/Kommentare je Antrag, Ausroll-Protokoll mit dem gesendeten XML, Versionsstände der Konfiguration
   inkl. Vergleich (auch zwischen Firewalls) und Erkennung von Änderungen außerhalb des Tools.

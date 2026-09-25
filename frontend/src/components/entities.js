@@ -95,7 +95,10 @@ export function toXml(tag, value, indent = '') {
 
 export const REST_ENTITIES = new Set(['firewallRulesIpv4', 'firewallRulesIpv6', 'natRulesIpv4', 'addressesIpv4',
   'addressGroupsIpv4', 'addressesIpv6', 'addressGroupsIpv6', 'addressesFqdn', 'addressGroupsFqdn', 'addressesMac',
-  'countryGroups', 'services', 'serviceGroups', 'zones', 'schedules'])
+  'countryGroups', 'services', 'serviceGroups', 'zones', 'schedules', 'webPolicies', 'applicationPolicies', 'ipsPolicies',
+  'trafficShapingPolicies', 'userGroups', 'users', 'interfaces'])
+/** Nur lesend (werden auf der Firewall gepflegt) */
+export const READ_ONLY_ENTITIES = new Set(['users', 'interfaces'])
 export const isRestEntity = (entity) => REST_ENTITIES.has(entity)
 /** Regeln mit Reihenfolge und Regeltabelle (NAT läuft als Objektliste). */
 export const RULE_TABLE_ENTITIES = new Set(['FirewallRule', 'firewallRulesIpv4', 'firewallRulesIpv6'])
@@ -161,6 +164,13 @@ export function restSummary(entity, o) {
     case 'zones': return `${o.type || ''}${o.services?.length ? ` · ${refNames(o.services).join(', ')}` : ''}`
     case 'schedules': return `${o.type === 'oneTime' ? 'einmalig' : 'wiederkehrend'} · ${asList(o.timeSlots).map((t) => `${t.dayOfWeek} ${t.startTime}–${t.endTime}`).join(', ')}`
     case 'natRulesIpv4': return `${o.enabled === false ? 'inaktiv · ' : ''}${o.linkedFirewallRule?.name ? `verknüpft mit ${o.linkedFirewallRule.name}` : ''}`
+    case 'webPolicies': return `Standard: ${o.defaultAction === 'deny' ? 'blockieren' : o.defaultAction === 'allow' ? 'zulassen' : o.defaultAction || '–'}${asList(o.rules).length ? ` · ${asList(o.rules).length} Regeln` : ''}`
+    case 'applicationPolicies':
+    case 'ipsPolicies': return `${asList(o.rules).length} Regeln`
+    case 'trafficShapingPolicies': return [o.type, o.associatesWith].filter(Boolean).join(' · ')
+    case 'userGroups': return o.type || ''
+    case 'users': return [o.displayName, o.group?.name && `Gruppe ${o.group.name}`].filter(Boolean).join(' · ')
+    case 'interfaces': return [o.hardwareName, o.zone?.name && `Zone ${o.zone.name}`, o.ipv4?.address || o.ipv4?.ipAddress].filter(Boolean).join(' · ')
     default: return ''
   }
 }
@@ -177,6 +187,15 @@ export function restRefOptions(config) {
       ...opt('addressesMac', 'MAC', 'macAddresses'), ...opt('countryGroups', 'Ländergruppe', 'countryGroups')],
     services: [...opt('services', 'Dienst', 'services'), ...opt('serviceGroups', 'Gruppe', 'serviceGroups')],
     schedules: (config.schedules || []).map((o) => o.name),
+    networks6: [...opt('addressesIpv6', 'IPv6', 'ipv6Addresses'), ...opt('addressGroupsIpv6', 'IPv6-Gruppe', 'ipv6Groups'),
+      ...opt('addressesMac', 'MAC', 'macAddresses')],
+    webPolicies: (config.webPolicies || []).map((o) => o.name),
+    appPolicies: (config.applicationPolicies || []).map((o) => o.name),
+    ipsPolicies: (config.ipsPolicies || []).map((o) => o.name),
+    tsPolicies: (config.trafficShapingPolicies || []).map((o) => o.name),
+    usersAndGroups: [...opt('userGroups', 'Gruppe', 'userGroups'), ...opt('users', 'Benutzer', 'users')],
+    interfaces: opt('interfaces', 'Schnittstelle'),
+    ipv6: opt('addressesIpv6', 'IPv6'),
     ipv4: opt('addressesIpv4', 'IPv4'),
     fqdn: opt('addressesFqdn', 'FQDN'),
     serviceItems: opt('services', 'Dienst'),

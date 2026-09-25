@@ -119,6 +119,8 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
     entity, action, name = op.get("entity"), op.get("action"), (op.get("name") or "").strip()
     if entity not in entities.names(entities.fmt_for(fw.connector)):
         raise HTTPException(400, f"Entität {entity} passt nicht zur Anbindung dieser Firewall")
+    if entity in entities.REST_READ_ONLY_ENTITIES:
+        raise HTTPException(400, f"{entities.LABELS[entity]} werden auf der Firewall gepflegt, nicht über dieses Tool")
     if action not in ("add", "update", "remove"):
         raise HTTPException(400, "Aktion muss add, update oder remove sein")
     if not name:

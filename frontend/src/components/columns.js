@@ -15,7 +15,10 @@ const REST_ADDR = [
 export const COLUMNS = {
   // REST
   addressesIpv4: REST_ADDR,
-  addressesIpv6: REST_ADDR,
+  addressesIpv6: [
+    col('type', 'Typ', (o) => ({ ipv6Address: 'Host', ipv6Network: 'Netzwerk', ipv6Range: 'Bereich', ipv6List: 'Liste' }[o.type] || o.type)),
+    col('addr', 'Adresse', (o) => (o.type === 'ipv6Network' ? `${o.ipv6NetworkAddress}/${o.prefixLength}` : o.type === 'ipv6Range' ? `${o.ipv6AddressStart} – ${o.ipv6AddressEnd}` : o.ipv6Address || asList(o.ipv6Addresses).join(', '))),
+  ],
   addressGroupsIpv4: [col('members', 'Mitglieder', (o) => names(o.ipv4Addresses)), col('n', 'Anzahl', (o) => asList(o.ipv4Addresses).length)],
   addressGroupsIpv6: [col('members', 'Mitglieder', (o) => names(o.ipv6Addresses))],
   addressesFqdn: [col('fqdn', 'FQDN', (o) => o.fqdn)],
@@ -33,6 +36,16 @@ export const COLUMNS = {
   schedules: [col('type', 'Typ', (o) => (o.type === 'oneTime' ? 'einmalig' : 'wiederkehrend')),
     col('slots', 'Zeiten', (o) => asList(o.timeSlots).map((t) => `${t.dayOfWeek} ${t.startTime}–${t.endTime}`).join(', '))],
   natRulesIpv4: [col('enabled', 'Status', (o) => (o.enabled === false ? 'inaktiv' : 'aktiv')), col('summary', 'Details', (o) => anySummary('natRulesIpv4', o))],
+  webPolicies: [col('default', 'Standardaktion', (o) => ({ allow: 'Zulassen', deny: 'Blockieren' }[o.defaultAction] || o.defaultAction || '–')),
+    col('rules', 'Regeln', (o) => asList(o.rules).length), col('safe', 'SafeSearch', (o) => (o.enforceSafeSearch ? 'ja' : ''), { hidden: true })],
+  applicationPolicies: [col('rules', 'Regeln', (o) => asList(o.rules).length)],
+  ipsPolicies: [col('rules', 'Regeln', (o) => asList(o.rules).length)],
+  trafficShapingPolicies: [col('type', 'Typ', (o) => o.type), col('assoc', 'Gilt für', (o) => o.associatesWith),
+    col('bw', 'Bandbreite', (o) => (o.bandwidth ? JSON.stringify(o.bandwidth).replace(/[{}"]/g, '').replace(/,/g, ', ') : ''), { hidden: true })],
+  userGroups: [col('type', 'Typ', (o) => o.type)],
+  users: [col('display', 'Anzeigename', (o) => o.displayName), col('group', 'Gruppe', (o) => o.group?.name), col('active', 'Aktiv', (o) => (o.active === false ? 'nein' : 'ja'))],
+  interfaces: [col('hw', 'Hardware', (o) => o.hardwareName), col('zone', 'Zone', (o) => o.zone?.name || o.zone),
+    col('ip', 'IPv4', (o) => o.ipv4?.address || o.ipv4?.ipAddress || (o.ipv4?.assignment || '')), col('enabled', 'Aktiv', (o) => (o.enabled === false ? 'nein' : 'ja'))],
   // XML
   IPHost: [
     col('family', 'IP-Version', (o) => o.IPFamily),

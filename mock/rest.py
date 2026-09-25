@@ -24,6 +24,10 @@ RESOURCES = {
     "/network/address-groups/fqdn": "addressGroupsFqdn", "/network/addresses/mac": "addressesMac",
     "/network/address-groups/country": "countryGroups", "/network/services": "services",
     "/network/service-groups": "serviceGroups", "/network/zones": "zones", "/administration/schedules": "schedules",
+    "/web/policies": "webPolicies", "/application/policies": "applicationPolicies",
+    "/intrusion-prevention/policies": "ipsPolicies", "/traffic-shaping/policies": "trafficShapingPolicies",
+    "/authentication/user-groups": "userGroups", "/authentication/users": "users",
+    "/network/interfaces/network-interfaces": "interfaces",
 }
 RULES = {"firewallRulesIpv4", "firewallRulesIpv6", "natRulesIpv4"}
 REF_TARGETS = {"zone": ["zones"], "network": ["addressesIpv4", "addressGroupsIpv4", "addressesFqdn", "addressGroupsFqdn",
@@ -112,7 +116,48 @@ def convert(objects: list[tuple[str, dict]]) -> dict[str, list[dict]]:
             if pol.get("Schedule") and pol["Schedule"] != "All The Time":
                 rule["schedule"] = {"name": pol["Schedule"]}
             out["firewallRulesIpv4"].append(meta(rule))
+    _demo_extras(out)
     return out
+
+
+def _demo_extras(out: dict[str, list[dict]]) -> None:
+    """Richtlinien, Benutzer, Schnittstellen und eine NAT-Regel wie auf einer SFOS-Firewall (Demo-Daten)."""
+    web = [
+        {"name": "Default Workplace Policy", "description": "Standard-Arbeitsplatz", "defaultAction": "allow", "maxFileSize": 300,
+         "enforceSafeSearch": True, "youtubeFilter": "moderate", "isInternal": True,
+         "rules": [{"enabled": True, "httpAction": "deny", "httpsAction": "deny", "followHttpAction": True,
+                    "usersOrGroups": {"any": True}, "activities": {"categories": [{"name": "Weapons"}, {"name": "Gambling"}]}},
+                   {"enabled": True, "httpAction": "warn", "httpsAction": "warn", "followHttpAction": True,
+                    "usersOrGroups": {"any": True}, "activities": {"categories": [{"name": "Social Networking"}]}}]},
+        {"name": "Allow All", "description": "", "defaultAction": "allow", "maxFileSize": 300, "rules": [], "isInternal": True},
+    ]
+    app = [{"name": "Block high risk (Risk Level 4 and above) apps", "description": "", "isInternal": True,
+            "rules": [{"name": "Hohe Risiken", "action": "deny", "selectionMode": "applicationFilter",
+                       "applicationFilters": [{"attribute": "risk", "operator": "in", "values": ["4", "5"]}],
+                       "schedule": {"name": "All The Time"}}]}]
+    ips = [{"name": "generalpolicy", "description": "Allgemeiner Schutz", "isInternal": True,
+            "rules": [{"name": "Kritisch", "signatureSource": "default", "action": "recommended", "selectionMode": "signatureFilter",
+                       "signatureFilters": [{"attribute": "severity", "operator": "in", "values": ["critical", "major"]}]}]},
+           {"name": "lantowan_strict", "description": "", "rules": []}]
+    ts = [{"name": "Gäste 20 Mbit", "description": "Gast-WLAN", "associatesWith": "rules", "isShared": True,
+           "type": "bestEffort", "bandwidth": {"bestEffort": {"aggregatedKbps": 20000}}}]
+    groups = [{"name": "Open Group", "type": "normal", "isInternal": True}, {"name": "IT-Admins", "type": "normal"}]
+    users = [{"name": "admin", "displayName": "Administrator", "group": {"name": "Open Group"}, "active": True}]
+    ifs = [{"name": "Port1", "hardwareName": "Port1", "zone": {"name": "LAN"}, "ipv4": {"assignment": "static", "address": "192.168.1.1"}, "enabled": True},
+           {"name": "Port2", "hardwareName": "Port2", "zone": {"name": "WAN"}, "ipv4": {"assignment": "dhcp"}, "enabled": True}]
+    for key, items in [("webPolicies", web), ("applicationPolicies", app), ("ipsPolicies", ips), ("trafficShapingPolicies", ts),
+                       ("userGroups", groups), ("users", users), ("interfaces", ifs)]:
+        out[key] = [meta(i) for i in items]
+    if out["firewallRulesIpv4"]:
+        r = out["firewallRulesIpv4"][0]
+        if r.get("action") == "accept":
+            r["securityFeatures"] = {"webPolicy": {"name": "Default Workplace Policy"}, "ipsPolicy": {"name": "generalpolicy"},
+                                     "scanHttpAndDecryptedHttps": True, "zeroDayProtection": True}
+    out["natRulesIpv4"].append(meta({
+        "name": "Default SNAT IPv4", "description": "Maskierung ins Internet", "enabled": True,
+        "originalSourceNetworks": {"any": True}, "originalDestinationNetworks": {"any": True},
+        "originalServicesOrGroups": {"any": True}, "translatedSource": {"masq": True},
+        "inboundInterfaces": {"any": True}, "outboundInterfaces": {"any": True}}))
 
 
 def reset() -> None:
