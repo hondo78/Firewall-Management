@@ -14,6 +14,7 @@ import CentralTab from './firewall/CentralTab'
 import Findings from '../components/Findings'
 import CompareTab from './firewall/CompareTab'
 import FirmwareTab from './firewall/FirmwareTab'
+import BackupsTab from './firewall/BackupsTab'
 
 const PERM_SHORT = {
   'firewall.view': 'Lesen', 'change.create': 'Beantragen', 'change.approve': 'Genehmigen', 'change.deploy': 'Ausrollen',
@@ -250,7 +251,7 @@ export default function FirewallView() {
   }
   if (error) return <ErrorBox error={error} />
   if (!fw) return null
-  const tabs = [['config', 'Konfiguration'], ['analysis', 'Analyse'], ['compare', 'Vergleich & Versionen'], ['changes', 'Anträge'],
+  const tabs = [['config', 'Konfiguration'], ['analysis', 'Analyse'], ['compare', 'Vergleich & Versionen'], ['changes', 'Anträge'], ['backups', 'Sicherungen'],
     fw.central_id && ['firmware', 'Firmware'], fw.central_id && ['central', 'Lizenzen & Alerts'], can(me, 'firewall.manage', fw) && ['settings', 'Einstellungen']]
 
   return (
@@ -286,6 +287,7 @@ export default function FirewallView() {
       {tab === 'compare' && <CompareTab fw={fw} />}
       {tab === 'changes' && <ChangesTab fw={fw} />}
       {tab === 'firmware' && <FirmwareTab fw={fw} />}
+      {tab === 'backups' && <BackupsTab fw={fw} onDraftChanged={reload} />}
       {tab === 'central' && <CentralTab fw={fw} />}
       {tab === 'settings' && <SettingsTab fw={fw} onSaved={(f) => { setFw({ ...fw, ...f }); reload() }} />}
       <DraftBar draft={draft} onChanged={reload} requireTicket={settings?.require_ticket} settings={settings} fw={fw} />

@@ -49,7 +49,11 @@ REST_RESOURCES: dict[str, tuple[str, str, str]] = {
     "userGroups": ("/authentication/user-groups", "Benutzergruppen", "Benutzer & Schnittstellen"),
     "users": ("/authentication/users", "Benutzer", "Benutzer & Schnittstellen"),
     "interfaces": ("/network/interfaces/network-interfaces", "Schnittstellen", "Benutzer & Schnittstellen"),
+    # Einzelne Einstellungsobjekte (GET/PATCH ohne Namen im Pfad)
+    "backupSettings": ("/system/backup/settings", "Sicherungs-Zeitplan", "System"),
 }
+# Einstellungen statt Objektliste: genau ein Objekt unter festem Namen, nur „update“
+REST_SINGLETONS = {"backupSettings": "Sicherungs-Zeitplan"}
 # Nur lesend – werden synchronisiert, aber nicht über Anträge geändert
 REST_READ_ONLY_ENTITIES = {"users", "interfaces"}
 REST_MANAGED = [(e, label, section) for e, (_, label, section) in REST_RESOURCES.items()]

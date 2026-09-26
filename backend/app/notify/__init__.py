@@ -166,6 +166,22 @@ def drift_detected(firewall_id: str, summary: dict) -> None:
         _pool.submit(_safe, run)
 
 
+def backup_failed(firewall_id: str, error: str) -> None:
+    def run():
+        with SessionLocal() as db:
+            fw = db.get(Firewall, firewall_id)
+            cfg = ncfg.load(db)
+            text = f"Die automatische Sicherung der Firewall „{fw.name}“ ist fehlgeschlagen:\n{error}"
+            if cfg["public_url"]:
+                text += f"\n\nSicherungen: {cfg['public_url']}/firewalls/{fw.id}/backups"
+            subject = f"[Firewall] Sicherung fehlgeschlagen: {fw.name}"
+            deliver(db, cfg, managers(db, fw), subject, text, teams=(subject, text.split("\n")))
+    if SYNC:
+        _safe(run)
+    else:
+        _pool.submit(_safe, run)
+
+
 # --- Telegram: Verknüpfung und Genehmigen per Knopf ----------------------------------------------------------
 
 _link_codes: dict[str, tuple[str, float]] = {}   # code → (user_id, gültig bis)

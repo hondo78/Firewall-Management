@@ -45,7 +45,7 @@ export const ENTITY_ICON = {
   countryGroups: 'flag', Services: 'wrench', services: 'wrench', ServiceGroup: 'services', serviceGroups: 'services',
   Zone: 'zone', zones: 'zone', Schedule: 'clock', schedules: 'clock',
   webPolicies: 'globe', applicationPolicies: 'services', ipsPolicies: 'shield', trafficShapingPolicies: 'sync',
-  userGroups: 'group', users: 'user', interfaces: 'plug',
+  userGroups: 'group', users: 'user', interfaces: 'plug', backupSettings: 'download',
 }
 
 export default function Icon({ name, size = 16, className, title }) {

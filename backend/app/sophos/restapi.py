@@ -126,6 +126,12 @@ class RestApiClient:
                 return items
             page += 1
 
+    def get_singleton(self, path: str) -> dict:
+        return self.request("GET", path)
+
+    def update_singleton(self, path: str, body: dict) -> dict:
+        return self.request("PATCH", path, json=body)
+
     def get(self, path: str, name: str) -> dict:
         return self.request("GET", f"{path}/{quote_name(name)}")
 
@@ -160,13 +166,16 @@ def position_body(position: dict | None) -> dict:
 
 
 def request_preview(path: str, action: str, data: dict | None, name: str, position: dict | None,
-                    before: dict | None = None, is_rule: bool = False) -> str:
+                    before: dict | None = None, is_rule: bool = False, singleton: bool = False) -> str:
     """HTTP-Aufrufe, die für eine Operation an die Firewall gehen (ohne Key) – zur Anzeige im Antrag."""
     import json as _json
     base = "/api/firewall-config/v1" + path
 
     def dump(v) -> str:
         return _json.dumps(v, indent=2, ensure_ascii=False)
+    if singleton:
+        body = {k: v for k, v in patch_body(before, data).items() if k != "name"}
+        return f"PATCH {base}\n{dump(body)}"
     if action == "remove":
         return f"DELETE {base}/{quote_name(name)}"
     if action == "add":

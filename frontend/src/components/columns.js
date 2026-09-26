@@ -44,6 +44,9 @@ export const COLUMNS = {
     col('bw', 'Bandbreite', (o) => (o.bandwidth ? JSON.stringify(o.bandwidth).replace(/[{}"]/g, '').replace(/,/g, ', ') : ''), { hidden: true })],
   userGroups: [col('type', 'Typ', (o) => o.type)],
   users: [col('display', 'Anzeigename', (o) => o.displayName), col('group', 'Gruppe', (o) => o.group?.name), col('active', 'Aktiv', (o) => (o.active === false ? 'nein' : 'ja'))],
+  backupSettings: [col('storage', 'Ziel', (o) => ({ local: 'Lokal', ftp: 'FTP', email: 'E-Mail' }[o.backupStorage] || o.backupStorage)),
+    col('freq', 'Zeitplan', (o) => ({ never: 'nie', daily: 'täglich', weekly: 'wöchentlich', monthly: 'monatlich' }[o.schedule?.frequency] || '–')),
+    col('time', 'Uhrzeit', (o) => (o.schedule?.hour != null ? `${String(o.schedule.hour).padStart(2, '0')}:${String(o.schedule.minute ?? 0).padStart(2, '0')}` : ''))],
   interfaces: [col('hw', 'Hardware', (o) => o.hardwareName), col('zone', 'Zone', (o) => o.zone?.name || o.zone),
     col('ip', 'IPv4', (o) => o.ipv4?.address || o.ipv4?.ipAddress || (o.ipv4?.assignment || '')), col('enabled', 'Aktiv', (o) => (o.enabled === false ? 'nein' : 'ja'))],
   // XML

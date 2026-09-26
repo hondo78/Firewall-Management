@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, TypeDecorator,
+from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, TypeDecorator,
                         UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -170,6 +170,26 @@ class ConfigSnapshot(Base):
     change_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
     data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ConfigBackup(Base):
+    """Sicherung der vollständigen Firewall-Konfiguration (gzip-JSON), automatisch nach Zeitplan oder manuell."""
+    __tablename__ = "config_backups"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    firewall_id: Mapped[str] = mapped_column(ForeignKey("firewalls.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow, index=True)
+    # scheduled | manual
+    trigger: Mapped[str] = mapped_column(String(20), default="scheduled")
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    format: Mapped[str] = mapped_column(String(10), default="rest")
+    hash: Mapped[str] = mapped_column(String(64), default="")
+    object_count: Mapped[int] = mapped_column(Integer, default=0)
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    # Angeheftete Sicherungen fallen nie unter die Aufbewahrungsregel
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(String(300), default="")
+    file_path: Mapped[str] = mapped_column(String(500), default="")
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class ChangeRequest(Base):

@@ -96,9 +96,11 @@ export function toXml(tag, value, indent = '') {
 export const REST_ENTITIES = new Set(['firewallRulesIpv4', 'firewallRulesIpv6', 'natRulesIpv4', 'addressesIpv4',
   'addressGroupsIpv4', 'addressesIpv6', 'addressGroupsIpv6', 'addressesFqdn', 'addressGroupsFqdn', 'addressesMac',
   'countryGroups', 'services', 'serviceGroups', 'zones', 'schedules', 'webPolicies', 'applicationPolicies', 'ipsPolicies',
-  'trafficShapingPolicies', 'userGroups', 'users', 'interfaces'])
+  'trafficShapingPolicies', 'userGroups', 'users', 'interfaces', 'backupSettings'])
 /** Nur lesend (werden auf der Firewall gepflegt) */
 export const READ_ONLY_ENTITIES = new Set(['users', 'interfaces'])
+// Einstellungsobjekte: genau ein Eintrag, nur ändern (kein Anlegen/Löschen)
+export const SINGLETON_ENTITIES = new Set(['backupSettings'])
 export const isRestEntity = (entity) => REST_ENTITIES.has(entity)
 /** Regeln mit Reihenfolge und Regeltabelle (NAT läuft als Objektliste). */
 export const RULE_TABLE_ENTITIES = new Set(['FirewallRule', 'firewallRulesIpv4', 'firewallRulesIpv6'])

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { EditorShell } from './Editors'
-import { asList, restRefOptions } from './entities'
+import { SINGLETON_ENTITIES, asList, restRefOptions } from './entities'
 import { Field, Picker, Seg } from './ui'
 import { NEW_POLICY, policyForm } from './SophosPolicies'
 
@@ -23,6 +23,42 @@ const NEW_REST = {
   addressesMac: { name: '', description: '', type: 'macAddress', macAddress: '' },
   addressesIpv6: { name: '', description: '', type: 'ipv6Address', ipv6Address: '' },
   ...NEW_POLICY,
+}
+
+const SFOS_DAYS = [['monday', 'Montag'], ['tuesday', 'Dienstag'], ['wednesday', 'Mittwoch'], ['thursday', 'Donnerstag'],
+  ['friday', 'Freitag'], ['saturday', 'Samstag'], ['sunday', 'Sonntag']]
+
+/** Sicherungszeitplan der Firewall (System › Sicherung & Firmware) */
+function BackupSettingsForm({ data, setData }) {
+  const sc = data.schedule || { frequency: 'never' }
+  const setSc = (patch) => setData({ ...data, schedule: { ...sc, ...patch } })
+  const freq = sc.frequency || 'never'
+  const setFreq = (f) => setSc({ frequency: f, hour: sc.hour ?? 2, minute: sc.minute ?? 0,
+    dayOfWeek: f === 'weekly' ? sc.dayOfWeek || 'sunday' : null, dayOfMonth: f === 'monthly' ? sc.dayOfMonth || 1 : null })
+  const time = `${String(sc.hour ?? 0).padStart(2, '0')}:${String(sc.minute ?? 0).padStart(2, '0')}`
+  const ftp = data.ftp || {}
+  return (
+    <div className="stack">
+      <Field label="Häufigkeit"><Seg options={[['never', 'Nie'], ['daily', 'Täglich'], ['weekly', 'Wöchentlich'], ['monthly', 'Monatlich']]} value={freq} onChange={setFreq} /></Field>
+      {freq !== 'never' && <div className="form-grid">
+        {freq === 'weekly' && <Field label="Wochentag"><select value={sc.dayOfWeek || 'sunday'} onChange={(e) => setSc({ dayOfWeek: e.target.value })}>
+          {SFOS_DAYS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
+        {freq === 'monthly' && <Field label="Tag im Monat"><input type="number" min={1} max={31} value={sc.dayOfMonth ?? 1} onChange={(e) => setSc({ dayOfMonth: Number(e.target.value) })} /></Field>}
+        <Field label="Uhrzeit (Zeit der Firewall)"><input type="time" value={time} onChange={(e) => { const [h, m] = e.target.value.split(':').map(Number); setSc({ hour: h, minute: m }) }} /></Field>
+      </div>}
+      <Field label="Ziel"><Seg options={[['local', 'Lokal'], ['ftp', 'FTP-Server'], ['email', 'E-Mail']]} value={data.backupStorage || 'local'} onChange={(v) => setData({ ...data, backupStorage: v })} /></Field>
+      {data.backupStorage === 'ftp' && <div className="form-grid">
+        <Field label="FTP-Server (IP-Adresse)"><input value={ftp.server || ''} onChange={(e) => setData({ ...data, ftp: { ...ftp, server: e.target.value } })} /></Field>
+        <Field label="Pfad"><input value={ftp.path || ''} onChange={(e) => setData({ ...data, ftp: { ...ftp, path: e.target.value } })} /></Field>
+        <Field label="Benutzer"><input value={ftp.username || ''} autoComplete="off" onChange={(e) => setData({ ...data, ftp: { ...ftp, username: e.target.value } })} /></Field>
+      </div>}
+      {data.backupStorage === 'ftp' && <div className="alert info small">Das FTP-Passwort wird hier bewusst nicht erfasst (es stünde sonst im Antrag und im Audit-Log) –
+        bitte direkt auf der Firewall setzen.</div>}
+      {data.backupStorage === 'email' && <Field label="E-Mail-Empfänger" hint="Kommagetrennt, höchstens 10">
+        <input value={(data.emailRecipients || []).join(', ')} onChange={(e) => setData({ ...data, emailRecipients: e.target.value.split(/[,;]/).map((x) => x.trim()).filter(Boolean) })} /></Field>}
+      <Field label="Präfix des Dateinamens" hint="optional, max. 32 Zeichen"><input maxLength={32} value={data.backupPrefix || ''} onChange={(e) => setData({ ...data, backupPrefix: e.target.value })} /></Field>
+    </div>
+  )
 }
 
 // Gerätezugriff je Zone (Administration › Device access in SFOS)
@@ -229,9 +265,10 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
     schedules: <ScheduleForm {...props} />,
     addressesMac: <MacForm {...props} />,
     addressesIpv6: <Ipv6Form {...props} />,
+    backupSettings: <BackupSettingsForm {...props} />,
   }
   return (
-    <EditorShell title={isNew ? `${label}: neu` : `${label} „${object.name}“ bearbeiten`} entity={entity}
+    <EditorShell title={isNew ? `${label}: neu` : SINGLETON_ENTITIES.has(entity) ? `${label} bearbeiten` : `${label} „${object.name}“ bearbeiten`} entity={entity}
       data={data} setData={setData} isNew={isNew} form={forms[entity] || policyForm(entity, props)} onClose={onClose}
       onSubmit={(payload) => onSubmit({ entity, action: isNew ? 'add' : 'update', name: payload.name, data: payload })} />
   )

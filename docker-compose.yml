@@ -33,6 +33,10 @@ services:
       SYSLOG_HOST: ${SYSLOG_HOST:-}
       SYSLOG_PORT: ${SYSLOG_PORT:-514}
       SYSLOG_PROTOCOL: ${SYSLOG_PROTOCOL:-udp}
+      BACKUP_DIR: /backups
+    volumes:
+      # Sicherungsdateien (nur wenn „zusätzlich als Datei ablegen“ aktiv ist)
+      - ./backups:/backups
     extra_hosts:
       - "host.docker.internal:host-gateway"
     expose:

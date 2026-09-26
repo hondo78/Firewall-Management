@@ -49,6 +49,32 @@ export default function SettingsPage() {
         <Field label="Intervall (Minuten)" hint="Liest regelmäßig die Konfiguration aller Firewalls und erkennt Änderungen außerhalb dieses Tools. 0 = aus.">
           <input type="number" min={0} value={form.sync_interval_minutes} onChange={(e) => setForm({ ...form, sync_interval_minutes: Number(e.target.value) })} style={{ maxWidth: 200 }} />
         </Field>
+        <h3 style={{ margin: '10px 0 0' }}>Automatische Sicherung</h3>
+        <label className="check"><input type="checkbox" checked={form.backup_enabled} onChange={(e) => setForm({ ...form, backup_enabled: e.target.checked })} />
+          <span>Konfiguration aller Firewalls automatisch sichern <span className="muted small">(liest per API – auf den Firewalls wird nichts geändert)</span></span></label>
+        {form.backup_enabled && <div className="form-grid">
+          <Field label="Häufigkeit">
+            <select value={form.backup_frequency} onChange={(e) => setForm({ ...form, backup_frequency: e.target.value })}>
+              <option value="daily">täglich</option><option value="weekly">wöchentlich</option><option value="monthly">monatlich</option>
+            </select>
+          </Field>
+          {form.backup_frequency === 'weekly' && <Field label="Wochentag">
+            <select value={form.backup_weekday} onChange={(e) => setForm({ ...form, backup_weekday: Number(e.target.value) })}>
+              {['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'].map((d, i) => <option key={d} value={i}>{d}</option>)}
+            </select>
+          </Field>}
+          {form.backup_frequency === 'monthly' && <Field label="Tag im Monat" hint="In kürzeren Monaten am letzten Tag">
+            <input type="number" min={1} max={31} value={form.backup_monthday} onChange={(e) => setForm({ ...form, backup_monthday: Number(e.target.value) })} />
+          </Field>}
+          <Field label="Uhrzeit" hint="Zeitzone des Servers">
+            <input type="time" value={form.backup_time} onChange={(e) => setForm({ ...form, backup_time: e.target.value })} />
+          </Field>
+          <Field label="Aufbewahren (je Firewall)" hint="Anzahl der neuesten Sicherungen; angeheftete bleiben immer">
+            <input type="number" min={1} max={1000} value={form.backup_keep} onChange={(e) => setForm({ ...form, backup_keep: Number(e.target.value) })} />
+          </Field>
+        </div>}
+        <label className="check"><input type="checkbox" checked={form.backup_to_directory} onChange={(e) => setForm({ ...form, backup_to_directory: e.target.checked })} />
+          <span>Sicherungen zusätzlich als Datei ablegen <span className="muted small">(Verzeichnis <code>backups/</code> im Projektordner, gzip-JSON – z. B. für die Datensicherung des Servers)</span></span></label>
         {msg && <div className={`alert ${msg.kind}`}>{msg.text}</div>}
         <div><button className="primary" onClick={save}>Speichern</button></div>
       </div>

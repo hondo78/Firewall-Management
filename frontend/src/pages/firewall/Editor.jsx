@@ -4,7 +4,7 @@ import { ACTION_LABEL, api, can, download, upload } from '../../api'
 import { BULK, BULK_KIND, parseBulk } from '../../components/bulk'
 import { COLUMNS, searchText } from '../../components/columns'
 import { ObjectEditor, RuleEditor } from '../../components/Editors'
-import { READ_ONLY_ENTITIES, RULE_TABLE_ENTITIES, PRIMARY_RULES, asList, canonical, isRestEntity, oname } from '../../components/entities'
+import { READ_ONLY_ENTITIES, RULE_TABLE_ENTITIES, SINGLETON_ENTITIES, PRIMARY_RULES, asList, canonical, isRestEntity, oname } from '../../components/entities'
 import Icon, { ENTITY_ICON } from '../../components/icons'
 import { RestObjectEditor } from '../../components/RestEditors'
 import { ObjectView } from '../../components/SophosPolicies'
@@ -246,6 +246,7 @@ function GettingStarted({ onHide }) {
 
 function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, findings, onEdit, onOp, onShow, onBulkDelete, onAdd, onBulkAdd }) {
   const rest = isRestEntity(entity)
+  const single = SINGLETON_ENTITIES.has(entity)
   const cols = COLUMNS[entity] || []
   const [visible, setVisible] = useState(() => store.get(`fwm.cols.${entity}`, cols.filter((c) => !c.hidden).map((c) => c.key)))
   const [q, setQ] = useState('')
@@ -256,7 +257,7 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
   const paging = usePaging(entity, shown.length)
   const pageRows = paging.slice(shown)
   const names = rows.filter((r) => r.state !== 'remove').map((r) => oname(r.obj))
-  const deletable = (r) => r.state !== 'remove' && !r.obj.isInternal
+  const deletable = (r) => r.state !== 'remove' && !r.obj.isInternal && !single
   const toggle = (n) => { const s = new Set(sel); s.has(n) ? s.delete(n) : s.add(n); setSel(s) }
   const allSel = pageRows.some(deletable) && pageRows.filter(deletable).every((r) => sel.has(oname(r.obj)))
   const toggleAll = () => {
@@ -272,7 +273,7 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
       <div className="panel-head">
         <Icon name={ENTITY_ICON[entity] || 'host'} size={18} className="text-accent" />
         <h3>{meta.label} <span className="muted" style={{ fontWeight: 400 }}>({rows.filter((r) => r.state !== 'remove').length})</span></h3>
-        {mayEdit && <div className="right row">
+        {mayEdit && !single && <div className="right row">
           <button className="sm" disabled={!sel.size} onClick={() => setSel(new Set())}>Auswahl aufheben</button>
           {fw.capabilities.remove && <button className="sm danger" disabled={!sel.size}
             onClick={async () => { await onBulkDelete([...sel]); setSel(new Set()) }}><Icon name="trash" size={13} /> Löschen{sel.size ? ` (${sel.size})` : ''}</button>}
@@ -315,7 +316,7 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
                     <td className="actions">
                       {mayEdit && state !== 'remove' && <>
                         <IconButton icon="edit" title="Bearbeiten" onClick={() => onEdit(obj)} />
-                        {fw.capabilities.remove && !obj.isInternal && <IconButton icon="trash" title="Löschen" danger onClick={() => onOp({ entity, action: 'remove', name })} />}
+                        {fw.capabilities.remove && !obj.isInternal && !single && <IconButton icon="trash" title="Löschen" danger onClick={() => onOp({ entity, action: 'remove', name })} />}
                       </>}
                       <IconButton icon="code" title={rest ? 'Details / JSON' : 'Details / XML'} onClick={() => onShow(obj)} />
                     </td>

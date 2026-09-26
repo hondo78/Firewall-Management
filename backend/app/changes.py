@@ -115,6 +115,25 @@ def used_by(config: dict[str, list[dict]], entity: str, name: str) -> list[str]:
     return out
 
 
+def _check_backup_settings(d: dict) -> None:
+    """SFOS lehnt unvollständige Sicherungsziele erst beim Ausrollen ab – schon im Entwurf prüfen."""
+    storage = d.get("backupStorage")
+    if storage not in ("local", "ftp", "email"):
+        raise HTTPException(400, "Sicherungsziel muss lokal, FTP oder E-Mail sein")
+    ftp = d.get("ftp") or {}
+    if storage == "ftp" and not (ftp.get("server") and ftp.get("username")):
+        raise HTTPException(400, "Für FTP-Sicherungen sind Server und Benutzer nötig")
+    if storage == "email" and not d.get("emailRecipients"):
+        raise HTTPException(400, "Für Sicherungen per E-Mail ist mindestens ein Empfänger nötig")
+    sc = d.get("schedule") or {}
+    if sc.get("frequency") not in ("never", "daily", "weekly", "monthly"):
+        raise HTTPException(400, "Ungültige Häufigkeit der Sicherung")
+    if sc.get("frequency") == "weekly" and not sc.get("dayOfWeek"):
+        raise HTTPException(400, "Wöchentliche Sicherung braucht einen Wochentag")
+    if sc.get("frequency") == "monthly" and not sc.get("dayOfMonth"):
+        raise HTTPException(400, "Monatliche Sicherung braucht einen Tag im Monat")
+
+
 def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) -> dict:
     entity, action, name = op.get("entity"), op.get("action"), (op.get("name") or "").strip()
     if entity not in entities.names(entities.fmt_for(fw.connector)):
@@ -123,6 +142,8 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
         raise HTTPException(400, f"{entities.LABELS[entity]} werden auf der Firewall gepflegt, nicht über dieses Tool")
     if action not in ("add", "update", "remove"):
         raise HTTPException(400, "Aktion muss add, update oder remove sein")
+    if entity in entities.REST_SINGLETONS and action != "update":
+        raise HTTPException(400, f"{entities.LABELS[entity]} kann nur geändert, nicht angelegt oder gelöscht werden")
     if not name:
         raise HTTPException(400, "Name fehlt")
     if action == "remove" and not connector.capabilities(fw)["remove"]:
@@ -146,6 +167,8 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
         if data.get(entities.name_key(entity)) != name:
             raise HTTPException(400, "Umbenennen ist nicht möglich – neues Objekt anlegen und altes löschen")
         clean["data"] = data
+        if entity == "backupSettings":
+            _check_backup_settings(data)
         if action == "update" and diff.canonical(data) == diff.canonical(existing[name]) and not op.get("position"):
             raise HTTPException(400, "Keine Änderung gegenüber dem aktuellen Stand")
     if entity in entities.RULE_ENTITIES and op.get("position") and action != "remove":

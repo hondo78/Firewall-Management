@@ -43,5 +43,8 @@ SYSLOG_PORT = int(_env("SYSLOG_PORT", "514"))
 SYSLOG_PROTOCOL = _env("SYSLOG_PROTOCOL", "udp").lower()
 SYSLOG_APP_NAME = _env("SYSLOG_APP_NAME", "fwm")
 
+# Ablageort für Sicherungsdateien (optional, Einstellung „backup_to_directory“) – im Compose als Volume
+BACKUP_DIR = _env("BACKUP_DIR", "/backups")
+
 # Worker im Test abschalten
 DISABLE_WORKER = _env("DISABLE_WORKER") == "1"

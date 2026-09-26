@@ -23,6 +23,14 @@ DEFAULTS: dict = {
     "reauth_minutes": 30,
     # Anmeldungen per SSO (OIDC) erfüllen die Zwei-Faktor-Pflicht (MFA erledigt der Identity Provider)
     "oidc_counts_as_mfa": True,
+    # Automatische Sicherung der Firewall-Konfigurationen im Tool
+    "backup_enabled": True,
+    "backup_frequency": "daily",       # daily | weekly | monthly
+    "backup_time": "02:00",            # Ortszeit (TZ des Containers)
+    "backup_weekday": 0,               # 0 = Montag (wöchentlich)
+    "backup_monthday": 1,              # 1–31 (monatlich; kürzere Monate → letzter Tag)
+    "backup_keep": 30,                 # je Firewall aufbewahrte, nicht angeheftete Sicherungen
+    "backup_to_directory": False,      # zusätzlich als Datei in BACKUP_DIR (Volume) ablegen
 }
 
 
@@ -48,6 +56,18 @@ def set_many(db: DbSession, values: dict) -> dict:
             value = max(1, min(value, 5))
         if key == "sync_interval_minutes":
             value = max(0, value)
+        if key == "backup_frequency" and value not in ("daily", "weekly", "monthly"):
+            raise ValueError("backup_frequency")
+        if key == "backup_time":
+            import re
+            if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value):
+                raise ValueError("backup_time")
+        if key == "backup_weekday":
+            value = max(0, min(value, 6))
+        if key == "backup_monthday":
+            value = max(1, min(value, 31))
+        if key == "backup_keep":
+            value = max(1, min(value, 1000))
         if get(db, key) != value:
             changed[key] = value
         row = db.get(Setting, key)

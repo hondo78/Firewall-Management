@@ -378,6 +378,13 @@ def list_snapshots(firewall_id: str, user: User = Depends(get_current_user), db:
 def _snapshot_data(db: DbSession, fw: Firewall, ref: str) -> dict:
     if ref == "current":
         return sync.cached_config(db, fw)
+    if ref.startswith("backup:"):
+        from .. import backups
+        from ..models import ConfigBackup
+        b = db.get(ConfigBackup, ref.removeprefix("backup:"))
+        if not b or b.firewall_id != fw.id:
+            raise HTTPException(404, "Sicherung nicht gefunden")
+        return backups.config_of(b)
     snap = db.get(ConfigSnapshot, ref)
     if not snap or snap.firewall_id != fw.id:
         raise HTTPException(404, "Versionsstand nicht gefunden")

@@ -65,7 +65,11 @@ def fetch_config(db: DbSession, fw: Firewall, log: Log | None = None) -> tuple[d
         out = {}
         for entity, (path, _, _) in entities.REST_RESOURCES.items():
             try:
-                items = client.list(path)
+                if entity in entities.REST_SINGLETONS:
+                    # Einstellungsobjekt → als einzelnes Objekt mit festem Namen führen
+                    items = [{**client.get_singleton(path), "name": entities.REST_SINGLETONS[entity]}]
+                else:
+                    items = client.list(path)
             except RestApiError as e:
                 # Ressource auf dieser Firmware nicht vorhanden oder vom Admin-Profil nicht lesbar → leer lassen,
                 # damit der Rest funktioniert; Auth-/Netzfehler dagegen abbrechen
@@ -164,8 +168,17 @@ def strip_read_only(obj: dict) -> dict:
     return {k: v for k, v in obj.items() if k not in entities.REST_READ_ONLY}
 
 
+def _singleton_body(before: dict | None, after: dict | None) -> dict:
+    return {k: v for k, v in patch_body(before, after).items() if k != "name"}
+
+
 def _rest_one(client: RestApiClient, o: dict) -> str:
     path = entities.REST_RESOURCES[o["entity"]][0]
+    if o["entity"] in entities.REST_SINGLETONS:
+        body = _singleton_body(o.get("before"), o["data"])
+        if body:
+            client.update_singleton(path, body)
+        return f"geändert ({', '.join(body)})" if body else "keine Änderung"
     is_rule = o["entity"] in entities.RULE_ENTITIES
     if o["action"] == "remove":
         client.delete(path, o["name"])
@@ -190,6 +203,11 @@ def _rest_one(client: RestApiClient, o: dict) -> str:
 
 def _rest_undo(client: RestApiClient, o: dict) -> None:
     path = entities.REST_RESOURCES[o["entity"]][0]
+    if o["entity"] in entities.REST_SINGLETONS:
+        body = _singleton_body(o["data"], o["before"])
+        if body:
+            client.update_singleton(path, body)
+        return
     is_rule = o["entity"] in entities.RULE_ENTITIES
     if o["action"] == "add":
         client.delete(path, o["name"])

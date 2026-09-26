@@ -263,6 +263,16 @@ async def rest_api(serial: str, path: str, request: Request):
     path = "/" + path
     if path == "/administration/api-settings":
         return {"enabled": True, "allowedIpHosts": [{"name": "Admin-Host"}]}
+    if path == "/system/backup/settings":
+        cur = fw.setdefault("_backupSettings", {"backupStorage": "local", "backupPrefix": "", "schedule": {"frequency": "weekly",
+                            "dayOfWeek": "sunday", "hour": 2, "minute": 30}, "updatedAt": now()})
+        if request.method == "PATCH":
+            body = await request.json()
+            if "backupStorage" in body and body["backupStorage"] not in ("ftp", "email", "local"):
+                return err(400, "badRequest", "Invalid backupStorage.")
+            cur.update({k: v for k, v in body.items() if k != "updatedAt"})
+            cur["updatedAt"] = now()
+        return copy.deepcopy(cur)
     entity, rest = resolve(path)
     if entity is None:
         return err(404, "notFound", "Resource not found")

@@ -36,6 +36,10 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 - **Dokumentation**: Audit-Log mit SHA-256-Hash-Kette (Integritätsprüfung, CSV-Export, optional Syslog),
   Verlauf/Kommentare je Antrag, Ausroll-Protokoll mit dem gesendeten XML, Versionsstände der Konfiguration
   inkl. Vergleich (auch zwischen Firewalls) und Erkennung von Änderungen außerhalb des Tools.
+- **Sicherungen**: automatische Sicherung der Konfiguration aller Firewalls nach Zeitplan (täglich/wöchentlich/monatlich,
+  Aufbewahrung, Anheften, optional zusätzlich als Datei in `backups/`), manuell „Jetzt sichern“, Download (JSON bzw.
+  Entities.xml), Vergleich mit dem aktuellen Stand und Wiederherstellen über einen Entwurf (Vier-Augen-Freigabe).
+  Zusätzlich lässt sich der eingebaute SFOS-Sicherungszeitplan (Ziel lokal/FTP/E-Mail) per Antrag ändern.
 - **Befristete Änderungen**: Antrag mit „gültig bis“ – danach legt das System automatisch die Rücknahme an
   (wahlweise vorab genehmigt, weil die Befristung Teil der Freigabe war). Rücknahme ausgerollter Anträge auch durch
   Approver/Superadmins, stets mit Vier-Augen-Freigabe.

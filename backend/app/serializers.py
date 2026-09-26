@@ -49,7 +49,8 @@ def op_out(fw: Firewall, o: dict) -> dict:
         "label": entities.LABELS.get(o["entity"], o["entity"]),
         "diff": diff.diff_objects(o.get("before"), o.get("data")) if o["action"] != "remove" else [],
         "xml": (restapi.request_preview(entities.REST_RESOURCES[o["entity"]][0], o["action"], o.get("data"), o["name"],
-                                        o.get("position"), o.get("before"), o["entity"] in entities.RULE_ENTITIES)
+                                        o.get("position"), o.get("before"), o["entity"] in entities.RULE_ENTITIES,
+                                        o["entity"] in entities.REST_SINGLETONS)
                 if o["entity"] in entities.REST_RESOURCES else
                 xmlapi.request_preview(o["entity"], o["action"], o.get("data"), o["name"], o.get("position"))),
     }
