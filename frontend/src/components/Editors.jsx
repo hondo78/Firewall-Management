@@ -4,7 +4,7 @@ import { asList, isRestEntity, listOf, policy, refOptions, setList, toXml } from
 import { ErrorBox, Field, Modal, Picker, Seg } from './ui'
 
 /** Formular ⇄ Experten-Ansicht (XML bzw. JSON beim REST-Format); Speichern = in den Entwurf übernehmen. */
-export function EditorShell({ title, entity, data, setData, isNew, form, onClose, onSubmit, extraFoot, positionField }) {
+export function EditorShell({ title, entity, data, setData, isNew, form, onClose, onSubmit, extraFoot, positionField, page }) {
   const json = isRestEntity(entity)
   const [mode, setMode] = useState(form ? 'form' : 'xml')
   const [xml, setXml] = useState(() => (form ? '' : json ? JSON.stringify(data, null, 2) : toXml(entity, data)))
@@ -42,13 +42,10 @@ export function EditorShell({ title, entity, data, setData, isNew, form, onClose
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
-  return (
-    <Modal title={title} onClose={onClose} wide>
-      <div className="row between" style={{ marginBottom: 12 }}>
-        {form ? <Seg options={[['form', 'Formular'], ['xml', json ? 'JSON (Experte)' : 'XML (Experte)']]} value={mode} onChange={switchMode} />
-          : <span className="muted small">Für diesen Objekttyp gibt es nur den {json ? 'JSON' : 'XML'}-Editor.</span>}
-        <span className="muted small">{isNew ? 'Neues Objekt' : 'Änderung'} wird in Ihren Entwurf übernommen – erst nach Genehmigung aktiv.</span>
-      </div>
+  const modeSwitch = form ? <Seg options={[['form', 'Formular'], ['xml', json ? 'JSON (Experte)' : 'XML (Experte)']]} value={mode} onChange={switchMode} />
+    : <span className="muted small">Für diesen Objekttyp gibt es nur den {json ? 'JSON' : 'XML'}-Editor.</span>
+  const hint = <span className="muted small">{isNew ? 'Neues Objekt' : 'Änderung'} wird in Ihren Entwurf übernommen – erst nach Genehmigung aktiv.</span>
+  const body = <>
       {mode === 'form' ? form : (
         <div className="stack">
           <textarea className="code" value={xml} spellCheck={false} onChange={(e) => setXml(e.target.value)} />
@@ -64,10 +61,33 @@ export function EditorShell({ title, entity, data, setData, isNew, form, onClose
           In den Entwurf übernommen – Hinweise:<ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{warnings.map((w) => <li key={w}>{w}</li>)}</ul>
         </div>
       )}
+  </>
+  const saveBtn = !warnings.length && <button className="primary" disabled={busy} onClick={submit}>{busy ? 'Übernehme …' : 'In Entwurf übernehmen'}</button>
+
+  // Seitenmodus wie „Edit firewall rule“ in SFOS: ganze Fläche, fester Fuß mit Speichern/Abbrechen
+  if (page) return (
+    <div className="panel sf-page">
+      <div className="sf-page-head">
+        <h2>{title}</h2>
+        <div className="right row">{modeSwitch}</div>
+      </div>
+      <div className="sf-page-hint">{hint}</div>
+      <div className="sf-page-body">{body}</div>
+      <div className="sf-page-foot">
+        {saveBtn}
+        <button className="link" onClick={onClose}>{warnings.length ? 'Zurück zur Liste' : 'Abbrechen'}</button>
+        {extraFoot}
+      </div>
+    </div>
+  )
+  return (
+    <Modal title={title} onClose={onClose} wide>
+      <div className="row between" style={{ marginBottom: 12 }}>{modeSwitch}{hint}</div>
+      {body}
       <div className="modal-foot">
         {extraFoot}
         <button onClick={onClose}>{warnings.length ? 'Schließen' : 'Abbrechen'}</button>
-        {!warnings.length && <button className="primary" disabled={busy} onClick={submit}>{busy ? 'Übernehme …' : 'In Entwurf übernehmen'}</button>}
+        {saveBtn}
       </div>
     </Modal>
   )

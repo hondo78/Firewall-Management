@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { EditorShell, PositionField } from './Editors'
 import { asList, restNetNames, restRefOptions } from './entities'
-import { Field, Picker, Seg } from './ui'
+import { Field } from './ui'
 
 /**
  * Regel-Editoren und -Ansichten im Aufbau der Sophos-Firewall-Weboberfläche (SFOS):
@@ -48,18 +48,6 @@ export function Section({ title, children, open: initial = true, extra, collapsi
   )
 }
 
-function PolicySelect({ label, value, options, onChange, none = 'Keine' }) {
-  return (
-    <Field label={label}>
-      <select value={value || ''} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{none}</option>
-        {options.map((o) => <option key={o}>{o}</option>)}
-        {value && !options.includes(value) && <option>{value}</option>}
-      </select>
-    </Field>
-  )
-}
-
 // Netz-/Dienst-Mengen ⇄ API-Strukturen -------------------------------------------------------------------------
 
 function zonesValue(names) { return names.length ? { zones: toRefs(names) } : { any: true } }
@@ -88,7 +76,115 @@ function newRule(opts) {
   }
 }
 
-export function SophosRuleEditor({ entity, config, rule, onClose, onSubmit }) {
+// --- Bausteine im SFOS-Stil ----------------------------------------------------------------------------------
+
+/** Auswahlliste wie in SFOS: gewählte Einträge mit ⊖, darunter „Neues Element hinzufügen …“ mit Suche */
+export function SfList({ value, options, onChange, emptyLabel = 'Beliebig', label }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const ref = useRef(null)
+  const [up, setUp] = useState(false)
+  useEffect(() => {
+    if (!open) return undefined
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  const selected = new Set(value)
+  const f = q.toLowerCase()
+  const shown = options.filter((o) => !selected.has(o.value) && o.value.toLowerCase().includes(f)).slice(0, 150)
+  return (
+    <div className="sf-list" ref={ref}>
+      <div className="sf-list-items">
+        {!value.length && <div className="sf-list-item any"><span>{emptyLabel}</span></div>}
+        {value.map((v) => (
+          <div key={v} className="sf-list-item">
+            <span>{v}</span>
+            <button type="button" className="sf-remove" title="Entfernen" aria-label={`${v} entfernen`}
+              onClick={() => onChange(value.filter((x) => x !== v))}>−</button>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="sf-list-add" onClick={() => {
+        // Unten zu wenig Platz (fester Speichern-Fuß) → Liste nach oben aufklappen
+        setUp(window.innerHeight - ref.current.getBoundingClientRect().bottom < 420)
+        setOpen(!open); setQ('')
+      }} aria-expanded={open}
+        aria-label={`${label || ''} – neues Element hinzufügen`}>Neues Element hinzufügen …</button>
+      {open && (
+        <div className={`sf-list-pop ${up ? 'up' : ''}`} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) } }}>
+          <input autoFocus placeholder="Suchen …" value={q} onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && shown[0]) { e.preventDefault(); onChange([...value, shown[0].value]); setQ('') } }} />
+          <div className="sf-list-options">
+            {!shown.length && <div className="muted small" style={{ padding: 8 }}>Keine weiteren Einträge.</div>}
+            {shown.map((o) => (
+              <button type="button" key={`${o.kind}:${o.value}`} onClick={() => onChange([...value, o.value])}>
+                <span>{o.value}</span>{o.kind && <span className="kind">{o.kind}</span>}
+              </button>
+            ))}
+          </div>
+          <div className="sf-list-pop-foot"><button type="button" className="sm" onClick={() => setOpen(false)}>Fertig</button></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Checkbox mit Hilfetext darunter (SFOS-Formulare verwenden Checkboxen statt Schalter) */
+export function Check({ checked, onChange, label, hint, disabled }) {
+  return (
+    <label className={`sf-check ${disabled ? 'disabled' : ''}`}>
+      <input type="checkbox" checked={!!checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span>{label}{hint && <small>{hint}</small>}</span>
+    </label>
+  )
+}
+
+/** Aufklappbarer Bereich mit Pfeil („› Ausschluss hinzufügen“) */
+export function Fold({ title, open: initial, children, badge }) {
+  const [open, setOpen] = useState(!!initial)
+  return (
+    <div className="sf-fold">
+      <button type="button" className={`sf-fold-head ${open ? 'open' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="chev" aria-hidden="true">›</span>{title}{badge}
+      </button>
+      {open && <div className="sf-fold-body">{children}</div>}
+    </div>
+  )
+}
+
+function Heading({ title, desc }) {
+  return <div className="sf-heading"><h3>{title}</h3>{desc && <p>{desc}</p>}</div>
+}
+
+function Label({ children, required }) {
+  return <div className="sf-label">{children}{required && <span className="req"> *</span>}</div>
+}
+
+function Select({ value, onChange, options, none, disabled }) {
+  return (
+    <select value={value || ''} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      {none !== undefined && <option value="">{none}</option>}
+      {options.map((o) => (Array.isArray(o) ? <option key={o[0]} value={o[0]}>{o[1]}</option> : <option key={o}>{o}</option>))}
+      {value && !options.some((o) => (Array.isArray(o) ? o[0] : o) === value) && <option>{value}</option>}
+    </select>
+  )
+}
+
+function PositionSelect({ position, setPosition, rules, name, isNew }) {
+  const others = rules.filter((r) => r !== name)
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <Select value={position.type} onChange={(t) => setPosition({ type: t, ref: position.ref || others[0] })}
+        options={[...(isNew ? [] : [['keep', 'Unverändert']]), ['top', 'Ganz oben'], ['bottom', 'Ganz unten'], ['after', 'Nach Regel …'], ['before', 'Vor Regel …']]} />
+      {['after', 'before'].includes(position.type) && <Select value={position.ref} onChange={(r) => setPosition({ ...position, ref: r })} options={others} />}
+    </div>
+  )
+}
+
+const ACTIONS = [['accept', 'Annehmen'], ['drop', 'Verwerfen'], ['reject', 'Ablehnen']]
+
+export function SophosRuleEditor({ entity, config, rule, onClose, onSubmit, page }) {
   const isNew = !rule
   const v6 = entity === 'firewallRulesIpv6'
   const opts = useMemo(() => restRefOptions(config), [config])
@@ -108,128 +204,187 @@ export function SophosRuleEditor({ entity, config, rule, onClose, onSubmit }) {
   const accept = d.action === 'accept'
   const isWaf = d.ruleType === 'waf'
   const hasExclusions = Object.values(ex).some((x) => x && Object.values(x).some((l) => asList(l).length))
+  const hbOn = ['source', 'destination'].some((k) => d.synchronizedSecurityHeartbeat?.[k]?.minimumLevel && d.synchronizedSecurityHeartbeat[k].minimumLevel !== 'noRestriction')
+  const mailOn = Object.values(d.emailScanning || {}).some(Boolean)
+  const linkedNat = (config.natRulesIpv4 || []).filter((n) => d.name && refName(n.linkedFirewallRule) === d.name).map((n) => n.name)
 
-  const posField = <PositionField position={position} setPosition={setPosition} rules={rules} name={d.name} isNew={isNew} />
-  const form = isWaf ? null : (
-    <div className="sf-form">
-      <Section title="Regel">
-        <div className="form-grid">
-          <Field label="Regelname"><input value={d.name} disabled={!isNew} maxLength={60} autoFocus={isNew} onChange={(e) => set({ name: e.target.value })} /></Field>
-          <Field label="Beschreibung"><input value={d.description || ''} maxLength={255} onChange={(e) => set({ description: e.target.value })} /></Field>
-        </div>
-        <div className="form-grid">
-          <Box label="Aktion"><Seg options={[['accept', 'Zulassen'], ['drop', 'Verwerfen'], ['reject', 'Ablehnen']]} value={d.action} onChange={(a) => set({ action: a })} /></Box>
-          <Box label="Status"><Toggle checked={d.enabled !== false} onChange={(v) => set({ enabled: v })} label={d.enabled !== false ? 'Aktiv' : 'Inaktiv'} /></Box>
-          <Box label="Protokollierung"><Toggle checked={d.logTraffic} onChange={(v) => set({ logTraffic: v })} label="Firewall-Traffic protokollieren" /></Box>
-        </div>
-        {posField}
-        {!accept && <div className="muted small">Bei „Verwerfen“/„Ablehnen“ speichert die Firewall keine Sicherheitsfunktionen, QoS, Heartbeat oder E-Mail-Scan.</div>}
-      </Section>
+  const posField = <div style={{ marginTop: 12, maxWidth: 360 }}><Label>Position in der Regelliste</Label>
+    <PositionSelect position={position} setPosition={setPosition} rules={rules} name={d.name} isNew={isNew} /></div>
+  const zoneList = (key, label, required) => (
+    <div><Label required={required}>{label}</Label>
+      <SfList label={label} value={d[key]?.any ? [] : refNames(d[key]?.zones)} options={opts.zones} onChange={(z) => set({ [key]: zonesValue(z) })} /></div>
+  )
+  const netList = (key, label) => (
+    <div><Label required>{label}</Label>
+      <SfList label={label} value={restNetNames(d[key])} options={nets} onChange={(n) => set({ [key]: netsValue(n, nets, netFallback) })} /></div>
+  )
 
-      <div className="grid two">
-        <Section title="Quelle">
-          <Box label="Quell-Zonen"><Picker value={d.sourceZones?.any ? [] : refNames(d.sourceZones?.zones)} options={opts.zones} onChange={(z) => set({ sourceZones: zonesValue(z) })} /></Box>
-          <Box label="Quell-Netzwerke und -Geräte"><Picker value={restNetNames(d.sourceNetworks)} options={nets} onChange={(n) => set({ sourceNetworks: netsValue(n, nets, netFallback) })} /></Box>
-          <Field label="Während der geplanten Zeit">
-            <select value={refName(d.schedule)} onChange={(e) => set({ schedule: e.target.value ? { name: e.target.value } : null })}>
-              <option value="">Immer</option>{opts.schedules.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </Field>
-        </Section>
-        <Section title="Ziel und Dienste">
-          <Box label="Ziel-Zonen"><Picker value={d.destinationZones?.any ? [] : refNames(d.destinationZones?.zones)} options={opts.zones} onChange={(z) => set({ destinationZones: zonesValue(z) })} /></Box>
-          <Box label="Ziel-Netzwerke"><Picker value={restNetNames(d.destinationNetworks)} options={nets} onChange={(n) => set({ destinationNetworks: netsValue(n, nets, netFallback) })} /></Box>
-          <Box label="Dienste"><Picker value={svcNames(d.servicesOrGroups)} options={opts.services} onChange={(s) => set({ servicesOrGroups: svcValue(s, opts.services) })} /></Box>
-        </Section>
+  const head = <>
+      <Toggle checked={d.enabled !== false} onChange={(v) => set({ enabled: v })} label="Regelstatus" />
+      <div className="sf-grid3">
+        <div><Label required>Regelname</Label>
+          <input value={d.name} disabled={!isNew} maxLength={60} autoFocus={isNew} onChange={(e) => set({ name: e.target.value })} aria-label="Regelname" /></div>
+        <div className="sf-span2row"><Label>Beschreibung</Label>
+          <textarea rows={3} value={d.description || ''} maxLength={255} placeholder="Eingabe Beschreibung" aria-label="Beschreibung"
+            onChange={(e) => set({ description: e.target.value })} /></div>
+        <div><Label>Position in der Regelliste</Label>
+          <PositionSelect position={position} setPosition={setPosition} rules={rules} name={d.name} isNew={isNew} /></div>
+        {!isWaf && <div><Label>Maßnahme</Label><Select value={d.action} onChange={(a) => set({ action: a })} options={ACTIONS} /></div>}
+      </div>
+      {!isWaf && <Check checked={d.logTraffic} onChange={(v) => set({ logTraffic: v })} label="Firewallverkehr protokollieren"
+        hint="Protokolliert Verkehr, auf den diese Firewallregel zutrifft, auf dem Gerät (standardmäßig) oder auf dem konfigurierten Syslog-Server." />}
+
+      <hr />
+      <Heading title="Quelle" desc={<>Wählen Sie die Quellzonen, Netzwerke und Geräte aus.<br />Die Regel gilt für den Verkehr aus diesen Quellen{isWaf ? '' : ' während des geplanten Zeitraums'}.</>} />
+      <div className="sf-grid3">
+        {zoneList('sourceZones', 'Quellzonen', true)}
+        {netList('sourceNetworks', 'Quellnetzwerke und Geräte')}
+        {!isWaf && <div><Label>Im geplanten Zeitraum</Label>
+          <Select value={refName(d.schedule)} none="Jederzeit" options={opts.schedules} onChange={(n) => set({ schedule: n ? { name: n } : null })} />
+          <small className="sf-hint">Auswählen, um die Regel in einem bestimmten Zeitraum und Wochentag anzuwenden.</small></div>}
+      </div>
+  </>
+
+  // WAF-Regel (Webserver-Schutz): die REST-API liefert nur den Verweis auf die WAF-Regel – deren Inhalt pflegt die Firewall
+  const wafForm = (
+    <div className="sf-rule">
+      {head}
+      <hr />
+      <Heading title="Webserver-Schutz" desc="Diese Firewall-Regel veröffentlicht einen Webserver über die Web Application Firewall (WAF)." />
+      <div className="sf-grid3">
+        <div><Label>WAF-Regel</Label><input value={refName(d.wafRule) || '–'} disabled aria-label="WAF-Regel" /></div>
+        <div><Label>WAF-Dienst</Label><input value={d.wafService ?? '–'} disabled aria-label="WAF-Dienst" /></div>
+        <div className="sf-hint" style={{ alignSelf: 'end' }}>Hosted Server, geschützte Server und Pfade werden auf der Firewall unter
+          „Webserver“ gepflegt; die REST-API stellt sie hier nicht bereit.</div>
+      </div>
+    </div>
+  )
+
+  const form = isWaf ? wafForm : (
+    <div className="sf-rule">
+      {head}
+
+      <hr />
+      <Heading title="Ziel und Dienste" desc={<>Wählen Sie die Zielzonen, Netzwerke, Geräte und Dienste aus.<br />Die Regel gilt für den Verkehr zu diesen Zielen.</>} />
+      <div className="sf-grid3">
+        {zoneList('destinationZones', 'Zielzonen', true)}
+        {netList('destinationNetworks', 'Zielnetzwerke')}
+        <div><Label required>Dienste</Label>
+          <SfList label="Dienste" value={svcNames(d.servicesOrGroups)} options={opts.services} onChange={(n) => set({ servicesOrGroups: svcValue(n, opts.services) })} />
+          <small className="sf-hint">Dienste sind Verkehrsarten, die auf einer Kombination von Protokollen und Ports basieren.</small></div>
       </div>
 
-      <Section title="Ausnahmen" collapsible open={hasExclusions} extra={hasExclusions && <span className="badge b-warn">aktiv</span>}>
-        <div className="muted small">Verkehr, der hierauf passt, ist von der Regel ausgenommen.</div>
-        <div className="grid two">
-          <div className="stack">
-            <Box label="Quell-Zonen"><Picker emptyLabel="keine" value={refNames(ex.sourceZones?.zones)} options={opts.zones} onChange={(z) => setEx({ sourceZones: { zones: toRefs(z) } })} /></Box>
-            <Box label="Quell-Netzwerke"><Picker emptyLabel="keine" value={restNetNames(ex.sourceNetworks)} options={nets} onChange={(n) => setEx({ sourceNetworks: keyed(n, nets, netFallback) })} /></Box>
-          </div>
-          <div className="stack">
-            <Box label="Ziel-Zonen"><Picker emptyLabel="keine" value={refNames(ex.destinationZones?.zones)} options={opts.zones} onChange={(z) => setEx({ destinationZones: { zones: toRefs(z) } })} /></Box>
-            <Box label="Ziel-Netzwerke"><Picker emptyLabel="keine" value={restNetNames(ex.destinationNetworks)} options={nets} onChange={(n) => setEx({ destinationNetworks: keyed(n, nets, netFallback) })} /></Box>
-            <Box label="Dienste"><Picker emptyLabel="keine" value={svcNames(ex.servicesOrGroups)} options={opts.services} onChange={(s) => setEx({ servicesOrGroups: keyed(s, opts.services, 'services') })} /></Box>
-          </div>
+      <hr />
+      <Check checked={!!ua} label="Übereinstimmung mit bekannten Benutzern"
+        onChange={(on) => set({ userAuthentication: on ? { usersOrGroups: { any: true }, excludeUsersFromAccounting: false, webAuthenticationForUnknownUsers: false } : null })} />
+      {ua && <div className="sf-grid3 sf-indent">
+        <div><Label>Benutzer oder Gruppen</Label>
+          <SfList label="Benutzer oder Gruppen" emptyLabel="Alle bekannten Benutzer"
+            value={ua.usersOrGroups?.any ? [] : [...refNames(ua.usersOrGroups?.users), ...refNames(ua.usersOrGroups?.userGroups)]}
+            options={opts.usersAndGroups} onChange={(n) => sub('userAuthentication', { usersOrGroups: n.length ? keyed(n, opts.usersAndGroups, 'userGroups') : { any: true } })} /></div>
+        <div className="stack">
+          <Check checked={ua.excludeUsersFromAccounting} label="Diese Benutzeraktivität von der Datenerfassung ausnehmen" onChange={(v) => sub('userAuthentication', { excludeUsersFromAccounting: v })} />
+          <Check checked={ua.webAuthenticationForUnknownUsers} label="Web-Authentifizierung für unbekannte Benutzer verwenden" onChange={(v) => sub('userAuthentication', { webAuthenticationForUnknownUsers: v })} />
         </div>
-      </Section>
+      </div>}
 
-      <Section title="Benutzer identifizieren" collapsible open={!!ua}>
-        <Toggle checked={!!ua} label="Bekannte Benutzer abgleichen" onChange={(on) => set({ userAuthentication: on ? { usersOrGroups: { any: true }, excludeUsersFromAccounting: false, webAuthenticationForUnknownUsers: false } : null })} />
-        {ua && <>
-          <Box label="Benutzer oder Gruppen"><Picker value={ua.usersOrGroups?.any ? [] : [...refNames(ua.usersOrGroups?.users), ...refNames(ua.usersOrGroups?.userGroups)]}
-            options={opts.usersAndGroups} onChange={(n) => sub('userAuthentication', { usersOrGroups: n.length ? keyed(n, opts.usersAndGroups, 'userGroups') : { any: true } })} /></Box>
-          <Toggle checked={ua.excludeUsersFromAccounting} label="Benutzeraktivität von der Datenerfassung ausnehmen" onChange={(v) => sub('userAuthentication', { excludeUsersFromAccounting: v })} />
-          <Toggle checked={ua.webAuthenticationForUnknownUsers} label="Web-Authentifizierung für unbekannte Benutzer" onChange={(v) => sub('userAuthentication', { webAuthenticationForUnknownUsers: v })} />
-        </>}
-      </Section>
+      <hr />
+      <Fold title="Ausschluss hinzufügen" open={hasExclusions} badge={hasExclusions && <span className="badge b-warn" style={{ marginLeft: 8 }}>aktiv</span>}>
+        <p className="sf-hint" style={{ marginTop: 0 }}>Verkehr, der auf einen Ausschluss passt, ist von dieser Regel ausgenommen.</p>
+        <div className="sf-grid3">
+          <div className="stack">
+            <div><Label>Quellzonen</Label><SfList label="Ausschluss Quellzonen" emptyLabel="Keine" value={refNames(ex.sourceZones?.zones)} options={opts.zones} onChange={(z) => setEx({ sourceZones: { zones: toRefs(z) } })} /></div>
+            <div><Label>Quellnetzwerke</Label><SfList label="Ausschluss Quellnetzwerke" emptyLabel="Keine" value={restNetNames(ex.sourceNetworks)} options={nets} onChange={(n) => setEx({ sourceNetworks: keyed(n, nets, netFallback) })} /></div>
+          </div>
+          <div className="stack">
+            <div><Label>Zielzonen</Label><SfList label="Ausschluss Zielzonen" emptyLabel="Keine" value={refNames(ex.destinationZones?.zones)} options={opts.zones} onChange={(z) => setEx({ destinationZones: { zones: toRefs(z) } })} /></div>
+            <div><Label>Zielnetzwerke</Label><SfList label="Ausschluss Zielnetzwerke" emptyLabel="Keine" value={restNetNames(ex.destinationNetworks)} options={nets} onChange={(n) => setEx({ destinationNetworks: keyed(n, nets, netFallback) })} /></div>
+          </div>
+          <div><Label>Dienste</Label><SfList label="Ausschluss Dienste" emptyLabel="Keine" value={svcNames(ex.servicesOrGroups)} options={opts.services} onChange={(n) => setEx({ servicesOrGroups: keyed(n, opts.services, 'services') })} /></div>
+        </div>
+      </Fold>
 
-      {accept && <>
-        <Section title="Web-Filterung">
-          <div className="form-grid">
-            <PolicySelect label="Web-Richtlinie" value={refName(sec.webPolicy)} options={opts.webPolicies} onChange={(n) => setSec({ webPolicy: polRef(n) })} />
-          </div>
-          <div className="sf-toggles">
-            <Toggle checked={sec.webCategoryBasedQosPolicy} label="Web-kategoriebasiertes Traffic Shaping" onChange={(v) => setSec({ webCategoryBasedQosPolicy: v })} />
-            <Toggle checked={sec.blockQuicProtocol} label="QUIC-Protokoll blockieren" onChange={(v) => setSec({ blockQuicProtocol: v })} />
-            <Toggle checked={sec.scanHttpAndDecryptedHttps} label="HTTP und entschlüsseltes HTTPS auf Malware scannen" onChange={(v) => setSec({ scanHttpAndDecryptedHttps: v })} />
-            <Toggle checked={sec.zeroDayProtection} label="Zero-Day-Schutz verwenden" onChange={(v) => setSec({ zeroDayProtection: v })} />
-            <Toggle checked={sec.webProxy} label="Web-Proxy statt DPI-Engine" onChange={(v) => setSec({ webProxy: v })} />
-            <Toggle checked={sec.decryptHTTPSWebProxyMode} label="HTTPS im Web-Proxy entschlüsseln" onChange={(v) => setSec({ decryptHTTPSWebProxyMode: v })} />
-            <Toggle checked={sec.scanFtp} label="FTP auf Malware scannen" onChange={(v) => setSec({ scanFtp: v })} />
-          </div>
-        </Section>
-        <Section title="Weitere Sicherheitsfunktionen">
-          <div className="form-grid">
-            <PolicySelect label="Anwendungskontrolle" value={refName(sec.applicationPolicy)} options={opts.appPolicies} onChange={(n) => setSec({ applicationPolicy: polRef(n) })} />
-            <PolicySelect label="Intrusion Prevention (IPS)" value={refName(sec.ipsPolicy)} options={opts.ipsPolicies} onChange={(n) => setSec({ ipsPolicy: polRef(n) })} />
-          </div>
-          <div className="sf-toggles">
-            <Toggle checked={sec.applicationBasedQosPolicy} label="Anwendungsbasiertes Traffic Shaping" onChange={(v) => setSec({ applicationBasedQosPolicy: v })} />
-            <Toggle checked={sec.scanWithNdrActiveThreatIntelligence} label="Mit NDR Active Threat Intelligence scannen" onChange={(v) => setSec({ scanWithNdrActiveThreatIntelligence: v })} />
-          </div>
-        </Section>
-        <div className="grid two">
-          <Section title="E-Mail-Scan" collapsible open={Object.values(d.emailScanning || {}).some(Boolean)}>
-            <div className="sf-checks">
-              {['smtp', 'smtps', 'imap', 'imaps', 'pop3', 'pop3s'].map((p) => (
-                <label key={p} className="check"><input type="checkbox" checked={!!d.emailScanning?.[p]} onChange={(e) => sub('emailScanning', { [p]: e.target.checked })} />{p.toUpperCase()} scannen</label>
-              ))}
+      {!v6 && <>
+        <hr />
+        <div className="sf-hint">{linkedNat.length
+          ? <>Verknüpfte NAT-Regel: <b>{linkedNat.join(', ')}</b></>
+          : 'Keine verknüpfte NAT-Regel – verknüpfte NAT-Regeln legen Sie unter „NAT-Regeln“ an.'}</div>
+      </>}
+
+      <hr />
+      {!accept ? <div className="sf-hint">Bei „{ACTIONS.find((a) => a[0] === d.action)?.[1]}“ gelten keine Sicherheitsfunktionen, QoS, Heartbeat oder E-Mail-Scan.</div> : <>
+        <Heading title="Sicherheitsfunktionen" />
+        <Fold title="Webfilterung" open>
+          <div className="sf-grid3">
+            <div className="stack">
+              <div><Label>Internetrichtlinie</Label><Select value={refName(sec.webPolicy)} none="Keine" options={opts.webPolicies} onChange={(n) => setSec({ webPolicy: polRef(n) })} /></div>
+              <Check checked={sec.webCategoryBasedQosPolicy} label="Webkategorie-basiertes Traffic-Shaping anwenden" onChange={(v) => setSec({ webCategoryBasedQosPolicy: v })} />
+              <Check checked={sec.blockQuicProtocol} label="QUIC-Protokoll blockieren" onChange={(v) => setSec({ blockQuicProtocol: v })} />
             </div>
-          </Section>
-          <Section title="Traffic Shaping & QoS" collapsible open={!!(d.qos?.trafficShapingPolicy || d.qos?.dscpMarking)}>
-            <PolicySelect label="Traffic-Shaping-Richtlinie" value={refName(d.qos?.trafficShapingPolicy)} options={opts.tsPolicies} onChange={(n) => sub('qos', { trafficShapingPolicy: polRef(n) })} />
-            <PolicySelect label="DSCP-Markierung" none="Keine Markierung" value={d.qos?.dscpMarking || ''} options={DSCP} onChange={(n) => sub('qos', { dscpMarking: n || null })} />
-          </Section>
-        </div>
-        <Section title="Synchronized Security Heartbeat" collapsible
-          open={['source', 'destination'].some((k) => d.synchronizedSecurityHeartbeat?.[k]?.minimumLevel && d.synchronizedSecurityHeartbeat[k].minimumLevel !== 'noRestriction')}>
-          <div className="grid two">
+            <div className="stack">
+              <Label>Schadprogramm- und Inhaltsscans</Label>
+              <Check checked={sec.scanHttpAndDecryptedHttps} label="HTTP und entschlüsseltes HTTPS scannen" onChange={(v) => setSec({ scanHttpAndDecryptedHttps: v })} />
+              <Check checked={sec.zeroDayProtection} label="Zero-Day-Schutz verwenden" onChange={(v) => setSec({ zeroDayProtection: v })} />
+              <Check checked={sec.scanFtp} label="FTP auf Schadprogramm scannen" onChange={(v) => setSec({ scanFtp: v })} />
+            </div>
+            <div className="stack">
+              <Label>Gängige Internetports filtern</Label>
+              <Check checked={sec.webProxy} label="Web-Proxy anstelle des DPI-Moduls verwenden" onChange={(v) => setSec({ webProxy: v, ...(v ? {} : { decryptHTTPSWebProxyMode: false }) })} />
+              <Label>Web-Proxy-Optionen</Label>
+              <Check checked={sec.decryptHTTPSWebProxyMode} disabled={!sec.webProxy} label="HTTPS während der Web-Proxy-Filterung entschlüsseln" onChange={(v) => setSec({ decryptHTTPSWebProxyMode: v })} />
+            </div>
+          </div>
+        </Fold>
+
+        <hr />
+        <Fold title="Synchronized Security Heartbeat konfigurieren" open={hbOn}>
+          <div className="sf-grid3">
             {[['source', 'Quelle'], ['destination', 'Ziel']].map(([k, label]) => {
               const hb = d.synchronizedSecurityHeartbeat?.[k] || {}
               const setHb = (patch) => sub('synchronizedSecurityHeartbeat', { [k]: { minimumLevel: 'noRestriction', blockClientsWithNoHeartbeat: false, ...hb, ...patch } })
               return (
                 <div key={k} className="stack">
-                  <Field label={`Minimaler Heartbeat (${label})`}>
-                    <select value={hb.minimumLevel || 'noRestriction'} onChange={(e) => setHb({ minimumLevel: e.target.value })}>
-                      {HB.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </Field>
-                  <Toggle checked={hb.blockClientsWithNoHeartbeat} label="Clients ohne Heartbeat blockieren" onChange={(v) => setHb({ blockClientsWithNoHeartbeat: v })} />
+                  <div><Label>Minimaler Heartbeat-Status ({label})</Label>
+                    <Select value={hb.minimumLevel || 'noRestriction'} options={HB} onChange={(v) => setHb({ minimumLevel: v })} /></div>
+                  <Check checked={hb.blockClientsWithNoHeartbeat} label={`${label}: Clients ohne Heartbeat blockieren`} onChange={(v) => setHb({ blockClientsWithNoHeartbeat: v })} />
                 </div>
               )
             })}
           </div>
-        </Section>
+        </Fold>
+
+        <hr />
+        <Heading title="Andere Sicherheitsfunktionen" />
+        <div className="sf-grid3">
+          <div className="stack">
+            <div><Label>Anwendungen identifizieren und kontrollieren (App Control)</Label>
+              <Select value={refName(sec.applicationPolicy)} none="Keine" options={opts.appPolicies} onChange={(n) => setSec({ applicationPolicy: polRef(n) })} /></div>
+            <Check checked={sec.applicationBasedQosPolicy} label="Anwendungsbasierte Traffic-Shaping-Richtlinie übernehmen" onChange={(v) => setSec({ applicationBasedQosPolicy: v })} />
+            <div><Label>Exploits erkennen und verhindern (IPS)</Label>
+              <Select value={refName(sec.ipsPolicy)} none="Keine" options={opts.ipsPolicies} onChange={(n) => setSec({ ipsPolicy: polRef(n) })} /></div>
+          </div>
+          <div className="stack">
+            <div><Label>Datenverkehr regeln</Label>
+              <Select value={refName(d.qos?.trafficShapingPolicy)} none="Keine" options={opts.tsPolicies} onChange={(n) => sub('qos', { trafficShapingPolicy: polRef(n) })} /></div>
+            <Check checked={sec.scanWithNdrActiveThreatIntelligence} label="Mit NDR Active Threat Intelligence scannen" onChange={(v) => setSec({ scanWithNdrActiveThreatIntelligence: v })} />
+          </div>
+          <div><Label>DSCP-Markierung</Label>
+            <Select value={d.qos?.dscpMarking || ''} none="DSCP-Markierung wählen" options={DSCP} onChange={(n) => sub('qos', { dscpMarking: n || null })} /></div>
+        </div>
+
+        <hr />
+        <Fold title="E-Mail-Inhalt scannen" open={mailOn}>
+          <div className="sf-grid3">
+            {['smtp', 'smtps', 'imap', 'imaps', 'pop3', 'pop3s'].map((p) => (
+              <Check key={p} checked={d.emailScanning?.[p]} label={`${p.toUpperCase()} scannen`} onChange={(v) => sub('emailScanning', { [p]: v })} />
+            ))}
+          </div>
+        </Fold>
       </>}
     </div>
   )
   return (
-    <EditorShell title={isNew ? `Firewall-Regel ${v6 ? '(IPv6) ' : ''}hinzufügen` : `Firewall-Regel „${rule.name}“ bearbeiten`} entity={entity}
+    <EditorShell page={page} title={isNew ? `Firewall-Regel ${v6 ? '(IPv6) ' : ''}hinzufügen` : 'Firewall-Regel bearbeiten'} entity={entity}
       data={d} setData={setD} isNew={isNew} form={form} onClose={onClose} positionField={posField}
       onSubmit={(payload) => onSubmit({ entity, action: isNew ? 'add' : 'update', name: payload.name, data: payload,
         position: position.type === 'keep' ? null : position })} />
@@ -247,7 +402,7 @@ function newNat() {
   }
 }
 
-export function SophosNatEditor({ entity, config, rule, onClose, onSubmit }) {
+export function SophosNatEditor({ entity, config, rule, onClose, onSubmit, page }) {
   const isNew = !rule
   const opts = useMemo(() => restRefOptions(config), [config])
   const rules = (config[entity] || []).map((r) => r.name)
@@ -278,7 +433,7 @@ export function SophosNatEditor({ entity, config, rule, onClose, onSubmit }) {
         <div className="sf-nat-head"><span /><b>Original</b><b>Übersetzt</b></div>
         <div className="sf-nat-row">
           <span className="sf-nat-label">Quelle</span>
-          <Picker value={restNetNames(d.originalSourceNetworks)} options={opts.networks} onChange={(n) => set({ originalSourceNetworks: netsValue(n, opts.networks, 'ipv4Addresses') })} />
+          <SfList label="Original-Quelle" value={restNetNames(d.originalSourceNetworks)} options={opts.networks} onChange={(n) => set({ originalSourceNetworks: netsValue(n, opts.networks, 'ipv4Addresses') })} />
           <div className="stack">
             <select value={tsrc} onChange={(e) => set({ translatedSource: e.target.value === 'masq' ? { masq: true } : e.target.value === 'host' ? { ipv4Address: { name: opts.ipv4[0]?.value || '' } } : null })}>
               <option value="original">Original</option><option value="masq">MASQ (Adresse der Schnittstelle)</option><option value="host">IP-Host …</option>
@@ -289,7 +444,7 @@ export function SophosNatEditor({ entity, config, rule, onClose, onSubmit }) {
         </div>
         <div className="sf-nat-row">
           <span className="sf-nat-label">Ziel</span>
-          <Picker value={restNetNames(d.originalDestinationNetworks)} options={opts.networks} onChange={(n) => set({ originalDestinationNetworks: netsValue(n, opts.networks, 'ipv4Addresses') })} />
+          <SfList label="Original-Ziel" value={restNetNames(d.originalDestinationNetworks)} options={opts.networks} onChange={(n) => set({ originalDestinationNetworks: netsValue(n, opts.networks, 'ipv4Addresses') })} />
           <div className="stack">
             <select value={tdst} onChange={(e) => set({ translatedDestination: e.target.value === 'host' ? { ipv4Address: { name: opts.ipv4[0]?.value || '' } } : e.target.value === 'fqdn' ? { fqdnAddress: { name: opts.fqdn[0]?.value || '' } } : null })}>
               <option value="original">Original</option><option value="host">IP-Host …</option><option value="fqdn">FQDN-Host …</option>
@@ -302,7 +457,7 @@ export function SophosNatEditor({ entity, config, rule, onClose, onSubmit }) {
         </div>
         <div className="sf-nat-row">
           <span className="sf-nat-label">Dienste</span>
-          <Picker value={svcNames(d.originalServicesOrGroups)} options={opts.services} onChange={(s) => set({ originalServicesOrGroups: svcValue(s, opts.services) })} />
+          <SfList label="Original-Dienste" value={svcNames(d.originalServicesOrGroups)} options={opts.services} onChange={(s) => set({ originalServicesOrGroups: svcValue(s, opts.services) })} />
           <select value={refName(d.translatedService)} onChange={(e) => set({ translatedService: e.target.value ? { name: e.target.value } : null })}>
             <option value="">Original</option>{opts.serviceItems.map((o) => <option key={o.value}>{o.value}</option>)}
           </select>
@@ -310,15 +465,15 @@ export function SophosNatEditor({ entity, config, rule, onClose, onSubmit }) {
       </div>
       <Section title="Schnittstellen">
         <div className="grid two">
-          <Box label="Eingehende Schnittstellen"><Picker value={ifaces(d.inboundInterfaces)} options={opts.interfaces} onChange={(n) => set({ inboundInterfaces: ifaceValue(n) })} /></Box>
-          <Box label="Ausgehende Schnittstellen"><Picker value={ifaces(d.outboundInterfaces)} options={opts.interfaces} onChange={(n) => set({ outboundInterfaces: ifaceValue(n) })} /></Box>
+          <Box label="Eingehende Schnittstellen"><SfList label="Eingehende Schnittstellen" value={ifaces(d.inboundInterfaces)} options={opts.interfaces} onChange={(n) => set({ inboundInterfaces: ifaceValue(n) })} /></Box>
+          <Box label="Ausgehende Schnittstellen"><SfList label="Ausgehende Schnittstellen" value={ifaces(d.outboundInterfaces)} options={opts.interfaces} onChange={(n) => set({ outboundInterfaces: ifaceValue(n) })} /></Box>
         </div>
         <div className="muted small">Lastverteilung, Health-Check und SNAT-Überschreibungen je Schnittstelle: im JSON-Modus.</div>
       </Section>
     </div>
   )
   return (
-    <EditorShell title={isNew ? 'NAT-Regel hinzufügen' : `NAT-Regel „${rule.name}“ bearbeiten`} entity={entity}
+    <EditorShell page={page} title={isNew ? 'NAT-Regel hinzufügen' : `NAT-Regel „${rule.name}“ bearbeiten`} entity={entity}
       data={d} setData={setD} isNew={isNew} form={form} onClose={onClose} positionField={posField}
       onSubmit={(payload) => onSubmit({ entity, action: isNew ? 'add' : 'update', name: payload.name, data: payload,
         position: position.type === 'keep' ? null : position })} />

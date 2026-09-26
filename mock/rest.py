@@ -153,6 +153,10 @@ def _demo_extras(out: dict[str, list[dict]]) -> None:
         if r.get("action") == "accept":
             r["securityFeatures"] = {"webPolicy": {"name": "Default Workplace Policy"}, "ipsPolicy": {"name": "generalpolicy"},
                                      "scanHttpAndDecryptedHttps": True, "zeroDayProtection": True}
+    out["firewallRulesIpv4"].append(meta({
+        "name": "shop.example.com", "description": "Webserver-Schutz", "ruleType": "waf", "enabled": True, "action": "accept",
+        "sourceZones": {"any": True}, "sourceNetworks": {"any": True}, "destinationZones": {"any": True},
+        "wafRule": {"name": "shop.example.com"}, "wafService": 443}))
     out["natRulesIpv4"].append(meta({
         "name": "Default SNAT IPv4", "description": "Maskierung ins Internet", "enabled": True,
         "originalSourceNetworks": {"any": True}, "originalDestinationNetworks": {"any": True},

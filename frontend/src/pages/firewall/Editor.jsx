@@ -1,56 +1,25 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from '../../App'
-import { ACTION_LABEL, api, can, crNo, download, upload } from '../../api'
+import { ACTION_LABEL, api, can, download, upload } from '../../api'
 import { BULK, BULK_KIND, parseBulk } from '../../components/bulk'
 import { COLUMNS, searchText } from '../../components/columns'
 import { ObjectEditor, RuleEditor } from '../../components/Editors'
-import { READ_ONLY_ENTITIES, RULE_TABLE_ENTITIES, PRIMARY_RULES, anyRuleView, asList, canonical, isRestEntity, oname } from '../../components/entities'
+import { READ_ONLY_ENTITIES, RULE_TABLE_ENTITIES, PRIMARY_RULES, asList, canonical, isRestEntity, oname } from '../../components/entities'
 import Icon, { ENTITY_ICON } from '../../components/icons'
 import { RestObjectEditor } from '../../components/RestEditors'
 import { ObjectView } from '../../components/SophosPolicies'
 import { FeatureBadges, RuleDetails, SophosNatEditor, SophosRuleEditor, natView } from '../../components/SophosRules'
 import { DiffTable, Empty, ErrorBox, Modal, Seg, useLoad } from '../../components/ui'
 import { OperationCard } from '../FirewallView'
+import { Analysis, ColumnPicker, IconButton, PendingBadges, Pager, store, useDismiss, usePaging } from './tableParts'
+import RuleTable from './RuleTable'
 
 /** Konfigurations-Editor im Stil des Sophos Firewall Config Studio. */
 
 const SECTION_ICON = { 'Regeln & Richtlinien': 'rule', 'Hosts & Dienste': 'host', Netzwerk: 'zone', System: 'clock' }
-const SEV_CLASS = { high: 'b-danger', medium: 'b-warn', info: '' }
-const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v) } catch { return d } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* privater Modus */ } },
-}
 
-/** Schließt ein Menü bei Klick außerhalb oder Escape. */
-function useDismiss(open, setOpen) {
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!open) return undefined
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) } }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey, true)
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey, true) }
-  }, [open, setOpen])
-  return ref
-}
 
 // --- Hilfen --------------------------------------------------------------------------------------------------
-
-function PendingBadges({ pending, draftAction }) {
-  return (
-    <span className="chips">
-      {draftAction && <span className={`badge ${draftAction === 'add' ? 'b-ok' : draftAction === 'remove' ? 'b-danger' : 'b-warn'}`}>
-        Entwurf: {ACTION_LABEL[draftAction]}</span>}
-      {(pending || []).filter((p) => p.status !== 'draft').map((p) => (
-        <Link key={p.change_id} to={`/changes/${p.change_id}`} className={`badge st-${p.status}`} title={`${ACTION_LABEL[p.action]} – ${p.status}`}>
-          {crNo(p.number)}
-        </Link>
-      ))}
-    </span>
-  )
-}
 
 function buildRows(entity, objects, preview, showDraft, draftOps) {
   const orig = objects[entity] || []
@@ -67,16 +36,6 @@ function buildRows(entity, objects, preview, showDraft, draftOps) {
   return rows
 }
 
-function Analysis({ findings }) {
-  if (!findings?.length) return <span className="muted small">–</span>
-  const worst = findings.find((f) => f.severity === 'high') || findings.find((f) => f.severity === 'medium') || findings[0]
-  return (
-    <span className={`badge ${SEV_CLASS[worst.severity]}`} title={findings.map((f) => `• ${f.message}`).join('\n')}>
-      {findings.length === 1 ? { any_any: 'zu offen', wan_open: 'offen (WAN)', no_log_wan: 'ohne Log', shadowed: 'verdeckt', disabled: 'inaktiv', unused: 'ungenutzt', duplicate_address: 'doppelt' }[worst.code] || worst.code : `${findings.length} Hinweise`}
-    </span>
-  )
-}
-
 /** Chips mit Obergrenze – Rest als „+N“ (vollständige Liste im Tooltip). */
 function FewChips({ items, kind, max = 4 }) {
   if (!items?.length) return <span className="chip any">Beliebig</span>
@@ -86,14 +45,6 @@ function FewChips({ items, kind, max = 4 }) {
       {items.slice(0, max).map((i) => <span key={i} className={`chip ${kind || ''}`}>{i}</span>)}
       {rest > 0 && <span className="chip more">+{rest}</span>}
     </span>
-  )
-}
-
-function IconButton({ icon, title, onClick, danger, disabled }) {
-  return (
-    <button className={`icon-btn ${danger ? 'danger' : ''}`} title={title} aria-label={title} onClick={onClick} disabled={disabled}>
-      <Icon name={icon} size={15} />
-    </button>
   )
 }
 
@@ -293,30 +244,8 @@ function GettingStarted({ onHide }) {
 
 // --- Tabelle -------------------------------------------------------------------------------------------------
 
-function ColumnPicker({ cols, visible, onChange }) {
-  const [open, setOpen] = useState(false)
-  const ref = useDismiss(open, setOpen)
-  if (!cols.length) return null
-  return (
-    <div className="dropdown" ref={ref}>
-      <button onClick={() => setOpen(!open)} aria-expanded={open}><Icon name="columns" size={14} /> Spalten</button>
-      {open && <div className="dropdown-menu">
-        {cols.map((c) => (
-          <label key={c.key} className="check"><input type="checkbox" checked={visible.includes(c.key)}
-            onChange={() => onChange(visible.includes(c.key) ? visible.filter((k) => k !== c.key) : [...visible, c.key])} />{c.label}</label>
-        ))}
-      </div>}
-    </div>
-  )
-}
-
 function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, findings, onEdit, onOp, onShow, onBulkDelete, onAdd, onBulkAdd }) {
-  const isRule = RULE_TABLE_ENTITIES.has(entity)
-  const isNat = entity === 'natRulesIpv4'
   const rest = isRestEntity(entity)
-  const restRule = rest && isRule
-  const [open, setOpen] = useState(new Set())
-  const toggleOpen = (n) => { const s = new Set(open); s.has(n) ? s.delete(n) : s.add(n); setOpen(s) }
   const cols = COLUMNS[entity] || []
   const [visible, setVisible] = useState(() => store.get(`fwm.cols.${entity}`, cols.filter((c) => !c.hidden).map((c) => c.key)))
   const [q, setQ] = useState('')
@@ -324,11 +253,17 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
   const [sel, setSel] = useState(new Set())
   const f = q.toLowerCase()
   const shown = rows.filter((r) => (!f || searchText(r.obj).includes(f)) && (!onlyFindings || findings[oname(r.obj)]?.length))
+  const paging = usePaging(entity, shown.length)
+  const pageRows = paging.slice(shown)
   const names = rows.filter((r) => r.state !== 'remove').map((r) => oname(r.obj))
   const deletable = (r) => r.state !== 'remove' && !r.obj.isInternal
   const toggle = (n) => { const s = new Set(sel); s.has(n) ? s.delete(n) : s.add(n); setSel(s) }
-  const allSel = shown.length > 0 && shown.filter(deletable).every((r) => sel.has(oname(r.obj)))
-  const toggleAll = () => setSel(allSel ? new Set() : new Set(shown.filter(deletable).map((r) => oname(r.obj))))
+  const allSel = pageRows.some(deletable) && pageRows.filter(deletable).every((r) => sel.has(oname(r.obj)))
+  const toggleAll = () => {
+    const s = new Set(sel)
+    pageRows.filter(deletable).forEach((r) => (allSel ? s.delete(oname(r.obj)) : s.add(oname(r.obj))))
+    setSel(s)
+  }
   const setCols = (v) => { setVisible(v); store.set(`fwm.cols.${entity}`, v) }
   const activeCols = cols.filter((c) => visible.includes(c.key))
 
@@ -346,7 +281,7 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
         </div>}
       </div>
       <div className="cs-filter">
-        <div className="cs-search"><Icon name="search" size={15} /><input placeholder="Einträge durchsuchen …" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div className="cs-search"><Icon name="search" size={15} /><input placeholder="Einträge durchsuchen …" value={q} onChange={(e) => { setQ(e.target.value); paging.setPage(0) }} /></div>
         <ColumnPicker cols={cols} visible={visible} onChange={setCols} />
       </div>
       {!rows.length ? <Empty>Noch keine {meta.label} vorhanden.</Empty> : (
@@ -355,74 +290,36 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
             <thead><tr>
               {mayEdit && <th style={{ width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Alle auswählen" /></th>}
               <th style={{ width: 40 }}>#</th><th>Name</th>
-              {isRule ? <><th>Quelle</th><th>Ziel</th><th>Dienste</th><th>Aktion</th>{restRule && <th>Sicherheit</th>}</>
-                : isNat ? <><th>Original</th><th>Übersetzt</th><th>Schnittstellen</th><th>Firewall-Regel</th></>
-                : activeCols.map((c) => <th key={c.key}>{c.label}</th>)}
+              {activeCols.map((c) => <th key={c.key}>{c.label}</th>)}
               <th><button className={`th-filter ${onlyFindings ? 'on' : ''}`} onClick={() => setOnlyFindings(!onlyFindings)} title="Nur Objekte mit Hinweisen">
                 Konfig-Analyse <Icon name="alert" size={12} /></button></th>
               <th className="actions">Aktionen</th>
             </tr></thead>
             <tbody>
-              {shown.map(({ obj, state }) => {
+              {pageRows.map(({ obj, state }) => {
                 const name = oname(obj)
                 const idx = names.indexOf(name)
                 const desc = obj.description ?? obj.Description
-                const v = isRule ? anyRuleView(entity, obj) : isNat ? natView(obj) : null
-                const cls = state ? `row-${state}` : v && !v.enabled ? 'row-disabled' : ''
-                const expanded = restRule && open.has(name)
                 return (
-                  <Fragment key={`${name}-${state}`}>
-                  <tr className={cls}>
+                  <tr key={`${name}-${state}`} className={state ? `row-${state}` : ''}>
                     {mayEdit && <td><input type="checkbox" disabled={!deletable({ obj, state })} checked={sel.has(name)} onChange={() => toggle(name)} aria-label={`${name} auswählen`} /></td>}
                     <td className="muted small">{state === 'remove' ? '–' : idx + 1}</td>
                     <td className="name">
-                      <span className="nowrap">
-                        {restRule && <button className={`ghost expander ${expanded ? 'open' : ''}`} onClick={() => toggleOpen(name)} title="Details" aria-expanded={expanded}><Icon name="chevron" size={12} /></button>}
-                        <button className="link cs-name" onClick={() => onShow(obj)}>{name}</button>
-                      </span>
+                      <button className="link cs-name" onClick={() => (mayEdit && state !== 'remove' ? onEdit(obj) : onShow(obj))}>{name}</button>
                       {obj.isInternal && <span className="badge" style={{ marginLeft: 6 }}>System</span>}
-                      {v && !v.enabled && <span className="badge st-Disable" style={{ marginLeft: 6 }}>inaktiv</span>}
-                      {v?.type === 'waf' && <span className="badge b-info" style={{ marginLeft: 6 }}>WAF</span>}
                       {desc && <div className="small muted">{desc}</div>}
                       {(pendingBy[name] || draftBy[name]) && <div style={{ marginTop: 3 }}><PendingBadges pending={pendingBy[name]} draftAction={draftBy[name]} /></div>}
                     </td>
-                    {isRule && v.type === 'waf' ? <td colSpan={3} className="small muted">WAF-Regel (Webserver-Schutz)</td> : isRule ? <>
-                      <td><FewChips items={v.srcZones} kind="zone" /><div style={{ marginTop: 3 }}><FewChips items={v.srcNets} /></div></td>
-                      <td><FewChips items={v.dstZones} kind="zone" /><div style={{ marginTop: 3 }}><FewChips items={v.dstNets} /></div></td>
-                      <td><FewChips items={v.services} />{v.schedule && v.schedule !== 'All The Time' && <div className="small muted">⏱ {v.schedule}</div>}</td>
-                    </> : null}
-                    {isRule ? <>
-                      <td className="nowrap"><span className={`badge st-${v.action}`}>{{ Accept: 'Zulassen', Drop: 'Verwerfen', Reject: 'Ablehnen' }[v.action] || v.action}</span>
-                        {v.log && <div className="small muted">protokolliert</div>}</td>
-                      {restRule && <td><FeatureBadges rule={obj} /></td>}
-                    </> : isNat ? <>
-                      <td className="small"><div><span className="muted">Quelle</span> {v.oSrc.join(', ') || 'Beliebig'}</div>
-                        <div><span className="muted">Ziel</span> {v.oDst.join(', ') || 'Beliebig'}</div>
-                        <div><span className="muted">Dienst</span> {v.oSvc.join(', ') || 'Beliebig'}</div></td>
-                      <td className="small"><div><span className="muted">Quelle</span> {v.tSrc === 'MASQ' ? <span className="badge b-info">MASQ</span> : v.tSrc}</div>
-                        <div><span className="muted">Ziel</span> {v.tDst}</div><div><span className="muted">Dienst</span> {v.tSvc}</div></td>
-                      <td className="small"><div><span className="muted">Ein</span> {v.inIf || 'Beliebig'}</div><div><span className="muted">Aus</span> {v.outIf || 'Beliebig'}</div></td>
-                      <td className="small">{v.linked || <span className="muted">–</span>}</td>
-                    </> : activeCols.map((c) => <td key={c.key} className="small">{String(c.get(obj) ?? '') || <span className="muted">–</span>}</td>)}
+                    {activeCols.map((c) => <td key={c.key} className="small">{String(c.get(obj) ?? '') || <span className="muted">–</span>}</td>)}
                     <td><Analysis findings={findings[name]} /></td>
                     <td className="actions">
                       {mayEdit && state !== 'remove' && <>
-                        {(isRule || isNat) && <>
-                          <IconButton icon="up" title="Nach oben" disabled={idx <= 0}
-                            onClick={() => onOp({ entity, action: 'update', name, data: obj, position: { type: 'before', ref: names[idx - 1] } })} />
-                          <IconButton icon="down" title="Nach unten" disabled={idx >= names.length - 1}
-                            onClick={() => onOp({ entity, action: 'update', name, data: obj, position: { type: 'after', ref: names[idx + 1] } })} />
-                          <IconButton icon="power" title={v.enabled ? 'Deaktivieren' : 'Aktivieren'}
-                            onClick={() => onOp({ entity, action: 'update', name, data: rest ? { ...obj, enabled: !v.enabled } : { ...obj, Status: v.enabled ? 'Disable' : 'Enable' } })} />
-                        </>}
                         <IconButton icon="edit" title="Bearbeiten" onClick={() => onEdit(obj)} />
                         {fw.capabilities.remove && !obj.isInternal && <IconButton icon="trash" title="Löschen" danger onClick={() => onOp({ entity, action: 'remove', name })} />}
                       </>}
-                      <IconButton icon="code" title={rest ? 'JSON anzeigen' : 'XML anzeigen'} onClick={() => onShow(obj)} />
+                      <IconButton icon="code" title={rest ? 'Details / JSON' : 'Details / XML'} onClick={() => onShow(obj)} />
                     </td>
                   </tr>
-                  {expanded && <tr className="sf-expand"><td colSpan={99}><RuleDetails rule={obj} /></td></tr>}
-                  </Fragment>
                 )
               })}
             </tbody>
@@ -430,8 +327,7 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
           {!shown.length && <Empty>Keine Treffer.</Empty>}
         </div>
       )}
-      {!fw.capabilities.remove && mayEdit && <div className="muted small" style={{ padding: '8px 16px' }}>
-        Löschen ist über den Sophos-Central-Import nicht möglich – Regeln stattdessen deaktivieren oder die Firewall per REST-API anbinden.</div>}
+      {rows.length > 0 && <Pager total={shown.length} {...paging} />}
     </div>
   )
 }
@@ -481,7 +377,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
   const rest = cfg.format === 'rest'
   const total = cfg.entities.reduce((n, e) => n + e.count, 0)
 
-  const select = (e) => { setEntity(e); store.set(`fwm.editor.entity.${cfg.format}`, e) }
+  const select = (e) => { setEntity(e); setEditing(null); store.set(`fwm.editor.entity.${cfg.format}`, e) }
   useEffect(() => {
     const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus() } }
     window.addEventListener('keydown', onKey)
@@ -518,6 +414,19 @@ export default function Editor({ fw, cfg, draft, reload }) {
     reload()
     setMsg({ kind: errors.length ? 'warn' : 'ok', text: `${names.length - errors.length} zum Löschen in den Entwurf übernommen${errors.length ? ` · übersprungen: ${errors.join('; ')}` : ''}` })
   }
+  const bulkToggle = async (objs, on) => {
+    const errors = []
+    for (const obj of objs) {
+      const data = isRestEntity(entity) ? { ...obj, enabled: on } : { ...obj, Status: on ? 'Enable' : 'Disable' }
+      try { await addOp({ entity, action: 'update', name: oname(obj), data }, true) } catch (e) { errors.push(`${oname(obj)}: ${e.message}`) }
+    }
+    reload()
+    setMsg({ kind: errors.length ? 'warn' : 'ok', text: `${objs.length - errors.length} Regeln ${on ? 'ein' : 'aus'}geschaltet (Entwurf)${errors.length ? ` · übersprungen: ${errors.join('; ')}` : ''}` })
+  }
+  const addFor = (e) => { if (e !== entity) select(e); setEditing({ obj: null }) }
+  // Firewall-/NAT-Regeln (REST) werden wie in SFOS als ganze Seite bearbeitet
+  const pageEdit = editing && rest && (entity.startsWith('firewallRules') || entity === 'natRulesIpv4')
+  const ruleList = RULE_TABLE_ENTITIES.has(entity) || entity === 'natRulesIpv4'
   const startImport = async (file) => {
     if (!file) return
     setMsg({ kind: 'info', text: `Lese ${file.name} …` })
@@ -589,16 +498,19 @@ export default function Editor({ fw, cfg, draft, reload }) {
         {!fw.last_sync_at && <div className="alert warn">Noch keine Konfiguration geladen – bitte „Jetzt synchronisieren“.</div>}
         {draftOps.length > 0 && <label className="check small" style={{ margin: '0 0 8px' }}><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />Tabelle mit meinem Entwurf anzeigen</label>}
         {READ_ONLY_ENTITIES.has(entity) && <div className="alert info small">{meta.label} werden direkt auf der Firewall gepflegt und hier nur angezeigt.</div>}
-        <EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
-          findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
-          onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} />
+        {pageEdit ? (entity === 'natRulesIpv4'
+          ? <SophosNatEditor key={`${entity}:${editing.obj ? oname(editing.obj) : 'neu'}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
+          : <SophosRuleEditor key={`${entity}:${editing.obj ? oname(editing.obj) : 'neu'}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />)
+        : ruleList
+          ? <RuleTable key={entity} entity={entity} entities={cfg.entities} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
+            findings={findings} onSelect={select} onEdit={(obj) => setEditing({ obj })} onAddFor={addFor} onOp={quickOp}
+            onShow={(obj) => setDetail({ entity, obj })} onBulkDelete={bulkDelete} onBulkToggle={bulkToggle} />
+          : <EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
+            findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
+            onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} />}
       </div>
 
-      {editing && rest && (entity.startsWith('firewallRules')
-        ? <SophosRuleEditor entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
-        : entity === 'natRulesIpv4'
-        ? <SophosNatEditor entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
-        : <RestObjectEditor entity={entity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />)}
+      {editing && rest && !pageEdit && <RestObjectEditor entity={entity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />}
       {editing && !rest && (entity === 'FirewallRule'
         ? <RuleEditor config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
         : <ObjectEditor entity={entity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />)}

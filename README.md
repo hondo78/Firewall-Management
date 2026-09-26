@@ -20,6 +20,8 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   (Web/App/IPS/AV/…) und aufklappbaren Details, NAT-Tabelle Original → Übersetzt. Formulare wie auf der Firewall
   für Firewall-/NAT-Regeln (inkl. Web-Filter, IPS, Anwendungskontrolle, Heartbeat, QoS, Benutzer, Ausnahmen),
   Web-/Anwendungs-/IPS-/Traffic-Shaping-Richtlinien, Zonen (Gerätezugriff), Zeitpläne und alle Adress-/Dienst-Objekte.
+  Regelliste und „Firewall-Regel bearbeiten“ im Aufbau der SFOS-Weboberfläche (Reiter, Ziehen zum Umsortieren,
+  Zeilenmenü, Seiten-Editor mit festem Speichern-Fuß).
   JSON (REST) bzw. XML bleibt als zweite Option „Experte“; Export als JSON bzw. `Entities.xml` (Config Studio).
 - **Änderungsanträge (Vier-Augen-Prinzip)**: Änderungen landen in einem Entwurf (Vorschau direkt in der Tabelle),
   werden mit Titel, Begründung, Ticket und optionalem Wartungsfenster eingereicht und müssen von 1–3 *anderen*
