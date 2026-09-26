@@ -5,6 +5,7 @@ import Icon from '../../components/icons'
 import { FeatureBadges, natView } from '../../components/SophosRules'
 import { Empty } from '../../components/ui'
 import { Analysis, ColumnPicker, PendingBadges, Pager, RowMenu, store, useDismiss, usePaging } from './tableParts'
+import { t } from '../../i18n'
 
 /**
  * Regelliste im Aufbau von SFOS „Regeln und Richtlinien“: Reiter Firewallregeln/NAT-Regeln und IPv4/IPv6,
@@ -12,16 +13,16 @@ import { Analysis, ColumnPicker, PendingBadges, Pager, RowMenu, store, useDismis
  * Zeilenmenü (⋮) und Seitenfuß.
  */
 
-const ACTION = { Accept: 'Annehmen', Drop: 'Verwerfen', Reject: 'Ablehnen' }
+const ACTION = { Accept: t("Annehmen"), Drop: t("Verwerfen"), Reject: t("Ablehnen") }
 
 /** Einträge untereinander wie in SFOS; ab vier Einträgen „+N“ (vollständig im Tooltip) */
-function Stack({ items, any = 'Beliebig', max = 3 }) {
+function Stack({ items, any = t("Beliebig"), max = 3 }) {
   if (!items?.length) return <span className="sf-any">{any}</span>
   const rest = items.length - max
   return (
     <div className="sf-cell-list" title={items.length > 1 ? items.join('\n') : undefined}>
       {items.slice(0, max).map((i) => <div key={i}>{i}</div>)}
-      {rest > 0 && <div className="muted">+{rest} weitere</div>}
+      {rest > 0 && <div className="muted">+{rest} {t("weitere")}</div>}
     </div>
   )
 }
@@ -29,38 +30,38 @@ function Stack({ items, any = 'Beliebig', max = 3 }) {
 const col = (key, label, render, hidden) => ({ key, label, render, hidden })
 
 const RULE_COLS = (rest) => [
-  col('srcZones', 'Quellzonen', (v) => <Stack items={v.srcZones} />),
-  col('dstZones', 'Zielzonen', (v) => <Stack items={v.dstZones} />),
-  col('srcNets', 'Quellnetzwerke', (v) => <Stack items={v.srcNets} />),
-  col('dstNets', 'Zielnetzwerke', (v) => <Stack items={v.dstNets} />),
-  col('services', 'Dienste', (v) => <Stack items={v.services} />),
-  col('action', 'Maßnahme', (v) => <><span className={`badge st-${v.action}`}>{ACTION[v.action] || v.action}</span>
-    {v.log && <div className="small muted">protokolliert</div>}</>),
-  rest && col('security', 'Sicherheit', (v, obj) => <FeatureBadges rule={obj} />),
-  col('schedule', 'Zeitplan', (v) => (v.schedule && v.schedule !== 'All The Time' ? v.schedule : <span className="sf-any">Jederzeit</span>), true),
-  col('analysis', 'Konfig-Analyse', (v, obj, f) => <Analysis findings={f} />),
+  col('srcZones', t("Quellzonen"), (v) => <Stack items={v.srcZones} />),
+  col('dstZones', t("Zielzonen"), (v) => <Stack items={v.dstZones} />),
+  col('srcNets', t("Quellnetzwerke"), (v) => <Stack items={v.srcNets} />),
+  col('dstNets', t("Zielnetzwerke"), (v) => <Stack items={v.dstNets} />),
+  col('services', t("Dienste"), (v) => <Stack items={v.services} />),
+  col('action', t("Maßnahme"), (v) => <><span className={`badge st-${v.action}`}>{ACTION[v.action] || v.action}</span>
+    {v.log && <div className="small muted">{t("protokolliert")}</div>}</>),
+  rest && col('security', t("Sicherheit"), (v, obj) => <FeatureBadges rule={obj} />),
+  col('schedule', t("Zeitplan"), (v) => (v.schedule && v.schedule !== 'All The Time' ? v.schedule : <span className="sf-any">{t("Jederzeit")}</span>), true),
+  col('analysis', t("Konfig-Analyse"), (v, obj, f) => <Analysis findings={f} />),
 ].filter(Boolean)
 
 const NAT_COLS = [
-  col('oSrc', 'Ursprüngliche Quelle', (n) => <Stack items={n.oSrc} />),
-  col('tSrc', 'Übersetzte Quelle', (n) => (n.tSrc === 'MASQ' ? <span className="badge b-info">MASQ</span> : n.tSrc === 'Original' ? <span className="sf-any">Original</span> : n.tSrc)),
-  col('oDst', 'Ursprüngliches Ziel', (n) => <Stack items={n.oDst} />),
-  col('tDst', 'Übersetztes Ziel', (n) => (n.tDst === 'Original' ? <span className="sf-any">Original</span> : n.tDst)),
-  col('oSvc', 'Ursprünglicher Dienst', (n) => <Stack items={n.oSvc} />),
-  col('tSvc', 'Übersetzter Dienst', (n) => (n.tSvc === 'Original' ? <span className="sf-any">Original</span> : n.tSvc)),
-  col('inIf', 'Eingehende Schnittstelle', (n) => n.inIf || <span className="sf-any">Beliebig</span>, true),
-  col('outIf', 'Ausgehende Schnittstelle', (n) => n.outIf || <span className="sf-any">Beliebig</span>),
-  col('linked', 'Verknüpfte Firewall-Regel', (n) => n.linked || <span className="sf-any">–</span>),
-  col('analysis', 'Konfig-Analyse', (n, obj, f) => <Analysis findings={f} />),
+  col('oSrc', t("Ursprüngliche Quelle"), (n) => <Stack items={n.oSrc} />),
+  col('tSrc', t("Übersetzte Quelle"), (n) => (n.tSrc === 'MASQ' ? <span className="badge b-info">MASQ</span> : n.tSrc === t('Original') ? <span className="sf-any">{t("Original")}</span> : n.tSrc)),
+  col('oDst', t("Ursprüngliches Ziel"), (n) => <Stack items={n.oDst} />),
+  col('tDst', t("Übersetztes Ziel"), (n) => (n.tDst === t('Original') ? <span className="sf-any">{t("Original")}</span> : n.tDst)),
+  col('oSvc', t("Ursprünglicher Dienst"), (n) => <Stack items={n.oSvc} />),
+  col('tSvc', t("Übersetzter Dienst"), (n) => (n.tSvc === t('Original') ? <span className="sf-any">{t("Original")}</span> : n.tSvc)),
+  col('inIf', t("Eingehende Schnittstelle"), (n) => n.inIf || <span className="sf-any">{t("Beliebig")}</span>, true),
+  col('outIf', t("Ausgehende Schnittstelle"), (n) => n.outIf || <span className="sf-any">{t("Beliebig")}</span>),
+  col('linked', t("Verknüpfte Firewall-Regel"), (n) => n.linked || <span className="sf-any">–</span>),
+  col('analysis', t("Konfig-Analyse"), (n, obj, f) => <Analysis findings={f} />),
 ]
 
 /** WAF-Regeln haben kein Ziel/keine Dienste – stattdessen WAF-Verweis zeigen */
 function wafCell(v, obj, key) {
   if (v?.type !== 'waf') return null
   if (key === 'dstNets') return <span className="small">WAF: {obj.wafRule?.name || '–'}</span>
-  if (key === 'services') return obj.wafService != null ? <span className="small">WAF-Dienst {obj.wafService}</span> : <span className="sf-any">–</span>
+  if (key === 'services') return obj.wafService != null ? <span className="small">{t("WAF-Dienst")} {obj.wafService}</span> : <span className="sf-any">–</span>
   if (key === 'dstZones' || key === 'security' || key === 'schedule') return <span className="sf-any">–</span>
-  if (key === 'action') return <span className="badge b-info">Webserver-Schutz</span>
+  if (key === 'action') return <span className="badge b-info">{t("Webserver-Schutz")}</span>
   return null
 }
 
@@ -121,19 +122,19 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
   }
 
   const addItems = isNat
-    ? [{ label: 'NAT-Regel hinzufügen', onClick: () => onAddFor(entity) }]
+    ? [{ label: t("NAT-Regel hinzufügen"), onClick: () => onAddFor(entity) }]
     : rest
-      ? [{ label: 'Neue Firewall-Regel (IPv4)', onClick: () => onAddFor('firewallRulesIpv4') },
-        has('firewallRulesIpv6') && { label: 'Neue Firewall-Regel (IPv6)', onClick: () => onAddFor('firewallRulesIpv6') },
-        onAddWaf && { label: 'Neue WAF-Regel (Webserver-Schutz)', onClick: onAddWaf }].filter(Boolean)
-      : [{ label: 'Firewall-Regel hinzufügen', onClick: () => onAddFor(entity) }]
+      ? [{ label: t("Neue Firewall-Regel (IPv4)"), onClick: () => onAddFor('firewallRulesIpv4') },
+        has('firewallRulesIpv6') && { label: t("Neue Firewall-Regel (IPv6)"), onClick: () => onAddFor('firewallRulesIpv6') },
+        onAddWaf && { label: t("Neue WAF-Regel (Webserver-Schutz)"), onClick: onAddWaf }].filter(Boolean)
+      : [{ label: t("Firewall-Regel hinzufügen"), onClick: () => onAddFor(entity) }]
 
   return (
     <div className="panel sf-rules">
       {rest && (has('natRulesIpv4') || has('firewallRulesIpv6')) && (
         <div className="sf-tabs" role="tablist">
-          <button role="tab" aria-selected={fwTab} className={fwTab ? 'on' : ''} onClick={() => onSelect('firewallRulesIpv4')}>Firewallregeln</button>
-          {has('natRulesIpv4') && <button role="tab" aria-selected={isNat} className={isNat ? 'on' : ''} onClick={() => onSelect('natRulesIpv4')}>NAT-Regeln</button>}
+          <button role="tab" aria-selected={fwTab} className={fwTab ? 'on' : ''} onClick={() => onSelect('firewallRulesIpv4')}>{t("Firewallregeln")}</button>
+          {has('natRulesIpv4') && <button role="tab" aria-selected={isNat} className={isNat ? 'on' : ''} onClick={() => onSelect('natRulesIpv4')}>{t("NAT-Regeln")}</button>}
         </div>
       )}
       {rest && fwTab && has('firewallRulesIpv6') && (
@@ -146,26 +147,26 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
       )}
       <div className="sf-toolbar">
         <div className="cs-search"><Icon name="search" size={15} />
-          <input placeholder="Suchen …" value={q} onChange={(e) => { setQ(e.target.value); paging.setPage(0) }} aria-label="Regeln durchsuchen" /></div>
+          <input placeholder={t("Suchen …")} value={q} onChange={(e) => { setQ(e.target.value); paging.setPage(0) }} aria-label={t("Regeln durchsuchen")} /></div>
         <div className="right row">
           {mayEdit && <>
-            <AddMenu label={isNat ? 'NAT-Regel hinzufügen' : 'Firewall-Regel hinzufügen'} items={addItems} />
+            <AddMenu label={isNat ? t("NAT-Regel hinzufügen") : t("Firewall-Regel hinzufügen")} items={addItems} />
             <button disabled={!selRows.length} onClick={async () => { await onBulkToggle(selRows.map((r) => r.obj), allOff); setSel(new Set()) }}>
-              {allOff ? 'Einschalten' : 'Ausschalten'}{selRows.length ? ` (${selRows.length})` : ''}</button>
+              {allOff ? t("Einschalten") : t("Ausschalten")}{selRows.length ? ` (${selRows.length})` : ''}</button>
             {fw.capabilities.remove && <button className="danger" disabled={!selRows.length}
-              onClick={async () => { await onBulkDelete(selRows.map((r) => oname(r.obj))); setSel(new Set()) }}>Löschen</button>}
+              onClick={async () => { await onBulkDelete(selRows.map((r) => oname(r.obj))); setSel(new Set()) }}>{t("Löschen")}</button>}
           </>}
           <ColumnPicker cols={cols} visible={visible} onChange={setCols} label="" icon="settings" />
         </div>
       </div>
 
-      {!rows.length ? <Empty>Noch keine Regeln vorhanden.</Empty> : (
+      {!rows.length ? <Empty>{t("Noch keine Regeln vorhanden.")}</Empty> : (
         <div className="table-wrap">
           <table className="cs-grid sf-grid">
             <thead><tr>
-              {canDrag && <th style={{ width: 22 }} aria-label="Ziehen" />}
-              {mayEdit && <th style={{ width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Alle auswählen" /></th>}
-              <th style={{ width: 36 }}>#</th><th>Name</th>
+              {canDrag && <th style={{ width: 22 }} aria-label={t("Ziehen")} />}
+              {mayEdit && <th style={{ width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label={t("Alle auswählen")} /></th>}
+              <th style={{ width: 36 }}>#</th><th>{t("Name")}</th>
               {activeCols.map((c) => <th key={c.key}>{c.label}</th>)}
               <th className="actions" style={{ width: 44 }} />
             </tr></thead>
@@ -193,26 +194,26 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
                       setDrag(null); setDrop(null)
                     } : undefined}>
                     {canDrag && <td className="sf-handle">
-                      {live && <span draggable title="Ziehen zum Verschieben" aria-label={`${name} verschieben`}
+                      {live && <span draggable title={t("Ziehen zum Verschieben")} aria-label={`${name} verschieben`}
                         onDragStart={(e) => { setDrag(name); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', name) }}
                         onDragEnd={() => { setDrag(null); setDrop(null) }}>⠿</span>}</td>}
-                    {mayEdit && <td><input type="checkbox" disabled={!selectable({ obj, state })} checked={sel.has(name)} onChange={() => toggle(name)} aria-label={`${name} auswählen`} /></td>}
+                    {mayEdit && <td><input type="checkbox" disabled={!selectable({ obj, state })} checked={sel.has(name)} onChange={() => toggle(name)} aria-label={t("{0} auswählen", name)} /></td>}
                     <td className="muted">{live ? idx + 1 : '–'}</td>
                     <td className="name">
                       <button className="link sf-rule-name" onClick={edit} title={desc || undefined}>{name}</button>
-                      {!v.enabled && <span className="badge st-Disable" style={{ marginLeft: 6 }}>aus</span>}
+                      {!v.enabled && <span className="badge st-Disable" style={{ marginLeft: 6 }}>{t("aus")}</span>}
                       {v.type === 'waf' && <span className="badge b-info" style={{ marginLeft: 6 }}>WAF</span>}
                       {(pendingBy[name] || draftBy[name]) && <div style={{ marginTop: 3 }}><PendingBadges pending={pendingBy[name]} draftAction={draftBy[name]} /></div>}
                     </td>
                     {activeCols.map((c) => <td key={c.key}>{wafCell(isNat ? null : v, obj, c.key) ?? c.render(v, obj, findings[name])}</td>)}
                     <td className="actions">
                       <RowMenu label={name} items={[
-                        mayEdit && live && { label: 'Bearbeiten', icon: 'edit', onClick: () => onEdit(obj) },
-                        { label: rest ? 'Details / JSON' : 'Details / XML', icon: 'code', onClick: () => onShow(obj) },
-                        mayEdit && live && { label: 'Nach oben', icon: 'up', disabled: idx <= 0, onClick: () => moveTo(name, obj, names[idx - 1], 'above') },
-                        mayEdit && live && { label: 'Nach unten', icon: 'down', disabled: idx >= names.length - 1, onClick: () => moveTo(name, obj, names[idx + 1], 'below') },
-                        mayEdit && live && { label: v.enabled ? 'Ausschalten' : 'Einschalten', icon: 'power', onClick: () => onOp({ entity, action: 'update', name, data: setEnabled(obj, !v.enabled) }) },
-                        mayEdit && live && fw.capabilities.remove && !obj.isInternal && { label: 'Löschen', icon: 'trash', danger: true, onClick: () => onOp({ entity, action: 'remove', name }) },
+                        mayEdit && live && { label: t("Bearbeiten"), icon: 'edit', onClick: () => onEdit(obj) },
+                        { label: rest ? t("Details / JSON") : t("Details / XML"), icon: 'code', onClick: () => onShow(obj) },
+                        mayEdit && live && { label: t("Nach oben"), icon: 'up', disabled: idx <= 0, onClick: () => moveTo(name, obj, names[idx - 1], 'above') },
+                        mayEdit && live && { label: t("Nach unten"), icon: 'down', disabled: idx >= names.length - 1, onClick: () => moveTo(name, obj, names[idx + 1], 'below') },
+                        mayEdit && live && { label: v.enabled ? t("Ausschalten") : t("Einschalten"), icon: 'power', onClick: () => onOp({ entity, action: 'update', name, data: setEnabled(obj, !v.enabled) }) },
+                        mayEdit && live && fw.capabilities.remove && !obj.isInternal && { label: t("Löschen"), icon: 'trash', danger: true, onClick: () => onOp({ entity, action: 'remove', name }) },
                       ]} />
                     </td>
                   </tr>
@@ -220,13 +221,13 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
               })}
             </tbody>
           </table>
-          {!shown.length && <Empty>Keine Treffer.</Empty>}
+          {!shown.length && <Empty>{t("Keine Treffer.")}</Empty>}
         </div>
       )}
       {rows.length > 0 && <Pager total={shown.length} {...paging} />}
-      {canDrag && rows.length > 1 && <div className="muted small sf-foot-hint">Reihenfolge ändern: Zeile am Griff ⠿ ziehen – die Verschiebung landet als Änderung im Entwurf.</div>}
+      {canDrag && rows.length > 1 && <div className="muted small sf-foot-hint">{t("Reihenfolge ändern: Zeile am Griff ⠿ ziehen – die Verschiebung landet als Änderung im Entwurf.")}</div>}
       {!fw.capabilities.remove && mayEdit && <div className="muted small sf-foot-hint">
-        Löschen ist über den Sophos-Central-Import nicht möglich – Regeln stattdessen ausschalten oder die Firewall per REST-API anbinden.</div>}
+        {t("Löschen ist über den Sophos-Central-Import nicht möglich – Regeln stattdessen ausschalten oder die Firewall per REST-API anbinden.")}</div>}
     </div>
   )
 }

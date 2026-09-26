@@ -14,6 +14,7 @@ import { DiffTable, Empty, ErrorBox, Modal, Seg, useLoad } from '../../component
 import { OperationCard } from '../FirewallView'
 import { Analysis, ColumnPicker, IconButton, PendingBadges, Pager, store, useDismiss, usePaging } from './tableParts'
 import RuleTable from './RuleTable'
+import { t } from '../../i18n'
 
 /** Konfigurations-Editor im Stil des Sophos Firewall Config Studio. */
 
@@ -40,7 +41,7 @@ function buildRows(entity, objects, preview, showDraft, draftOps) {
 
 /** Chips mit Obergrenze – Rest als „+N“ (vollständige Liste im Tooltip). */
 function FewChips({ items, kind, max = 4 }) {
-  if (!items?.length) return <span className="chip any">Beliebig</span>
+  if (!items?.length) return <span className="chip any">{t("Beliebig")}</span>
   const rest = items.length - max
   return (
     <span className="chips" title={rest > 0 ? items.join(', ') : undefined}>
@@ -57,10 +58,10 @@ function StructuredView({ entity, obj }) {
     const L = ({ label, children }) => <div className="sf-line"><span>{label}</span><div>{children}</div></div>
     return (
       <div className="sf-details">
-        <div><h5>Original</h5><L label="Quelle">{n.oSrc.join(', ') || 'Beliebig'}</L><L label="Ziel">{n.oDst.join(', ') || 'Beliebig'}</L><L label="Dienste">{n.oSvc.join(', ') || 'Beliebig'}</L></div>
-        <div><h5>Übersetzt</h5><L label="Quelle">{n.tSrc}</L><L label="Ziel">{n.tDst}</L><L label="Dienst">{n.tSvc}</L></div>
-        <div><h5>Schnittstellen</h5><L label="Eingehend">{n.inIf || 'Beliebig'}</L><L label="Ausgehend">{n.outIf || 'Beliebig'}</L></div>
-        <div><h5>Weitere</h5><L label="Status">{n.enabled ? 'aktiv' : 'inaktiv'}</L><L label="Verknüpfte Regel">{n.linked || '–'}</L></div>
+        <div><h5>{t("Original")}</h5><L label={t("Quelle")}>{n.oSrc.join(', ') || t("Beliebig")}</L><L label={t("Ziel")}>{n.oDst.join(', ') || t("Beliebig")}</L><L label={t("Dienste")}>{n.oSvc.join(', ') || t("Beliebig")}</L></div>
+        <div><h5>{t("Übersetzt")}</h5><L label={t("Quelle")}>{n.tSrc}</L><L label={t("Ziel")}>{n.tDst}</L><L label={t("Dienst")}>{n.tSvc}</L></div>
+        <div><h5>{t("Schnittstellen")}</h5><L label={t("Eingehend")}>{n.inIf || t("Beliebig")}</L><L label={t("Ausgehend")}>{n.outIf || t("Beliebig")}</L></div>
+        <div><h5>{t("Weitere")}</h5><L label={t("Status")}>{n.enabled ? t("aktiv") : t("inaktiv")}</L><L label={t("Verknüpfte Regel")}>{n.linked || '–'}</L></div>
       </div>
     )
   }
@@ -74,9 +75,9 @@ function ObjectDetail({ fw, entity, obj, onClose }) {
   const raw = isRestEntity(entity) ? 'JSON' : 'XML'
   return (
     <Modal title={oname(obj)} onClose={onClose} wide>
-      {d?.used_by?.length > 0 && <div className="alert info small">Verwendet von: {d.used_by.join(', ')}</div>}
-      {view && <div style={{ marginBottom: 10 }}><Seg options={[['view', 'Ansicht'], ['raw', raw]]} value={mode} onChange={setMode} /></div>}
-      {mode === 'view' ? view : <pre className="xml">{d?.xml || 'Lade …'}</pre>}
+      {d?.used_by?.length > 0 && <div className="alert info small">{t("Verwendet von:")} {d.used_by.join(', ')}</div>}
+      {view && <div style={{ marginBottom: 10 }}><Seg options={[['view', t("Ansicht")], ['raw', raw]]} value={mode} onChange={setMode} /></div>}
+      {mode === 'view' ? view : <pre className="xml">{d?.xml || t("Lade …")}</pre>}
     </Modal>
   )
 }
@@ -92,7 +93,7 @@ function Sidebar({ cfg, entity, onSelect, pendingEntities, hidden }) {
   return (
     <aside className="cs-sidebar">
       <div className="cs-menu-search"><Icon name="search" size={14} />
-        <input placeholder="Menü durchsuchen …" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <input placeholder={t("Menü durchsuchen …")} value={q} onChange={(e) => setQ(e.target.value)} /></div>
       {sections.map((s) => {
         const items = cfg.entities.filter((e) => e.section === s && !hidden.has(e.entity) && (!f || e.label.toLowerCase().includes(f)))
         if (!items.length) return null
@@ -105,7 +106,7 @@ function Sidebar({ cfg, entity, onSelect, pendingEntities, hidden }) {
             {(!closed[s] || f) && items.map((e) => (
               <button key={e.entity} className={`cs-item ${entity === e.entity ? 'active' : ''}`} onClick={() => onSelect(e.entity)}>
                 <Icon name={ENTITY_ICON[e.entity] || 'host'} size={15} /><span className="lbl">{e.label}</span>
-                {pendingEntities.has(e.entity) && <span className="p" title="Geplante Änderungen" />}
+                {pendingEntities.has(e.entity) && <span className="p" title={t("Geplante Änderungen")} />}
                 <span className="n">{e.count}</span>
               </button>
             ))}
@@ -138,31 +139,31 @@ function BulkAddModal({ entity, label, fmt, config, onClose, onAdd }) {
     setResult({ added, errors })
   }
   return (
-    <Modal title={`Mehrfach hinzufügen: ${label}`} onClose={onClose} wide>
+    <Modal title={t("Mehrfach hinzufügen: {0}", label)} onClose={onClose} wide>
       {!result ? <div className="stack">
-        <div className="small"><b>{def.label}</b> – ein Eintrag je Zeile, optional „,Name“.</div>
+        <div className="small"><b>{def.label}</b> {t("– ein Eintrag je Zeile, optional „,Name“.")}</div>
         <textarea className="code" style={{ minHeight: 180 }} value={text} placeholder={def.placeholder} onChange={(e) => setText(e.target.value)} autoFocus />
-        <div className="alert info small"><b>Unterstützte Formate</b>
+        <div className="alert info small"><b>{t("Unterstützte Formate")}</b>
           <table className="bulk-help"><tbody>{def.help.map(([ex, d]) => <tr key={ex}><td className="mono">{ex}</td><td>→ {d}</td></tr>)}</tbody></table>
-          Tipp: Zeilen lassen sich direkt aus einer CSV-Datei einfügen.</div>
+          {t("Tipp: Zeilen lassen sich direkt aus einer CSV-Datei einfügen.")}</div>
         {parsed.length > 0 && (
           <div className="table-wrap" style={{ maxHeight: 240, overflowY: 'auto' }}><table><tbody>
             {parsed.map((p, i) => <tr key={i}><td className="mono small">{p.line}</td>
               <td>{p.error ? <span className="text-error small">{p.error}</span> : <span className="small">{p.name}</span>}</td></tr>)}
           </tbody></table></div>
         )}
-        <div className="modal-foot"><button onClick={onClose}>Abbrechen</button>
-          <button className="primary" disabled={busy || !ok.length} onClick={run}>{busy ? 'Übernehme …' : `${ok.length} Einträge in den Entwurf`}</button></div>
+        <div className="modal-foot"><button onClick={onClose}>{t("Abbrechen")}</button>
+          <button className="primary" disabled={busy || !ok.length} onClick={run}>{busy ? t("Übernehme …") : t("{0} Einträge in den Entwurf", ok.length)}</button></div>
       </div> : <div className="stack">
-        <div className="alert ok">{result.added} Einträge in den Entwurf übernommen.</div>
-        {result.errors.length > 0 && <div className="alert warn small">Übersprungen:<ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{result.errors.map((e) => <li key={e}>{e}</li>)}</ul></div>}
-        <div className="modal-foot"><button className="primary" onClick={onClose}>Schließen</button></div>
+        <div className="alert ok">{result.added} {t("Einträge in den Entwurf übernommen.")}</div>
+        {result.errors.length > 0 && <div className="alert warn small">{t("Übersprungen:")}<ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{result.errors.map((e) => <li key={e}>{e}</li>)}</ul></div>}
+        <div className="modal-foot"><button className="primary" onClick={onClose}>{t("Schließen")}</button></div>
       </div>}
     </Modal>
   )
 }
 
-const IMPORT_STATUS = [['new', 'Neu'], ['changed', 'Geändert'], ['same', 'Identisch'], ['unsupported', 'Nicht übernehmbar']]
+const IMPORT_STATUS = [['new', t("Neu")], ['changed', t("Geändert")], ['same', t("Identisch")], ['unsupported', t("Nicht übernehmbar")]]
 
 function ImportModal({ fw, review, onClose, onApplied }) {
   const [tab, setTab] = useState(review.counts.new ? 'new' : 'changed')
@@ -173,7 +174,7 @@ function ImportModal({ fw, review, onClose, onApplied }) {
   const [error, setError] = useState('')
   const f = q.toLowerCase()
   const list = review.items.filter((i) => i.status === tab && (!f || `${i.name} ${i.label}`.toLowerCase().includes(f)))
-  const groups = list.reduce((m, i) => ({ ...m, [i.label]: [...(m[i.label] || []), i] }), {})
+  const groups = list.reduce((m, i) => ({ ...m, [t(i.label)]: [...(m[t(i.label)] || []), i] }), {})
   const selectable = tab === 'new' || tab === 'changed'
   const toggle = (k) => { const n = new Set(sel); n.has(k) ? n.delete(k) : n.add(k); setSel(n) }
   const toggleAll = (items) => { const n = new Set(sel); const all = items.every((i) => n.has(i.key)); items.forEach((i) => (all ? n.delete(i.key) : n.add(i.key))); setSel(n) }
@@ -184,16 +185,15 @@ function ImportModal({ fw, review, onClose, onApplied }) {
     setBusy(false)
   }
   return (
-    <Modal title="Import prüfen" onClose={onClose} wide>
+    <Modal title={t("Import prüfen")} onClose={onClose} wide>
       <div className="stack">
-        <div className="muted small">Vergleich der hochgeladenen Konfiguration{review.api_version && ` (API-Version ${review.api_version})`} mit dem aktuellen Stand von „{fw.name}“.
-          Ausgewählte Objekte landen in Ihrem Entwurf und werden erst nach Vier-Augen-Freigabe ausgerollt. Die Datei wird nicht gespeichert.</div>
+        <div className="muted small">{t("Vergleich der hochgeladenen Konfiguration")}{review.api_version && t(" (API-Version {0})", review.api_version)} {t("mit dem aktuellen Stand von „")}{fw.name}{t("“. Ausgewählte Objekte landen in Ihrem Entwurf und werden erst nach Vier-Augen-Freigabe ausgerollt. Die Datei wird nicht gespeichert.")}</div>
         <div className="seg" style={{ alignSelf: 'flex-start' }}>
           {IMPORT_STATUS.map(([k, l]) => <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l} ({review.counts[k]})</button>)}
         </div>
-        <input placeholder="Filtern …" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input placeholder={t("Filtern …")} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="table-wrap" style={{ maxHeight: 420, overflowY: 'auto' }}>
-          {!list.length ? <Empty>Keine Einträge.</Empty> : <table><tbody>
+          {!list.length ? <Empty>{t("Keine Einträge.")}</Empty> : <table><tbody>
             {Object.entries(groups).map(([label, items]) => (
               <Fragment key={label}>
                 <tr className="group-row"><td colSpan={4}>
@@ -204,8 +204,8 @@ function ImportModal({ fw, review, onClose, onApplied }) {
                     <tr>
                       <td style={{ width: 28 }}>{selectable && <input type="checkbox" checked={sel.has(i.key)} onChange={() => toggle(i.key)} />}</td>
                       <td>{i.name}</td>
-                      <td className="small muted">{i.reason || (i.diff?.length ? `${i.diff.length} Feld(er) abweichend` : '')}</td>
-                      <td className="actions">{i.diff?.length > 0 && <button className="ghost sm" onClick={() => setOpen(open === i.key ? null : i.key)}>Unterschiede</button>}</td>
+                      <td className="small muted">{i.reason || (i.diff?.length ? t("{0} Feld(er) abweichend", i.diff.length) : '')}</td>
+                      <td className="actions">{i.diff?.length > 0 && <button className="ghost sm" onClick={() => setOpen(open === i.key ? null : i.key)}>{t("Unterschiede")}</button>}</td>
                     </tr>
                     {open === i.key && <tr><td colSpan={4}><DiffTable rows={i.diff} /></td></tr>}
                   </Fragment>
@@ -216,8 +216,8 @@ function ImportModal({ fw, review, onClose, onApplied }) {
         </div>
         <ErrorBox error={error} />
         <div className="modal-foot">
-          <button onClick={onClose}>Abbrechen</button>
-          <button className="primary" disabled={busy || !sel.size} onClick={apply}>{busy ? 'Übernehme …' : `${sel.size} Objekte in den Entwurf`}</button>
+          <button onClick={onClose}>{t("Abbrechen")}</button>
+          <button className="primary" disabled={busy || !sel.size} onClick={apply}>{busy ? t("Übernehme …") : t("{0} Objekte in den Entwurf", sel.size)}</button>
         </div>
       </div>
     </Modal>
@@ -226,15 +226,15 @@ function ImportModal({ fw, review, onClose, onApplied }) {
 
 function GettingStarted({ onHide }) {
   const steps = [
-    ['Objekte bearbeiten', 'Links einen Objekttyp wählen und Hosts, Dienste oder Regeln anlegen, ändern oder löschen – alles landet im Entwurf.'],
-    ['Konfiguration importieren', 'Optional eine Entities.xml (z. B. aus Config Studio) prüfen und Objekte übernehmen.'],
-    ['Vorschau & Einreichen', 'API-Aufrufe in der Vorschau prüfen, mit Begründung einreichen – eine zweite Person genehmigt.'],
-    ['Ausrollen', 'Nach der Freigabe rollt das Tool die Änderung per API aus und prüft vorher auf Abweichungen.'],
+    [t("Objekte bearbeiten"), t("Links einen Objekttyp wählen und Hosts, Dienste oder Regeln anlegen, ändern oder löschen – alles landet im Entwurf.")],
+    [t("Konfiguration importieren"), t("Optional eine Entities.xml (z. B. aus Config Studio) prüfen und Objekte übernehmen.")],
+    [t("Vorschau & Einreichen"), t("API-Aufrufe in der Vorschau prüfen, mit Begründung einreichen – eine zweite Person genehmigt.")],
+    [t("Ausrollen"), t("Nach der Freigabe rollt das Tool die Änderung per API aus und prüft vorher auf Abweichungen.")],
   ]
   return (
     <div className="cs-steps">
-      <div className="row between"><b className="small"><Icon name="bulb" size={14} /> Erste Schritte</b>
-        <button className="link small" onClick={onHide}>× Ausblenden</button></div>
+      <div className="row between"><b className="small"><Icon name="bulb" size={14} /> {t("Erste Schritte")}</b>
+        <button className="link small" onClick={onHide}>{t("× Ausblenden")}</button></div>
       <div className="cs-steps-row">
         {steps.map(([t, d], i) => (
           <div key={t} className="cs-step"><span className="num">{i + 1}</span><div><b className="small">{t}</b><div className="muted small">{d}</div></div></div>
@@ -276,27 +276,27 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
         <Icon name={ENTITY_ICON[entity] || 'host'} size={18} className="text-accent" />
         <h3>{meta.label} <span className="muted" style={{ fontWeight: 400 }}>({rows.filter((r) => r.state !== 'remove').length})</span></h3>
         {mayEdit && !single && <div className="right row">
-          <button className="sm" disabled={!sel.size} onClick={() => setSel(new Set())}>Auswahl aufheben</button>
+          <button className="sm" disabled={!sel.size} onClick={() => setSel(new Set())}>{t("Auswahl aufheben")}</button>
           {fw.capabilities.remove && <button className="sm danger" disabled={!sel.size}
-            onClick={async () => { await onBulkDelete([...sel]); setSel(new Set()) }}><Icon name="trash" size={13} /> Löschen{sel.size ? ` (${sel.size})` : ''}</button>}
-          {BULK_KIND[entity] && <button className="sm primary" onClick={onBulkAdd}><Icon name="bulk" size={13} /> Mehrfach hinzufügen</button>}
-          <button className="sm primary" onClick={onAdd}><Icon name="plus" size={13} /> Hinzufügen</button>
+            onClick={async () => { await onBulkDelete([...sel]); setSel(new Set()) }}><Icon name="trash" size={13} /> {t("Löschen")}{sel.size ? ` (${sel.size})` : ''}</button>}
+          {BULK_KIND[entity] && <button className="sm primary" onClick={onBulkAdd}><Icon name="bulk" size={13} /> {t("Mehrfach hinzufügen")}</button>}
+          <button className="sm primary" onClick={onAdd}><Icon name="plus" size={13} /> {t("Hinzufügen")}</button>
         </div>}
       </div>
       <div className="cs-filter">
-        <div className="cs-search"><Icon name="search" size={15} /><input placeholder="Einträge durchsuchen …" value={q} onChange={(e) => { setQ(e.target.value); paging.setPage(0) }} /></div>
+        <div className="cs-search"><Icon name="search" size={15} /><input placeholder={t("Einträge durchsuchen …")} value={q} onChange={(e) => { setQ(e.target.value); paging.setPage(0) }} /></div>
         <ColumnPicker cols={cols} visible={visible} onChange={setCols} />
       </div>
-      {!rows.length ? <Empty>Noch keine {meta.label} vorhanden.</Empty> : (
+      {!rows.length ? <Empty>{t("Noch keine")} {meta.label} {t("vorhanden.")}</Empty> : (
         <div className="table-wrap">
           <table className="cs-grid">
             <thead><tr>
-              {mayEdit && <th style={{ width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Alle auswählen" /></th>}
-              <th style={{ width: 40 }}>#</th><th>Name</th>
+              {mayEdit && <th style={{ width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label={t("Alle auswählen")} /></th>}
+              <th style={{ width: 40 }}>#</th><th>{t("Name")}</th>
               {activeCols.map((c) => <th key={c.key}>{c.label}</th>)}
-              <th><button className={`th-filter ${onlyFindings ? 'on' : ''}`} onClick={() => setOnlyFindings(!onlyFindings)} title="Nur Objekte mit Hinweisen">
-                Konfig-Analyse <Icon name="alert" size={12} /></button></th>
-              <th className="actions">Aktionen</th>
+              <th><button className={`th-filter ${onlyFindings ? 'on' : ''}`} onClick={() => setOnlyFindings(!onlyFindings)} title={t("Nur Objekte mit Hinweisen")}>
+                {t("Konfig-Analyse")} <Icon name="alert" size={12} /></button></th>
+              <th className="actions">{t("Aktionen")}</th>
             </tr></thead>
             <tbody>
               {pageRows.map(({ obj, state }) => {
@@ -305,11 +305,11 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
                 const desc = obj.description ?? obj.Description
                 return (
                   <tr key={`${name}-${state}`} className={state ? `row-${state}` : ''}>
-                    {mayEdit && <td><input type="checkbox" disabled={!deletable({ obj, state })} checked={sel.has(name)} onChange={() => toggle(name)} aria-label={`${name} auswählen`} /></td>}
+                    {mayEdit && <td><input type="checkbox" disabled={!deletable({ obj, state })} checked={sel.has(name)} onChange={() => toggle(name)} aria-label={t("{0} auswählen", name)} /></td>}
                     <td className="muted small">{state === 'remove' ? '–' : idx + 1}</td>
                     <td className="name">
                       <button className="link cs-name" onClick={() => (mayEdit && state !== 'remove' ? onEdit(obj) : onShow(obj))}>{name}</button>
-                      {obj.isInternal && <span className="badge" style={{ marginLeft: 6 }}>System</span>}
+                      {obj.isInternal && <span className="badge" style={{ marginLeft: 6 }}>{t("System")}</span>}
                       {desc && <div className="small muted">{desc}</div>}
                       {(pendingBy[name] || draftBy[name]) && <div style={{ marginTop: 3 }}><PendingBadges pending={pendingBy[name]} draftAction={draftBy[name]} /></div>}
                     </td>
@@ -317,17 +317,17 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
                     <td><Analysis findings={findings[name]} /></td>
                     <td className="actions">
                       {mayEdit && state !== 'remove' && <>
-                        <IconButton icon="edit" title="Bearbeiten" onClick={() => onEdit(obj)} />
-                        {fw.capabilities.remove && !obj.isInternal && !single && <IconButton icon="trash" title="Löschen" danger onClick={() => onOp({ entity, action: 'remove', name })} />}
+                        <IconButton icon="edit" title={t("Bearbeiten")} onClick={() => onEdit(obj)} />
+                        {fw.capabilities.remove && !obj.isInternal && !single && <IconButton icon="trash" title={t("Löschen")} danger onClick={() => onOp({ entity, action: 'remove', name })} />}
                       </>}
-                      <IconButton icon="code" title={rest ? 'Details / JSON' : 'Details / XML'} onClick={() => onShow(obj)} />
+                      <IconButton icon="code" title={rest ? t("Details / JSON") : t("Details / XML")} onClick={() => onShow(obj)} />
                     </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-          {!shown.length && <Empty>Keine Treffer.</Empty>}
+          {!shown.length && <Empty>{t("Keine Treffer.")}</Empty>}
         </div>
       )}
       {rows.length > 0 && <Pager total={shown.length} {...paging} />}
@@ -344,8 +344,8 @@ function TemplatePicker({ fw, format, onApplied, onError }) {
     try { onApplied(await api(`/firewalls/${fw.id}/templates/${id}/apply`, { method: 'POST' })) } catch (e) { onError(e.message) }
   }
   return (
-    <select value="" onChange={(e) => apply(e.target.value)} style={{ width: 190 }} aria-label="Vorlage anwenden">
-      <option value="">Vorlage anwenden …</option>
+    <select value="" onChange={(e) => apply(e.target.value)} style={{ width: 190 }} aria-label={t("Vorlage anwenden")}>
+      <option value="">{t("Vorlage anwenden …")}</option>
       {list.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.operations.length})</option>)}
     </select>
   )
@@ -406,7 +406,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
   const quickOp = async (op) => {
     try {
       const r = await addOp(op)
-      setMsg({ kind: r.warnings.length ? 'warn' : 'ok', text: r.warnings.length ? r.warnings.join(' · ') : `In Entwurf übernommen: ${ACTION_LABEL[op.action]} „${op.name}“` })
+      setMsg({ kind: r.warnings.length ? 'warn' : 'ok', text: r.warnings.length ? r.warnings.join(' · ') : t("In Entwurf übernommen: {0} „{1}“", ACTION_LABEL[op.action], op.name) })
     } catch (e) { setMsg({ kind: 'error', text: e.message }) }
   }
   const bulkDelete = async (names) => {
@@ -415,7 +415,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
       try { await addOp({ entity, action: 'remove', name }, true) } catch (e) { errors.push(`${name}: ${e.message}`) }
     }
     reload()
-    setMsg({ kind: errors.length ? 'warn' : 'ok', text: `${names.length - errors.length} zum Löschen in den Entwurf übernommen${errors.length ? ` · übersprungen: ${errors.join('; ')}` : ''}` })
+    setMsg({ kind: errors.length ? 'warn' : 'ok', text: t("{0} zum Löschen in den Entwurf übernommen{1}", names.length - errors.length, errors.length ? t(" · übersprungen: {0}", errors.join('; ')) : '') })
   }
   const bulkToggle = async (objs, on) => {
     const errors = []
@@ -424,7 +424,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
       try { await addOp({ entity, action: 'update', name: oname(obj), data }, true) } catch (e) { errors.push(`${oname(obj)}: ${e.message}`) }
     }
     reload()
-    setMsg({ kind: errors.length ? 'warn' : 'ok', text: `${objs.length - errors.length} Regeln ${on ? 'ein' : 'aus'}geschaltet (Entwurf)${errors.length ? ` · übersprungen: ${errors.join('; ')}` : ''}` })
+    setMsg({ kind: errors.length ? 'warn' : 'ok', text: t(on ? "{0} Regeln eingeschaltet (Entwurf){1}" : "{0} Regeln ausgeschaltet (Entwurf){1}", objs.length - errors.length, errors.length ? t(" · übersprungen: {0}", errors.join('; ')) : '') })
   }
   const addFor = (e) => { if (e !== entity) select(e); setEditing({ obj: null }) }
   // Firewall-/NAT-Regeln (REST) werden wie in SFOS als ganze Seite bearbeitet
@@ -442,7 +442,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
   const ruleList = RULE_TABLE_ENTITIES.has(entity) || entity === 'natRulesIpv4'
   const startImport = async (file) => {
     if (!file) return
-    setMsg({ kind: 'info', text: `Lese ${file.name} …` })
+    setMsg({ kind: 'info', text: t("Lese {0} …", file.name) })
     try { setReview(await upload(`/firewalls/${fw.id}/import/review`, file)); setMsg(null) } catch (e) { setMsg({ kind: 'error', text: e.message }) }
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -466,18 +466,18 @@ export default function Editor({ fw, cfg, draft, reload }) {
         hidden={new Set(fw.waf_xml ? [] : ['wafRules'])} />
       <div className="cs-main">
         <div className="cs-head">
-          <h2 className="cs-title"><Icon name="shield" size={20} className="text-accent" /> Konfigurations-Editor <span className="muted">({total} Objekte)</span>
+          <h2 className="cs-title"><Icon name="shield" size={20} className="text-accent" /> {t("Konfigurations-Editor")} <span className="muted">({total} {t("Objekte)")}</span>
             <span className="badge b-info">{rest ? 'REST-API' : 'Entities.xml'}</span></h2>
           <div className="cs-toolbar">
             <div className="cs-global" ref={globalRef}>
               <Icon name="search" size={15} />
-              <input ref={searchRef} placeholder="Globale Suche …" value={gq} onChange={(e) => setGq(e.target.value)} />
-              <kbd>Strg K</kbd>
+              <input ref={searchRef} placeholder={t("Globale Suche …")} value={gq} onChange={(e) => setGq(e.target.value)} />
+              <kbd>{t("Strg K")}</kbd>
               {globalHits.length > 0 && (
                 <div className="dropdown-menu wide">
                   {globalHits.map((h) => (
                     <button key={`${h.entity}:${h.name}`} onClick={() => { select(h.entity); setGq(''); setDetail({ entity: h.entity, obj: (cfg.objects[h.entity] || []).find((o) => oname(o) === h.name) }) }}>
-                      <Icon name={ENTITY_ICON[h.entity] || 'host'} size={14} /> {h.name} <span className="muted small">· {h.label}</span>
+                      <Icon name={ENTITY_ICON[h.entity] || 'host'} size={14} /> {h.name} <span className="muted small">· {t(h.label)}</span>
                     </button>
                   ))}
                 </div>
@@ -485,23 +485,23 @@ export default function Editor({ fw, cfg, draft, reload }) {
             </div>
             <div className="right row">
               {mayEdit && <TemplatePicker fw={fw} format={cfg.format} onError={(t) => setMsg({ kind: 'error', text: t })}
-                onApplied={(r) => { reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: r.skipped.length ? `Vorlage übernommen, übersprungen: ${r.skipped.join('; ')}` : 'Vorlage in den Entwurf übernommen.' }) }} />}
+                onApplied={(r) => { reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: r.skipped.length ? t("Vorlage übernommen, übersprungen: {0}", r.skipped.join('; ')) : t("Vorlage in den Entwurf übernommen.") }) }} />}
               {mayEdit && <>
                 <input ref={fileRef} type="file" accept=".xml,.tar,.gz,application/xml" hidden onChange={(e) => startImport(e.target.files[0])} />
-                <button onClick={() => fileRef.current?.click()} title="Entities.xml oder Export-Archiv (.tar) vergleichen und übernehmen">
-                  <Icon name="upload" size={14} /> Import prüfen</button>
+                <button onClick={() => fileRef.current?.click()} title={t("Entities.xml oder Export-Archiv (.tar) vergleichen und übernehmen")}>
+                  <Icon name="upload" size={14} /> {t("Import prüfen")}</button>
               </>}
-              <button className="primary" onClick={() => setPreview(true)} title="API-Aufrufe Ihres Entwurfs"><Icon name="eye" size={14} /> Vorschau{draftOps.length ? ` (${draftOps.length})` : ''}</button>
+              <button className="primary" onClick={() => setPreview(true)} title={t("API-Aufrufe Ihres Entwurfs")}><Icon name="eye" size={14} /> {t("Vorschau")}{draftOps.length ? ` (${draftOps.length})` : ''}</button>
               <div className="dropdown" ref={dlRef}>
-                <button className="primary" onClick={() => setDl(!dl)} aria-expanded={dl}><Icon name="download" size={14} /> Download</button>
+                <button className="primary" onClick={() => setDl(!dl)} aria-expanded={dl}><Icon name="download" size={14} /> {t("Download")}</button>
                 {dl && <div className="dropdown-menu">
-                  <button onClick={() => { setDl(false); download(`/firewalls/${fw.id}/export.json`, `Konfiguration-${fw.name}.json`) }}>Konfiguration (JSON)</button>
-                  {!rest && <button onClick={() => { setDl(false); download(`/firewalls/${fw.id}/export.xml`, `Entities-${fw.name}.xml`) }}>Entities.xml (Config Studio)</button>}
+                  <button onClick={() => { setDl(false); download(`/firewalls/${fw.id}/export.json`, `Konfiguration-${fw.name}.json`) }}>{t("Konfiguration (JSON)")}</button>
+                  {!rest && <button onClick={() => { setDl(false); download(`/firewalls/${fw.id}/export.xml`, `Entities-${fw.name}.xml`) }}>{t("Entities.xml (Config Studio)")}</button>}
                   {draftOps.length > 0 && <button onClick={() => {
                     setDl(false)
                     const blob = new Blob([JSON.stringify(draftOps.map(({ entity: e, action, name, data, position }) => ({ entity: e, action, name, data, position })), null, 2)], { type: 'application/json' })
-                    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Entwurf-${fw.name}.json`; a.click()
-                  }}>Entwurf (JSON)</button>}
+                    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = t("Entwurf-{0}.json", fw.name); a.click()
+                  }}>{t("Entwurf (JSON)")}</button>}
                 </div>}
               </div>
             </div>
@@ -509,14 +509,14 @@ export default function Editor({ fw, cfg, draft, reload }) {
         </div>
         {steps && <GettingStarted onHide={() => { setSteps(false); store.set('fwm.editor.steps', false) }} />}
         {msg && <div className={`alert ${msg.kind} small`}>{msg.text}</div>}
-        {!fw.last_sync_at && <div className="alert warn">Noch keine Konfiguration geladen – bitte „Jetzt synchronisieren“.</div>}
-        {draftOps.length > 0 && <label className="check small" style={{ margin: '0 0 8px' }}><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />Tabelle mit meinem Entwurf anzeigen</label>}
-        {READ_ONLY_ENTITIES.has(entity) && <div className="alert info small">{meta.label} werden direkt auf der Firewall gepflegt und hier nur angezeigt.</div>}
+        {!fw.last_sync_at && <div className="alert warn">{t("Noch keine Konfiguration geladen – bitte „Jetzt synchronisieren“.")}</div>}
+        {draftOps.length > 0 && <label className="check small" style={{ margin: '0 0 8px' }}><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />{t("Tabelle mit meinem Entwurf anzeigen")}</label>}
+        {READ_ONLY_ENTITIES.has(entity) && <div className="alert info small">{meta.label} {t("werden direkt auf der Firewall gepflegt und hier nur angezeigt.")}</div>}
         {pageEdit ? (editEntity === 'wafRules'
-          ? <WafRuleEditor key={`waf:${editing.obj ? oname(editing.obj) : 'neu'}`} page config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
+          ? <WafRuleEditor key={`waf:${editing.obj ? oname(editing.obj) : t("neu")}`} page config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
           : entity === 'natRulesIpv4'
-          ? <SophosNatEditor key={`${entity}:${editing.obj ? oname(editing.obj) : 'neu'}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
-          : <SophosRuleEditor key={`${entity}:${editing.obj ? oname(editing.obj) : 'neu'}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp}
+          ? <SophosNatEditor key={`${entity}:${editing.obj ? oname(editing.obj) : t("neu")}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
+          : <SophosRuleEditor key={`${entity}:${editing.obj ? oname(editing.obj) : t("neu")}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp}
             wafXml={fw.waf_xml} mayConfigure={!!fw.may_edit_connection} />)
         : ruleList
           ? <RuleTable key={entity} entity={entity} entities={cfg.entities} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
@@ -536,11 +536,11 @@ export default function Editor({ fw, cfg, draft, reload }) {
       {bulk && <BulkAddModal entity={entity} label={meta.label} fmt={cfg.format} config={cfg.preview} onAdd={addOp}
         onClose={() => { setBulk(false); reload() }} />}
       {review && <ImportModal fw={fw} review={review} onClose={() => setReview(null)}
-        onApplied={(r) => { setReview(null); reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: `${r.added} Objekte in den Entwurf übernommen${r.skipped.length ? ` · übersprungen: ${r.skipped.slice(0, 5).join('; ')}${r.skipped.length > 5 ? ' …' : ''}` : ''}` }) }} />}
+        onApplied={(r) => { setReview(null); reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t("{0} Objekte in den Entwurf übernommen{1}", r.added, r.skipped.length ? t(" · übersprungen: {0}{1}", r.skipped.slice(0, 5).join('; '), r.skipped.length > 5 ? ' …' : '') : '') }) }} />}
       {preview && (
-        <Modal title="Vorschau: API-Aufrufe des Entwurfs" onClose={() => setPreview(false)} wide>
-          {!draftOps.length ? <Empty>Ihr Entwurf ist leer.</Empty> : <>
-            <div className="muted small" style={{ marginBottom: 8 }}>So werden die Änderungen nach der Genehmigung an „{fw.name}“ gesendet ({fw.connector_label}).</div>
+        <Modal title={t("Vorschau: API-Aufrufe des Entwurfs")} onClose={() => setPreview(false)} wide>
+          {!draftOps.length ? <Empty>{t("Ihr Entwurf ist leer.")}</Empty> : <>
+            <div className="muted small" style={{ marginBottom: 8 }}>{t("So werden die Änderungen nach der Genehmigung an „")}{fw.name}{t("“ gesendet (")}{fw.connector_label}).</div>
             {draftOps.map((op, i) => <OperationCard key={i} op={op} open />)}
           </>}
         </Modal>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { STATUS_LABEL } from '../api'
+import { t } from '../i18n'
 
 export function Modal({ title, onClose, children, wide }) {
   useEffect(() => {
@@ -12,7 +13,7 @@ export function Modal({ title, onClose, children, wide }) {
       <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="icon" onClick={onClose} aria-label="Schließen">×</button>
+          <button className="icon" onClick={onClose} aria-label={t("Schließen")}>×</button>
         </div>
         {children}
       </div>
@@ -64,14 +65,14 @@ export function Seg({ options, value, onChange }) {
 }
 
 /** Liste von Namen als Chips; leer = „Beliebig“. */
-export function Chips({ items, kind, any = 'Beliebig' }) {
+export function Chips({ items, kind, any = t("Beliebig") }) {
   if (!items?.length) return <span className="chip any">{any}</span>
   return <span className="chips">{items.map((i) => <span key={i} className={`chip ${kind || ''}`}>{i}</span>)}</span>
 }
 
 export function Progress({ value, max }) {
   return (
-    <span className="progress" title={`${value} von ${max} Genehmigungen`}>
+    <span className="progress" title={t("{0} von {1} Genehmigungen", value, max)}>
       {Array.from({ length: max }, (_, i) => <i key={i} className={i < value ? 'on' : ''} />)}
     </span>
   )
@@ -80,7 +81,7 @@ export function Progress({ value, max }) {
 /**
  * Mehrfachauswahl mit Suche. options: [{ value, kind }]
  */
-export function Picker({ value, options, onChange, placeholder = 'Hinzufügen …', emptyLabel = 'Beliebig' }) {
+export function Picker({ value, options, onChange, placeholder = t("Hinzufügen …"), emptyLabel = t("Beliebig") }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -125,11 +126,11 @@ export function Picker({ value, options, onChange, placeholder = 'Hinzufügen �
 }
 
 export function DiffTable({ rows }) {
-  if (!rows?.length) return <div className="muted small">Keine Feldänderungen.</div>
+  if (!rows?.length) return <div className="muted small">{t("Keine Feldänderungen.")}</div>
   return (
     <div className="table-wrap">
       <table className="diff">
-        <thead><tr><th>Feld</th><th>Vorher</th><th>Nachher</th></tr></thead>
+        <thead><tr><th>{t("Feld")}</th><th>{t("Vorher")}</th><th>{t("Nachher")}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.field}>

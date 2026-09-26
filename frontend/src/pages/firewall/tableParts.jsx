@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ACTION_LABEL, crNo } from '../../api'
 import Icon from '../../components/icons'
+import { t } from '../../i18n'
 
 /** Gemeinsame Bausteine der Tabellen im Konfigurations-Editor (Objekt- und Regeltabellen). */
 
@@ -29,7 +30,7 @@ export function PendingBadges({ pending, draftAction }) {
   return (
     <span className="chips">
       {draftAction && <span className={`badge ${draftAction === 'add' ? 'b-ok' : draftAction === 'remove' ? 'b-danger' : 'b-warn'}`}>
-        Entwurf: {ACTION_LABEL[draftAction]}</span>}
+        {t("Entwurf:")} {ACTION_LABEL[draftAction]}</span>}
       {(pending || []).filter((p) => p.status !== 'draft').map((p) => (
         <Link key={p.change_id} to={`/changes/${p.change_id}`} className={`badge st-${p.status}`} title={`${ACTION_LABEL[p.action]} – ${p.status}`}>
           {crNo(p.number)}
@@ -44,7 +45,7 @@ export function Analysis({ findings }) {
   const worst = findings.find((f) => f.severity === 'high') || findings.find((f) => f.severity === 'medium') || findings[0]
   return (
     <span className={`badge ${SEV_CLASS[worst.severity]}`} title={findings.map((f) => `• ${f.message}`).join('\n')}>
-      {findings.length === 1 ? { any_any: 'zu offen', wan_open: 'offen (WAN)', no_log_wan: 'ohne Log', shadowed: 'verdeckt', disabled: 'inaktiv', unused: 'ungenutzt', duplicate_address: 'doppelt' }[worst.code] || worst.code : `${findings.length} Hinweise`}
+      {findings.length === 1 ? { any_any: t("zu offen"), wan_open: t("offen (WAN)"), no_log_wan: t("ohne Log"), shadowed: t("verdeckt"), disabled: t("inaktiv"), unused: t("ungenutzt"), duplicate_address: t("doppelt") }[worst.code] || worst.code : t("{0} Hinweise", findings.length)}
     </span>
   )
 }
@@ -57,13 +58,13 @@ export function IconButton({ icon, title, onClick, danger, disabled }) {
   )
 }
 
-export function ColumnPicker({ cols, visible, onChange, label = 'Spalten', icon = 'columns' }) {
+export function ColumnPicker({ cols, visible, onChange, label = t("Spalten"), icon = 'columns' }) {
   const [open, setOpen] = useState(false)
   const ref = useDismiss(open, setOpen)
   if (!cols.length) return null
   return (
     <div className="dropdown" ref={ref}>
-      <button onClick={() => setOpen(!open)} aria-expanded={open} title="Spalten auswählen" aria-label="Spalten auswählen">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} title={t("Spalten auswählen")} aria-label={t("Spalten auswählen")}>
         <Icon name={icon} size={label ? 14 : 17} />{label && ` ${label}`}</button>
       {open && <div className="dropdown-menu align-right">
         {cols.map((c) => (
@@ -84,16 +85,16 @@ export function Pager({ total, page, size, setPage, setSize }) {
   const to = Math.min(total, (page + 1) * size)
   return (
     <div className="sf-pager">
-      <span>{from}–{to} von {total}</span>
+      <span>{from}–{to} {t("von")} {total}</span>
       <div className="sf-pager-nav">
-        <button className="ghost" disabled={page === 0} onClick={() => setPage(0)} aria-label="Erste Seite">«</button>
-        <button className="ghost" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Vorherige Seite">‹</button>
+        <button className="ghost" disabled={page === 0} onClick={() => setPage(0)} aria-label={t("Erste Seite")}>«</button>
+        <button className="ghost" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label={t("Vorherige Seite")}>‹</button>
         <span className="sf-pager-cur">{page + 1}<span className="muted"> / {pages}</span></span>
-        <button className="ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)} aria-label="Nächste Seite">›</button>
-        <button className="ghost" disabled={page >= pages - 1} onClick={() => setPage(pages - 1)} aria-label="Letzte Seite">»</button>
+        <button className="ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)} aria-label={t("Nächste Seite")}>›</button>
+        <button className="ghost" disabled={page >= pages - 1} onClick={() => setPage(pages - 1)} aria-label={t("Letzte Seite")}>»</button>
       </div>
-      <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(0) }} aria-label="Einträge pro Seite" style={{ width: 'auto' }}>
-        {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} pro Seite</option>)}
+      <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(0) }} aria-label={t("Einträge pro Seite")} style={{ width: 'auto' }}>
+        {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} {t("pro Seite")}</option>)}
       </select>
     </div>
   )
@@ -128,7 +129,7 @@ export function RowMenu({ items, label }) {
   }
   return (
     <div ref={ref} className="row-menu">
-      <button ref={btn} className="icon-btn kebab" title="Aktionen" aria-label={`Aktionen für ${label}`} aria-haspopup="menu"
+      <button ref={btn} className="icon-btn kebab" title={t("Aktionen")} aria-label={t("Aktionen für {0}", label)} aria-haspopup="menu"
         aria-expanded={!!pos} onClick={() => (pos ? setPos(null) : open())}>⋮</button>
       {pos && (
         <div className="dropdown-menu row-menu-pop" role="menu" style={{ position: 'fixed', ...pos }}>

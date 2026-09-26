@@ -1,3 +1,4 @@
+import { lang, locale, t } from './i18n'
 const TOKEN_KEY = 'fwm_token'
 
 export function getToken() {
@@ -12,7 +13,8 @@ export function setToken(token) {
 }
 
 export async function api(path, { method = 'GET', body, raw = false } = {}) {
-  const headers = {}
+  // Sprache mitsenden – das Backend kann Meldungen künftig passend liefern
+  const headers = { 'Accept-Language': lang }
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
@@ -34,7 +36,8 @@ export async function api(path, { method = 'GET', body, raw = false } = {}) {
     } catch { /* keine JSON-Antwort */ }
     // Pflicht-Zwei-Faktor noch nicht eingerichtet → App leitet ins Profil
     if (code === 'mfa_setup_required') window.dispatchEvent(new Event('fwm:mfa-setup'))
-    const err = new Error(msg)
+    // Feste Meldungen des Backends übersetzen (Meldungen mit Namen bleiben im Original)
+    const err = new Error(t(msg))
     err.code = code
     err.status = res.status
     throw err
@@ -54,12 +57,12 @@ export async function download(path, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export const fmt = (d) => (d ? new Date(d).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–')
+export const fmt = (d) => (d ? new Date(d).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' }) : '–')
 
 export function ago(d) {
-  if (!d) return 'nie'
+  if (!d) return t("nie")
   const s = Math.round((Date.now() - new Date(d)) / 1000)
-  if (s < 60) return 'gerade eben'
+  if (s < 60) return t("gerade eben")
   if (s < 3600) return `vor ${Math.floor(s / 60)} min`
   if (s < 86400) return `vor ${Math.floor(s / 3600)} h`
   return fmt(d)
@@ -68,18 +71,18 @@ export function ago(d) {
 export const crNo = (n) => `CR-${String(n).padStart(4, '0')}`
 
 export const STATUS_LABEL = {
-  draft: 'Entwurf', pending: 'Wartet auf Genehmigung', approved: 'Genehmigt', rejected: 'Abgelehnt',
-  withdrawn: 'Zurückgezogen', deploying: 'Wird ausgerollt', deployed: 'Ausgerollt', failed: 'Fehlgeschlagen',
-  conflict: 'Konflikt',
+  draft: t("Entwurf"), pending: t("Wartet auf Genehmigung"), approved: t("Genehmigt"), rejected: t("Abgelehnt"),
+  withdrawn: t("Zurückgezogen"), deploying: t("Wird ausgerollt"), deployed: t("Ausgerollt"), failed: t("Fehlgeschlagen"),
+  conflict: t("Konflikt"),
 }
 
-export const ACTION_LABEL = { add: 'Neu', update: 'Ändern', remove: 'Löschen' }
+export const ACTION_LABEL = { add: t("Neu"), update: t("Ändern"), remove: t("Löschen") }
 
 export const EVENT_LABEL = {
-  created: 'Entwurf angelegt', draft_changed: 'Entwurf geändert', submitted: 'Eingereicht', approved: 'Genehmigt',
-  rejected: 'Abgelehnt', withdrawn: 'Zurückgezogen', comment: 'Kommentar', deploy_started: 'Ausrollen gestartet',
-  deployed: 'Ausgerollt', failed: 'Fehlgeschlagen', conflict: 'Konflikt erkannt',
-  preapproved: 'Vorab genehmigt (Befristung)', expiry_failed: 'Automatische Rücknahme fehlgeschlagen',
+  created: t("Entwurf angelegt"), draft_changed: t("Entwurf geändert"), submitted: t("Eingereicht"), approved: t("Genehmigt"),
+  rejected: t("Abgelehnt"), withdrawn: t("Zurückgezogen"), comment: t("Kommentar"), deploy_started: t("Ausrollen gestartet"),
+  deployed: t("Ausgerollt"), failed: t("Fehlgeschlagen"), conflict: t("Konflikt erkannt"),
+  preapproved: t("Vorab genehmigt (Befristung)"), expiry_failed: t("Automatische Rücknahme fehlgeschlagen"),
 }
 
 /** Recht auf einer Firewall (fw.permissions kommt vom Backend) bzw. global. */

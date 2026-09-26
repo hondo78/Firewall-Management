@@ -2,33 +2,34 @@ import { Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, crNo, download, fmt } from '../api'
 import { Empty, ErrorBox, useLoad } from '../components/ui'
+import { t } from '../i18n'
 
 export const AUDIT_LABEL = {
-  'auth.login': 'Anmeldung', 'auth.login_failed': 'Anmeldung fehlgeschlagen', 'auth.password_changed': 'Passwort geändert',
-  'user.bootstrap': 'Erster Admin angelegt', 'user.created': 'Benutzer angelegt', 'user.updated': 'Benutzer geändert',
-  'user.deactivated': 'Benutzer deaktiviert', 'role.created': 'Rolle angelegt', 'role.updated': 'Rolle geändert',
-  'role.deleted': 'Rolle gelöscht', 'settings.updated': 'Einstellungen geändert',
-  'central.account_created': 'Central-Konto angelegt', 'central.account_updated': 'Central-Konto geändert',
-  'central.account_deleted': 'Central-Konto gelöscht', 'central.inventory_synced': 'Central-Inventar übernommen',
-  'group.created': 'Gruppe angelegt', 'group.updated': 'Gruppe geändert', 'group.deleted': 'Gruppe gelöscht',
-  'firewall.created': 'Firewall hinzugefügt', 'firewall.updated': 'Firewall-Anbindung geändert',
-  'firewall.removed': 'Firewall entfernt', 'firewall.synced': 'Firewall synchronisiert',
-  'firewall.sync_failed': 'Synchronisation fehlgeschlagen', 'config.drift_detected': 'Änderung außerhalb des Tools erkannt',
-  'config.exported': 'Konfiguration exportiert',
-  'change.submitted': 'Antrag eingereicht', 'change.approved': 'Antrag genehmigt', 'change.rejected': 'Antrag abgelehnt',
-  'change.withdrawn': 'Antrag zurückgezogen', 'change.revert_submitted': 'Rücknahme eingereicht', 'change.expiry_failed': 'Automatische Rücknahme fehlgeschlagen', 'change.commented': 'Kommentar', 'change.deploy_requested': 'Ausrollen angestoßen',
-  'change.deployed': 'Antrag ausgerollt', 'change.deploy_failed': 'Ausrollen fehlgeschlagen', 'change.conflict': 'Konflikt beim Ausrollen',
-  'firmware.upgrade_scheduled': 'Firmware-Update geplant', 'firmware.upgrade_failed': 'Firmware-Update fehlgeschlagen',
-  'firmware.upgrade_cancelled': 'Firmware-Update storniert', 'audit.verified': 'Audit-Kette geprüft', 'notifications.updated': 'Benachrichtigungen geändert', 'template.created': 'Vorlage angelegt', 'auth.totp_enabled': '2FA eingerichtet', 'auth.totp_disabled': '2FA deaktiviert', 'auth.totp_reset': '2FA zurückgesetzt', 'auth.reauth': 'Neu angemeldet', 'oidc.updated': 'SSO-Konfiguration geändert', 'template.deleted': 'Vorlage gelöscht', 'user.telegram_linked': 'Telegram verknüpft', 'user.telegram_unlinked': 'Telegram getrennt', 'user.notification_prefs': 'Benachrichtigungs-Einstellungen', 'central.diagnosed': 'Probelauf Sophos Central', 'firewall.diagnosed': 'Probelauf Firewall', 'audit.exported': 'Audit-Log exportiert',
+  'auth.login': t("Anmeldung"), 'auth.login_failed': t("Anmeldung fehlgeschlagen"), 'auth.password_changed': t("Passwort geändert"),
+  'user.bootstrap': t("Erster Admin angelegt"), 'user.created': t("Benutzer angelegt"), 'user.updated': t("Benutzer geändert"),
+  'user.deactivated': t("Benutzer deaktiviert"), 'role.created': t("Rolle angelegt"), 'role.updated': t("Rolle geändert"),
+  'role.deleted': t("Rolle gelöscht"), 'settings.updated': t("Einstellungen geändert"),
+  'central.account_created': t("Central-Konto angelegt"), 'central.account_updated': t("Central-Konto geändert"),
+  'central.account_deleted': t("Central-Konto gelöscht"), 'central.inventory_synced': t("Central-Inventar übernommen"),
+  'group.created': t("Gruppe angelegt"), 'group.updated': t("Gruppe geändert"), 'group.deleted': t("Gruppe gelöscht"),
+  'firewall.created': t("Firewall hinzugefügt"), 'firewall.updated': t("Firewall-Anbindung geändert"),
+  'firewall.removed': t("Firewall entfernt"), 'firewall.synced': t("Firewall synchronisiert"),
+  'firewall.sync_failed': t("Synchronisation fehlgeschlagen"), 'config.drift_detected': t("Änderung außerhalb des Tools erkannt"),
+  'config.exported': t("Konfiguration exportiert"),
+  'change.submitted': t("Antrag eingereicht"), 'change.approved': t("Antrag genehmigt"), 'change.rejected': t("Antrag abgelehnt"),
+  'change.withdrawn': t("Antrag zurückgezogen"), 'change.revert_submitted': t("Rücknahme eingereicht"), 'change.expiry_failed': t("Automatische Rücknahme fehlgeschlagen"), 'change.commented': t("Kommentar"), 'change.deploy_requested': t("Ausrollen angestoßen"),
+  'change.deployed': t("Antrag ausgerollt"), 'change.deploy_failed': t("Ausrollen fehlgeschlagen"), 'change.conflict': t("Konflikt beim Ausrollen"),
+  'firmware.upgrade_scheduled': t("Firmware-Update geplant"), 'firmware.upgrade_failed': t("Firmware-Update fehlgeschlagen"),
+  'firmware.upgrade_cancelled': t("Firmware-Update storniert"), 'audit.verified': t("Audit-Kette geprüft"), 'notifications.updated': t("Benachrichtigungen geändert"), 'template.created': t("Vorlage angelegt"), 'auth.totp_enabled': t("2FA eingerichtet"), 'auth.totp_disabled': t("2FA deaktiviert"), 'auth.totp_reset': t("2FA zurückgesetzt"), 'auth.reauth': t("Neu angemeldet"), 'oidc.updated': t("SSO-Konfiguration geändert"), 'template.deleted': t("Vorlage gelöscht"), 'user.telegram_linked': t("Telegram verknüpft"), 'user.telegram_unlinked': t("Telegram getrennt"), 'user.notification_prefs': t("Benachrichtigungs-Einstellungen"), 'central.diagnosed': t("Probelauf Sophos Central"), 'firewall.diagnosed': t("Probelauf Firewall"), 'audit.exported': t("Audit-Log exportiert"),
 }
 
-const PREFIXES = [['', 'Alle Bereiche'], ['auth.', 'Anmeldungen'], ['change.', 'Anträge'], ['firewall.', 'Firewalls'],
-  ['config.', 'Konfiguration'], ['firmware.', 'Firmware'], ['user.', 'Benutzer'], ['role.', 'Rollen'],
-  ['central.', 'Sophos Central'], ['settings.', 'Einstellungen'], ['audit.', 'Audit']]
+const PREFIXES = [['', t("Alle Bereiche")], ['auth.', t("Anmeldungen")], ['change.', t("Anträge")], ['firewall.', t("Firewalls")],
+  ['config.', t("Konfiguration")], ['firmware.', t("Firmware")], ['user.', t("Benutzer")], ['role.', t("Rollen")],
+  ['central.', t("Sophos Central")], ['settings.', t("Einstellungen")], ['audit.', t("Audit")]]
 
 function target(e) {
-  if (e.target_type === 'change') return <Link to={`/changes/${e.target_id}`}>{e.details?.number ? crNo(e.details.number) : 'Antrag'}</Link>
-  if (e.target_type === 'firewall' && e.action !== 'firewall.removed') return <Link to={`/firewalls/${e.target_id}`}>{e.details?.firewall || e.details?.name || 'Firewall'}</Link>
+  if (e.target_type === 'change') return <Link to={`/changes/${e.target_id}`}>{e.details?.number ? crNo(e.details.number) : t("Antrag")}</Link>
+  if (e.target_type === 'firewall' && e.action !== 'firewall.removed') return <Link to={`/firewalls/${e.target_id}`}>{e.details?.firewall || e.details?.name || t("Firewall")}</Link>
   return e.details?.name || e.details?.username || e.details?.firewall || e.details?.account || ''
 }
 
@@ -44,30 +45,30 @@ export default function Audit() {
   return (
     <>
       <div className="page-head">
-        <h1>Audit-Log</h1>
-        <span className="sub">Manipulationssicher durch Hash-Kette – jeder Eintrag enthält den Hash seines Vorgängers</span>
+        <h1>{t("Audit-Log")}</h1>
+        <span className="sub">{t("Manipulationssicher durch Hash-Kette – jeder Eintrag enthält den Hash seines Vorgängers")}</span>
         <div className="right row">
-          <button onClick={async () => setVerify(await api('/audit/verify'))}>Integrität prüfen</button>
-          <button onClick={() => download(`/audit/export.csv?${qs}`, 'audit-log.csv')}>CSV-Export</button>
+          <button onClick={async () => setVerify(await api('/audit/verify'))}>{t("Integrität prüfen")}</button>
+          <button onClick={() => download(`/audit/export.csv?${qs}`, 'audit-log.csv')}>{t("CSV-Export")}</button>
         </div>
       </div>
       {verify && <div className={`alert ${verify.ok ? 'ok' : 'error'}`}>{verify.ok
-        ? `Hash-Kette intakt – ${verify.checked} Einträge geprüft.`
-        : `Hash-Kette unterbrochen bei Eintrag #${verify.broken_at} – Log wurde nachträglich verändert!`}</div>}
+        ? t("Hash-Kette intakt – {0} Einträge geprüft.", verify.checked)
+        : t("Hash-Kette unterbrochen bei Eintrag #{0} – Log wurde nachträglich verändert!", verify.broken_at)}</div>}
       <div className="panel panel-pad" style={{ marginBottom: 14 }}>
         <div className="form-grid">
-          <select value={filter.action} onChange={set('action')} aria-label="Bereich">{PREFIXES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-          <input placeholder="Benutzer" value={filter.actor} onChange={set('actor')} />
-          <input placeholder="Suche in Details …" value={filter.q} onChange={set('q')} />
-          <input type="date" value={filter.since} onChange={set('since')} aria-label="Von" />
-          <input type="date" value={filter.until} onChange={set('until')} aria-label="Bis" />
+          <select value={filter.action} onChange={set('action')} aria-label={t("Bereich")}>{PREFIXES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+          <input placeholder={t("Benutzer")} value={filter.actor} onChange={set('actor')} />
+          <input placeholder={t("Suche in Details …")} value={filter.q} onChange={set('q')} />
+          <input type="date" value={filter.since} onChange={set('since')} aria-label={t("Von")} />
+          <input type="date" value={filter.until} onChange={set('until')} aria-label={t("Bis")} />
         </div>
       </div>
       <ErrorBox error={error} />
-      {data && (!data.items.length ? <div className="panel"><Empty>Keine Einträge.</Empty></div> : (
+      {data && (!data.items.length ? <div className="panel"><Empty>{t("Keine Einträge.")}</Empty></div> : (
         <div className="panel table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Zeit</th><th>Benutzer</th><th>Ereignis</th><th>Objekt</th><th>IP</th></tr></thead>
+            <thead><tr><th>#</th><th>{t("Zeit")}</th><th>{t("Benutzer")}</th><th>{t("Ereignis")}</th><th>{t("Objekt")}</th><th>IP</th></tr></thead>
             <tbody>
               {data.items.map((e) => (
                 <Fragment key={e.id}>
@@ -83,7 +84,7 @@ export default function Audit() {
                   {open[e.id] && (
                     <tr><td colSpan={6}>
                       <pre className="xml">{JSON.stringify(e.details, null, 2)}</pre>
-                      <div className="small muted mono" style={{ marginTop: 4 }}>hash {e.hash}…</div>
+                      <div className="small muted mono" style={{ marginTop: 4 }}>{t("hash")} {e.hash}…</div>
                     </td></tr>
                   )}
                 </Fragment>
@@ -91,10 +92,10 @@ export default function Audit() {
             </tbody>
           </table>
           <div className="row" style={{ padding: 12 }}>
-            <span className="muted small">{offset + 1}–{offset + data.items.length} von {data.total}</span>
+            <span className="muted small">{offset + 1}–{offset + data.items.length} {t("von")} {data.total}</span>
             <div className="right row">
-              <button className="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>Zurück</button>
-              <button className="sm" disabled={offset + 100 >= data.total} onClick={() => setOffset(offset + 100)}>Weiter</button>
+              <button className="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>{t("Zurück")}</button>
+              <button className="sm" disabled={offset + 100 >= data.total} onClick={() => setOffset(offset + 100)}>{t("Weiter")}</button>
             </div>
           </div>
         </div>

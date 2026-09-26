@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../../App'
 import { api, can } from '../../api'
 import { Empty, ErrorBox, Field, useLoad } from '../../components/ui'
+import { t } from '../../i18n'
 
 export default function FirmwareTab({ fw }) {
   const { me } = useAuth()
@@ -15,23 +16,23 @@ export default function FirmwareTab({ fw }) {
     setMsg(null)
     try {
       await api(`/firewalls/${fw.id}/firmware`, { method: 'POST', body: { version, upgrade_at: at ? new Date(at).toISOString() : null } })
-      setMsg({ kind: 'ok', text: `Update auf ${version} ${at ? 'geplant' : 'gestartet'}.` })
+      setMsg({ kind: 'ok', text: t("Update auf {0} {1}.", version, at ? t("geplant") : t("gestartet")) })
       reload()
     } catch (e) { setMsg({ kind: 'error', text: e.message }) }
   }
   const cancel = async () => {
-    try { await api(`/firewalls/${fw.id}/firmware`, { method: 'DELETE' }); setMsg({ kind: 'ok', text: 'Geplantes Update storniert.' }) } catch (e) { setMsg({ kind: 'error', text: e.message }) }
+    try { await api(`/firewalls/${fw.id}/firmware`, { method: 'DELETE' }); setMsg({ kind: 'ok', text: t("Geplantes Update storniert.") }) } catch (e) { setMsg({ kind: 'error', text: e.message }) }
   }
   if (error) return <ErrorBox error={error} />
-  if (!info) return <div className="muted">Prüfe verfügbare Versionen bei Sophos Central …</div>
+  if (!info) return <div className="muted">{t("Prüfe verfügbare Versionen bei Sophos Central …")}</div>
   return (
     <div className="stack">
       <div className="panel panel-pad">
-        <div>Installiert: <b>{info.current}</b></div>
+        <div>{t("Installiert:")} <b>{info.current}</b></div>
       </div>
       <div className="panel">
-        <div className="panel-head"><h3>Verfügbare Updates</h3></div>
-        {!info.available.length ? <Empty>Die Firewall ist aktuell.</Empty> : (
+        <div className="panel-head"><h3>{t("Verfügbare Updates")}</h3></div>
+        {!info.available.length ? <Empty>{t("Die Firewall ist aktuell.")}</Empty> : (
           <div className="panel-pad stack">
             {info.available.map((v) => (
               <label key={v.version} className="check">
@@ -41,12 +42,12 @@ export default function FirmwareTab({ fw }) {
               </label>
             ))}
             {mayManage ? <>
-              <Field label="Zeitpunkt" hint="leer = sofort"><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} style={{ maxWidth: 260 }} /></Field>
+              <Field label={t("Zeitpunkt")} hint="leer = sofort"><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} style={{ maxWidth: 260 }} /></Field>
               <div className="row">
-                <button className="primary" disabled={!version} onClick={schedule}>Update {at ? 'planen' : 'starten'}</button>
-                <button onClick={cancel}>Geplantes Update stornieren</button>
+                <button className="primary" disabled={!version} onClick={schedule}>{t("Update")} {at ? t("planen") : t("starten")}</button>
+                <button onClick={cancel}>{t("Geplantes Update stornieren")}</button>
               </div>
-            </> : <div className="muted small">Für Firmware-Updates fehlt Ihnen das Recht „firmware.manage“.</div>}
+            </> : <div className="muted small">{t("Für Firmware-Updates fehlt Ihnen das Recht „firmware.manage“.")}</div>}
           </div>
         )}
       </div>

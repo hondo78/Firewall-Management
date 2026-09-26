@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { t } from '../i18n'
 
 /** Fängt Abstürze einer Ansicht ab – statt einer weißen Seite gibt es eine Meldung mit „Neu laden“. */
 export default class ErrorBoundary extends Component {
@@ -23,14 +24,14 @@ export default class ErrorBoundary extends Component {
     return (
       <div className="center">
         <div className="panel panel-pad stack" style={{ maxWidth: 560 }}>
-          <h2 style={{ margin: 0 }}>Diese Ansicht konnte nicht angezeigt werden</h2>
+          <h2 style={{ margin: 0 }}>{t("Diese Ansicht konnte nicht angezeigt werden")}</h2>
           <div className="muted small">{stale
-            ? 'Die Anwendung wurde aktualisiert. Bitte die Seite neu laden.'
-            : 'Ein unerwarteter Fehler ist aufgetreten. Bitte neu laden; bleibt der Fehler, den Text unten an den Administrator weitergeben.'}</div>
+            ? t("Die Anwendung wurde aktualisiert. Bitte die Seite neu laden.")
+            : t("Ein unerwarteter Fehler ist aufgetreten. Bitte neu laden; bleibt der Fehler, den Text unten an den Administrator weitergeben.")}</div>
           <pre className="xml small">{String(error?.stack || error).slice(0, 1200)}</pre>
           <div className="row">
-            <button className="primary" onClick={() => window.location.reload()}>Neu laden</button>
-            <button onClick={() => { this.setState({ error: null }); window.history.back() }}>Zurück</button>
+            <button className="primary" onClick={() => window.location.reload()}>{t("Neu laden")}</button>
+            <button onClick={() => { this.setState({ error: null }); window.history.back() }}>{t("Zurück")}</button>
           </div>
         </div>
       </div>

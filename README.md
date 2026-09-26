@@ -58,6 +58,11 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   Central-Konten und einzelne Firewalls. Abweichungen zwischen Sophos-Leitfaden und OpenAPI-Spezifikation sowie
   die Suche nach nicht dokumentierten Endpunkten: siehe `docs/sophos-api-notes.md`.
 
+## Sprachen
+
+Oberfläche auf **Deutsch und Englisch** (Umschalter in der Navigation und auf der Anmeldeseite; Standard =
+Browsersprache). Weitere Sprachen: eine Wörterbuch-Datei ergänzen – siehe `frontend/tools/README-i18n.md`.
+
 ## Start
 
 ```bash

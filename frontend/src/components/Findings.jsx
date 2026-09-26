@@ -1,14 +1,15 @@
 import { useState } from 'react'
+import { t } from '../i18n'
 
-const SEV = { high: ['b-danger', 'Hoch'], medium: ['b-warn', 'Mittel'], info: ['', 'Info'] }
+const SEV = { high: ['b-danger', t("Hoch")], medium: ['b-warn', t("Mittel")], info: ['', t("Info")] }
 const CODE = {
-  any_any: 'Zu offene Freigabe', wan_open: 'Offen aus dem Internet', no_log_wan: 'Ohne Protokollierung',
-  shadowed: 'Wird nie getroffen', disabled: 'Deaktivierte Regel', unused: 'Nicht verwendet',
-  duplicate_address: 'Doppelte Adresse',
+  any_any: t("Zu offene Freigabe"), wan_open: t("Offen aus dem Internet"), no_log_wan: t("Ohne Protokollierung"),
+  shadowed: t("Wird nie getroffen"), disabled: t("Deaktivierte Regel"), unused: t("Nicht verwendet"),
+  duplicate_address: t("Doppelte Adresse"),
 }
 const HINT = {
-  unused: 'Geprüft wird nur die Verwendung in Firewall-/NAT-Regeln und Gruppen – nicht in VPN, Web-Filter, DHCP usw. Vor dem Löschen prüfen.',
-  shadowed: 'Namensbasierte Prüfung: Eine frühere aktive Regel deckt Zonen, Netze, Dienste und Zeitplan vollständig ab.',
+  unused: t("Geprüft wird nur die Verwendung in Firewall-/NAT-Regeln und Gruppen – nicht in VPN, Web-Filter, DHCP usw. Vor dem Löschen prüfen."),
+  shadowed: t("Namensbasierte Prüfung: Eine frühere aktive Regel deckt Zonen, Netze, Dienste und Zeitplan vollständig ab."),
 }
 
 export function FindingRow({ f }) {
@@ -16,14 +17,14 @@ export function FindingRow({ f }) {
     <tr>
       <td><span className={`badge ${SEV[f.severity][0]}`}>{SEV[f.severity][1]}</span></td>
       <td className="small">{CODE[f.code] || f.code}</td>
-      <td><b>{f.name}</b><div className="small muted">{f.label}</div></td>
+      <td><b>{f.name}</b><div className="small muted">{t(f.label)}</div></td>
       <td className="small">{f.message}</td>
     </tr>
   )
 }
 
 /** Befunde der Regel-Analyse; Info-Befunde je Art zusammengeklappt. */
-export default function Findings({ findings, empty = 'Keine Auffälligkeiten.', compact }) {
+export default function Findings({ findings, empty = t("Keine Auffälligkeiten."), compact }) {
   const [open, setOpen] = useState({})
   if (!findings?.length) return <div className="muted small" style={{ padding: compact ? 0 : 12 }}>{empty}</div>
   const important = findings.filter((f) => f.severity !== 'info')

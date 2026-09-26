@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "i18n:check": "node tools/i18n-check.mjs",
+    "i18n:shadow": "node tools/i18n-shadow.mjs",
+    "i18n:merge": "node tools/i18n-merge.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

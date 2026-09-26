@@ -15,10 +15,11 @@ import Findings from '../components/Findings'
 import CompareTab from './firewall/CompareTab'
 import FirmwareTab from './firewall/FirmwareTab'
 import BackupsTab from './firewall/BackupsTab'
+import { t } from '../i18n'
 
 const PERM_SHORT = {
-  'firewall.view': 'Lesen', 'change.create': 'Beantragen', 'change.approve': 'Genehmigen', 'change.deploy': 'Ausrollen',
-  'firewall.manage': 'Verwalten', 'firmware.manage': 'Firmware',
+  'firewall.view': t("Lesen"), 'change.create': t("Beantragen"), 'change.approve': t("Genehmigen"), 'change.deploy': t("Ausrollen"),
+  'firewall.manage': t("Verwalten"), 'firmware.manage': t("Firmware"),
 }
 
 // --- Entwurf -------------------------------------------------------------------------------------------------
@@ -28,13 +29,13 @@ export function OperationCard({ op, onRemove, open }) {
     <div className="op">
       <div className="op-head">
         <span className={`badge ${op.action === 'add' ? 'b-ok' : op.action === 'remove' ? 'b-danger' : 'b-warn'}`}>{ACTION_LABEL[op.action]}</span>
-        <b>{op.label}</b><span>„{op.name}“</span>
-        {op.position && <span className="muted small">Position: {{ top: 'ganz oben', bottom: 'ganz unten', after: `nach „${op.position.ref}“`, before: `vor „${op.position.ref}“` }[op.position.type]}</span>}
-        {onRemove && <button className="ghost sm right" onClick={onRemove}>Aus Entwurf entfernen</button>}
+        <b>{t(op.label)}</b><span>„{op.name}“</span>
+        {op.position && <span className="muted small">{t("Position:")} {{ top: t("ganz oben"), bottom: t("ganz unten"), after: t("nach „{0}“", op.position.ref), before: t("vor „{0}“", op.position.ref) }[op.position.type]}</span>}
+        {onRemove && <button className="ghost sm right" onClick={onRemove}>{t("Aus Entwurf entfernen")}</button>}
       </div>
       <div className="op-body">
-        {op.action === 'remove' ? <div className="muted small">Objekt wird gelöscht.</div> : <DiffTable rows={op.diff} />}
-        <details open={open}><summary>API-Aufruf ({op.xml?.startsWith('<') ? 'XML' : 'REST'})</summary><pre className="xml">{op.xml}</pre></details>
+        {op.action === 'remove' ? <div className="muted small">{t("Objekt wird gelöscht.")}</div> : <DiffTable rows={op.diff} />}
+        <details open={open}><summary>{t("API-Aufruf (")}{op.xml?.startsWith('<') ? 'XML' : 'REST'})</summary><pre className="xml">{op.xml}</pre></details>
       </div>
     </div>
   )
@@ -59,28 +60,28 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings, fw }) {
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
   return (
-    <Modal title={`Antrag ${crNo(draft.number)} einreichen`} onClose={onClose} wide>
+    <Modal title={t("Antrag {0} einreichen", crNo(draft.number))} onClose={onClose} wide>
       <div className="stack">
-        <div className="alert info small">Nach dem Einreichen prüft ein Approver den Antrag (Vier-Augen-Prinzip). Sie können Ihren eigenen Antrag nicht genehmigen.</div>
+        <div className="alert info small">{t("Nach dem Einreichen prüft ein Approver den Antrag (Vier-Augen-Prinzip). Sie können Ihren eigenen Antrag nicht genehmigen.")}</div>
         <div className="form-grid">
-          <Field label="Titel"><input value={form.title} onChange={set('title')} autoFocus placeholder="z. B. Freigabe HTTPS für neuen Webserver" /></Field>
-          <Field label={`Ticket-Referenz${requireTicket ? ' (Pflicht)' : ''}`}><input value={form.ticket_ref} onChange={set('ticket_ref')} placeholder="CHG-1234" /></Field>
-          <Field label="Frühestens ausrollen ab" hint="leer = sofort nach Genehmigung">
+          <Field label={t("Titel")}><input value={form.title} onChange={set('title')} autoFocus placeholder={t("z. B. Freigabe HTTPS für neuen Webserver")} /></Field>
+          <Field label={t("Ticket-Referenz{0}", requireTicket ? ' (Pflicht)' : '')}><input value={form.ticket_ref} onChange={set('ticket_ref')} placeholder="CHG-1234" /></Field>
+          <Field label={t("Frühestens ausrollen ab")} hint={t("leer = sofort nach Genehmigung")}>
             <input type="datetime-local" value={form.deploy_after} onChange={set('deploy_after')} />
           </Field>
-          <Field label="Befristet bis" hint="optional – danach wird die Änderung automatisch zurückgenommen">
+          <Field label={t("Befristet bis")} hint={t("optional – danach wird die Änderung automatisch zurückgenommen")}>
             <input type="datetime-local" value={form.expires_at} onChange={set('expires_at')} />
           </Field>
         </div>
-        {form.expires_at && <div className="alert info small">Befristeter Antrag: Nach Ablauf legt das System automatisch eine Rücknahme an
-          {settings?.temp_revert_preapproved ? ' und rollt sie ohne erneute Freigabe aus – die Befristung ist Teil dieser Genehmigung.' : ', die erneut genehmigt werden muss.'}</div>}
-        <Field label="Begründung"><textarea rows={3} value={form.justification} onChange={set('justification')}
-          placeholder="Warum wird die Änderung benötigt? Wer hat sie angefordert?" /></Field>
+        {form.expires_at && <div className="alert info small">{t("Befristeter Antrag: Nach Ablauf legt das System automatisch eine Rücknahme an")}
+          {settings?.temp_revert_preapproved ? t(" und rollt sie ohne erneute Freigabe aus – die Befristung ist Teil dieser Genehmigung.") : t(", die erneut genehmigt werden muss.")}</div>}
+        <Field label={t("Begründung")}><textarea rows={3} value={form.justification} onChange={set('justification')}
+          placeholder={t("Warum wird die Änderung benötigt? Wer hat sie angefordert?")} /></Field>
         {candidates.length > 0 && (
           <details>
-            <summary>Auch auf weiteren Firewalls ausrollen (Sammelantrag){extra.length ? ` – ${extra.length} ausgewählt` : ''}</summary>
+            <summary>{t("Auch auf weiteren Firewalls ausrollen (Sammelantrag)")}{extra.length ? t(" – {0} ausgewählt", extra.length) : ''}</summary>
             <div className="stack" style={{ marginTop: 8 }}>
-              <div className="muted small">Gleiche Änderungen, einmal genehmigt, je Firewall einzeln geprüft und ausgerollt. Passt eine Änderung auf eine Firewall nicht, wird nichts eingereicht.</div>
+              <div className="muted small">{t("Gleiche Änderungen, einmal genehmigt, je Firewall einzeln geprüft und ausgerollt. Passt eine Änderung auf eine Firewall nicht, wird nichts eingereicht.")}</div>
               <div className="perm-grid">{candidates.map((f) => (
                 <label key={f.id} className="check"><input type="checkbox" checked={extra.includes(f.id)}
                   onChange={(e) => setExtra(e.target.checked ? [...extra, f.id] : extra.filter((x) => x !== f.id))} />
@@ -89,17 +90,17 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings, fw }) {
           </details>
         )}
         {draft.analysis?.length > 0 && <div className="panel panel-pad stack" style={{ borderColor: 'var(--warn)' }}>
-          <h3 style={{ margin: 0 }}>Regel-Prüfung</h3>
-          <div className="muted small">Diese Befunde sieht auch der Approver. Bitte prüfen oder in der Begründung erklären.</div>
+          <h3 style={{ margin: 0 }}>{t("Regel-Prüfung")}</h3>
+          <div className="muted small">{t("Diese Befunde sieht auch der Approver. Bitte prüfen oder in der Begründung erklären.")}</div>
           <Findings findings={draft.analysis} compact />
         </div>}
-        <h3>{draft.operations.length} Änderung(en)</h3>
+        <h3>{draft.operations.length} {t("Änderung(en)")}</h3>
         {draft.operations.map((op, i) => <OperationCard key={i} op={op} />)}
         <ErrorBox error={error} />
       </div>
       <div className="modal-foot">
-        <button onClick={onClose}>Abbrechen</button>
-        <button className="primary" disabled={busy || !form.title || !form.justification} onClick={submit}>Zur Genehmigung einreichen</button>
+        <button onClick={onClose}>{t("Abbrechen")}</button>
+        <button className="primary" disabled={busy || !form.title || !form.justification} onClick={submit}>{t("Zur Genehmigung einreichen")}</button>
       </div>
     </Modal>
   )
@@ -109,7 +110,7 @@ function DraftBar({ draft, onChanged, requireTicket, settings, fw }) {
   const [tplName, setTplName] = useState('')
   const [tplMsg, setTplMsg] = useState(null)
   const saveTemplate = async () => {
-    try { await api('/templates', { method: 'POST', body: { name: tplName, change_id: draft.id } }); setTplMsg({ kind: 'ok', text: `Vorlage „${tplName}“ gespeichert.` }); setTplName('') } catch (e) { setTplMsg({ kind: 'error', text: e.message }) }
+    try { await api('/templates', { method: 'POST', body: { name: tplName, change_id: draft.id } }); setTplMsg({ kind: 'ok', text: t("Vorlage „{0}“ gespeichert.", tplName) }); setTplName('') } catch (e) { setTplMsg({ kind: 'error', text: e.message }) }
   }
   const nav = useNavigate()
   const { refreshCounts } = useAuth()
@@ -126,27 +127,27 @@ function DraftBar({ draft, onChanged, requireTicket, settings, fw }) {
   return (
     <>
       <div className="draftbar">
-        <span className="badge b-accent">Entwurf {crNo(draft.number)}</span>
-        <b>{draft.operations.length} Änderung{draft.operations.length === 1 ? '' : 'en'}</b>
-        <span className="muted small">noch nicht aktiv – erst nach Genehmigung und Ausrollen</span>
+        <span className="badge b-accent">{t("Entwurf")} {crNo(draft.number)}</span>
+        <b>{draft.operations.length} {t("Änderung")}{draft.operations.length === 1 ? '' : 'en'}</b>
+        <span className="muted small">{t("noch nicht aktiv – erst nach Genehmigung und Ausrollen")}</span>
         <div className="right row">
-          <button onClick={() => setShow(true)}>Anzeigen</button>
-          <button className="primary" onClick={() => setSubmitting(true)}>Einreichen …</button>
+          <button onClick={() => setShow(true)}>{t("Anzeigen")}</button>
+          <button className="primary" onClick={() => setSubmitting(true)}>{t("Einreichen …")}</button>
         </div>
       </div>
       {show && (
-        <Modal title={`Entwurf ${crNo(draft.number)}`} onClose={() => setShow(false)} wide>
+        <Modal title={t("Entwurf {0}", crNo(draft.number))} onClose={() => setShow(false)} wide>
           {draft.operations.map((op, i) => <OperationCard key={i} op={op} onRemove={() => removeOp(i)} />)}
           <div className="row" style={{ marginTop: 8 }}>
-            <input placeholder="Name der Vorlage" value={tplName} onChange={(e) => setTplName(e.target.value)} style={{ maxWidth: 280 }} />
-            <button className="sm" disabled={!tplName.trim()} onClick={saveTemplate}>Als Vorlage speichern</button>
+            <input placeholder={t("Name der Vorlage")} value={tplName} onChange={(e) => setTplName(e.target.value)} style={{ maxWidth: 280 }} />
+            <button className="sm" disabled={!tplName.trim()} onClick={saveTemplate}>{t("Als Vorlage speichern")}</button>
             {tplMsg && <span className={`small ${tplMsg.kind === 'ok' ? 'text-ok' : 'text-error'}`}>{tplMsg.text}</span>}
           </div>
           <ErrorBox error={error} />
           <div className="modal-foot">
-            <button className="danger" onClick={discard}>Entwurf verwerfen</button>
-            <button onClick={() => setShow(false)}>Schließen</button>
-            <button className="primary" onClick={() => { setShow(false); setSubmitting(true) }}>Einreichen …</button>
+            <button className="danger" onClick={discard}>{t("Entwurf verwerfen")}</button>
+            <button onClick={() => setShow(false)}>{t("Schließen")}</button>
+            <button className="primary" onClick={() => { setShow(false); setSubmitting(true) }}>{t("Einreichen …")}</button>
           </div>
         </Modal>
       )}
@@ -161,11 +162,11 @@ function DraftBar({ draft, onChanged, requireTicket, settings, fw }) {
 function ChangesTab({ fw }) {
   const [rows] = useLoad(() => api(`/firewalls/${fw.id}/changes`), [fw.id])
   if (!rows) return null
-  if (!rows.length) return <div className="panel"><Empty>Noch keine Anträge für diese Firewall.</Empty></div>
+  if (!rows.length) return <div className="panel"><Empty>{t("Noch keine Anträge für diese Firewall.")}</Empty></div>
   return (
     <div className="panel table-wrap">
       <table>
-        <thead><tr><th>Nr.</th><th>Titel</th><th>Antragsteller</th><th>Status</th><th>Eingereicht</th><th>Ausgerollt</th></tr></thead>
+        <thead><tr><th>{t("Nr.")}</th><th>{t("Titel")}</th><th>{t("Antragsteller")}</th><th>{t("Status")}</th><th>{t("Eingereicht")}</th><th>{t("Ausgerollt")}</th></tr></thead>
         <tbody>{rows.map((c) => (
           <tr key={c.id}>
             <td><Link to={`/changes/${c.id}`}>{crNo(c.number)}</Link></td><td>{c.title}</td><td>{c.created_by}</td>
@@ -183,40 +184,40 @@ function SettingsTab({ fw, onSaved }) {
   const [test, setTest] = useState(null)
   const [error, setError] = useState('')
   const [confirm, setConfirm] = useState(false)
-  const runTest = async () => { setTest({ message: 'Teste …' }); setTest(await api(`/firewalls/${fw.id}/test`, { method: 'POST' })) }
+  const runTest = async () => { setTest({ message: t("Teste …") }); setTest(await api(`/firewalls/${fw.id}/test`, { method: 'POST' })) }
   const remove = async () => {
     try { await api(`/firewalls/${fw.id}`, { method: 'DELETE' }); nav('/firewalls') } catch (e) { setError(e.message) }
   }
   return (
     <div className="grid two">
       <div className="panel panel-pad">
-        <h3 style={{ marginTop: 0 }}>{fw.may_edit_connection ? 'Anbindung' : 'Allgemein'}</h3>
+        <h3 style={{ marginTop: 0 }}>{fw.may_edit_connection ? t("Anbindung") : t("Allgemein")}</h3>
         {groups && <FirewallForm fw={fw} groups={groups} onSaved={onSaved} />}
       </div>
       <div className="stack">
         {fw.may_edit_connection && <>
         <div className="panel panel-pad stack">
-          <h3 style={{ margin: 0 }}>Verbindungstest</h3>
-          <div><button onClick={runTest}>Verbindung testen</button></div>
+          <h3 style={{ margin: 0 }}>{t("Verbindungstest")}</h3>
+          <div><button onClick={runTest}>{t("Verbindung testen")}</button></div>
           {test && <div className={`alert ${test.ok === undefined ? 'info' : test.ok ? 'ok' : 'error'} small`}>{test.message}</div>}
         </div>
         <div className="panel panel-pad stack">
-          <h3 style={{ margin: 0 }}>Probelauf</h3>
-          <div className="muted small">Prüft Anmeldung, Leserechte und alle benötigten Endpunkte, bevor Änderungen ausgerollt werden.</div>
+          <h3 style={{ margin: 0 }}>{t("Probelauf")}</h3>
+          <div className="muted small">{t("Prüft Anmeldung, Leserechte und alle benötigten Endpunkte, bevor Änderungen ausgerollt werden.")}</div>
           <Diagnose path={`/firewalls/${fw.id}/diagnose`} />
         </div>
         </>}
         {fw.central_id && <div className="panel panel-pad small">
-          <h3 style={{ marginTop: 0 }}>Sophos Central</h3>
-          <div>Firewall-ID: <code>{fw.central_id}</code></div>
-          <div>Status: {Object.entries(fw.central_status || {}).filter(([, v]) => typeof v !== 'object').map(([k, v]) => `${k}: ${v}`).join(' · ')}</div>
-          {fw.external_ips?.length > 0 && <div>Externe IPs: {fw.external_ips.join(', ')}</div>}
+          <h3 style={{ marginTop: 0 }}>{t("Sophos Central")}</h3>
+          <div>{t("Firewall-ID:")} <code>{fw.central_id}</code></div>
+          <div>{t("Status:")} {Object.entries(fw.central_status || {}).filter(([, v]) => typeof v !== 'object').map(([k, v]) => `${k}: ${v}`).join(' · ')}</div>
+          {fw.external_ips?.length > 0 && <div>{t("Externe IPs:")} {fw.external_ips.join(', ')}</div>}
         </div>}
         <div className="panel panel-pad stack">
-          <h3 style={{ margin: 0 }}>Aus der Verwaltung entfernen</h3>
-          <div className="muted small">Die Firewall selbst bleibt unverändert. Anträge, Versionsstände und Audit-Log bleiben erhalten (archiviert); gespeicherte Zugangsdaten werden gelöscht.</div>
-          {!confirm ? <div><button className="danger" onClick={() => setConfirm(true)}>Entfernen …</button></div>
-            : <div className="row"><button className="danger solid" onClick={remove}>Wirklich entfernen</button><button onClick={() => setConfirm(false)}>Abbrechen</button></div>}
+          <h3 style={{ margin: 0 }}>{t("Aus der Verwaltung entfernen")}</h3>
+          <div className="muted small">{t("Die Firewall selbst bleibt unverändert. Anträge, Versionsstände und Audit-Log bleiben erhalten (archiviert); gespeicherte Zugangsdaten werden gelöscht.")}</div>
+          {!confirm ? <div><button className="danger" onClick={() => setConfirm(true)}>{t("Entfernen …")}</button></div>
+            : <div className="row"><button className="danger solid" onClick={remove}>{t("Wirklich entfernen")}</button><button onClick={() => setConfirm(false)}>{t("Abbrechen")}</button></div>}
           <ErrorBox error={error} />
         </div>
       </div>
@@ -231,7 +232,9 @@ export default function FirewallView() {
   const nav = useNavigate()
   const { me } = useAuth()
   const [fw, error, reloadFw, setFw] = useLoad(() => api(`/firewalls/${id}`), [id])
-  const [cfg, cfgError, reloadCfg] = useLoad(() => api(`/firewalls/${id}/config`), [id])
+  // Anzeigenamen der Objekttypen/Bereiche kommen vom Backend (deutsch) → hier übersetzen
+  const [cfg, cfgError, reloadCfg] = useLoad(() => api(`/firewalls/${id}/config`).then((c) => ({
+    ...c, entities: c.entities.map((e) => ({ ...e, label: t(e.label), section: t(e.section) })) })), [id])
   const [draft, , reloadDraft] = useLoad(() => api(`/firewalls/${id}/draft`), [id])
   const [settings] = useLoad(() => api('/settings'), [])
   const [syncing, setSyncing] = useState(false)
@@ -243,7 +246,7 @@ export default function FirewallView() {
     setSyncMsg(null)
     try {
       const r = await api(`/firewalls/${id}/sync`, { method: 'POST' })
-      setSyncMsg({ kind: 'ok', text: r.changed ? 'Synchronisiert – Konfiguration hat sich geändert (neuer Versionsstand).' : 'Synchronisiert – keine Änderungen.' })
+      setSyncMsg({ kind: 'ok', text: r.changed ? t("Synchronisiert – Konfiguration hat sich geändert (neuer Versionsstand).") : t("Synchronisiert – keine Änderungen.") })
     } catch (e) { setSyncMsg({ kind: 'error', text: e.message }) }
     setSyncing(false)
     reloadFw()
@@ -251,35 +254,35 @@ export default function FirewallView() {
   }
   if (error) return <ErrorBox error={error} />
   if (!fw) return null
-  const tabs = [['config', 'Konfiguration'], ['analysis', 'Analyse'], ['compare', 'Vergleich & Versionen'], ['changes', 'Anträge'], ['backups', 'Sicherungen'],
-    fw.central_id && ['firmware', 'Firmware'], fw.central_id && ['central', 'Lizenzen & Alerts'], can(me, 'firewall.manage', fw) && ['settings', 'Einstellungen']]
+  const tabs = [['config', t("Konfiguration")], ['analysis', t("Analyse")], ['compare', t("Vergleich & Versionen")], ['changes', t("Anträge")], ['backups', t("Sicherungen")],
+    fw.central_id && ['firmware', t("Firmware")], fw.central_id && ['central', t("Lizenzen & Alerts")], can(me, 'firewall.manage', fw) && ['settings', t("Einstellungen")]]
 
   return (
     <>
       <div className="page-head">
         <div>
-          <div className="small"><Link to="/firewalls">Firewalls</Link>{fw.group && <span className="muted"> › {fw.group}</span>}</div>
+          <div className="small"><Link to="/firewalls">{t("Firewalls")}</Link>{fw.group && <span className="muted"> › {fw.group}</span>}</div>
           <h1>{fw.name}</h1>
         </div>
         <div className="right row">
-          <button className="primary sm" disabled={syncing} onClick={sync}>{syncing ? 'Synchronisiere …' : 'Jetzt synchronisieren'}</button>
+          <button className="primary sm" disabled={syncing} onClick={sync}>{syncing ? t("Synchronisiere …") : t("Jetzt synchronisieren")}</button>
         </div>
       </div>
       <div className="panel fw-head">
         <div className="meta">
-          <div><span>Status</span><SyncState fw={fw} /></div>
-          <div><span>Anbindung</span>{fw.connector_label}</div>
-          {fw.connector === 'rest' && fw.may_edit_connection && <div><span>API-Key gültig bis</span>{fw.api_key_expires_at
+          <div><span>{t("Status")}</span><SyncState fw={fw} /></div>
+          <div><span>{t("Anbindung")}</span>{fw.connector_label}</div>
+          {fw.connector === 'rest' && fw.may_edit_connection && <div><span>{t("API-Key gültig bis")}</span>{fw.api_key_expires_at
             ? <span className={new Date(fw.api_key_expires_at) - Date.now() < 30 * 86400000 ? 'text-error' : ''}>{fmt(fw.api_key_expires_at).split(',')[0]}</span>
-            : <span className="muted">nicht hinterlegt</span>}</div>}
-          <div><span>Modell</span>{fw.model?.split('_')[0] || '–'}</div>
-          <div><span>Firmware</span>{fw.firmware || '–'}</div>
-          <div><span>Seriennummer</span>{fw.serial || '–'}</div>
-          <div><span>Hostname</span>{fw.hostname || fw.api_url || '–'}</div>
-          <div><span>Ihre Rechte</span>{fw.permissions.length ? fw.permissions.map((p) => PERM_SHORT[p] || p).join(', ') : '–'}</div>
+            : <span className="muted">{t("nicht hinterlegt")}</span>}</div>}
+          <div><span>{t("Modell")}</span>{fw.model?.split('_')[0] || '–'}</div>
+          <div><span>{t("Firmware")}</span>{fw.firmware || '–'}</div>
+          <div><span>{t("Seriennummer")}</span>{fw.serial || '–'}</div>
+          <div><span>{t("Hostname")}</span>{fw.hostname || fw.api_url || '–'}</div>
+          <div><span>{t("Ihre Rechte")}</span>{fw.permissions.length ? fw.permissions.map((p) => PERM_SHORT[p] || p).join(', ') : '–'}</div>
         </div>
       </div>
-      {fw.last_sync_error && <div className="alert error small">Letzte Synchronisation fehlgeschlagen: {fw.last_sync_error}</div>}
+      {fw.last_sync_error && <div className="alert error small">{t("Letzte Synchronisation fehlgeschlagen:")} {fw.last_sync_error}</div>}
       {syncMsg && <div className={`alert ${syncMsg.kind} small`}>{syncMsg.text}</div>}
       <Tabs tabs={tabs} value={tab} onChange={(t) => nav(`/firewalls/${id}/${t}`)} />
       {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <Editor key={cfg.format} fw={fw} cfg={cfg} draft={draft} reload={reload} />)}

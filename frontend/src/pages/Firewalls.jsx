@@ -4,15 +4,16 @@ import { useAuth } from '../App'
 import { ago, api, can } from '../api'
 import FirewallForm from '../components/FirewallForm'
 import { Empty, ErrorBox, Field, Modal, useLoad } from '../components/ui'
+import { t } from '../i18n'
 
 export function SyncState({ fw }) {
-  if (fw.last_sync_error) return <span className="text-error small" title={fw.last_sync_error}><span className="dot err" />Fehler</span>
-  if (!fw.last_sync_at) return <span className="muted small"><span className="dot" />nie synchronisiert</span>
+  if (fw.last_sync_error) return <span className="text-error small" title={fw.last_sync_error}><span className="dot err" />{t("Fehler")}</span>
+  if (!fw.last_sync_at) return <span className="muted small"><span className="dot" />{t("nie synchronisiert")}</span>
   const disconnected = fw.central_status?.connected === false
   return (
     <span className="small">
       <span className={`dot ${disconnected ? 'warn' : 'ok'}`} />
-      {disconnected ? 'Central: getrennt' : 'OK'} · <span className="muted">{ago(fw.last_sync_at)}</span>
+      {disconnected ? t("Central: getrennt") : 'OK'} · <span className="muted">{ago(fw.last_sync_at)}</span>
     </span>
   )
 }
@@ -28,38 +29,38 @@ function DriftModal({ group, firewalls, onClose }) {
     try { setData(await api(`/groups/${group.id}/drift?reference=${id}`)) } catch (e) { setError(e.message) }
   }
   return (
-    <Modal title={`Abgleich „${group.name}“`} onClose={onClose} wide>
+    <Modal title={t("Abgleich „{0}“", group.name)} onClose={onClose} wide>
       <div className="stack">
-        <Field label="Referenz (Standard-Konfiguration)">
+        <Field label={t("Referenz (Standard-Konfiguration)")}>
           <select value={ref} onChange={(e) => run(e.target.value)}>
-            <option value="">– wählen –</option>
+            <option value="">{t("– wählen –")}</option>
             {firewalls.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         </Field>
-        {!data && ref && <div><button className="primary" onClick={() => run(ref)}>Abgleichen</button></div>}
+        {!data && ref && <div><button className="primary" onClick={() => run(ref)}>{t("Abgleichen")}</button></div>}
         <ErrorBox error={error} />
         {data && (
           <div className="table-wrap"><table>
-            <thead><tr><th>Firewall</th><th>Abweichungen</th><th>Details</th></tr></thead>
+            <thead><tr><th>{t("Firewall")}</th><th>{t("Abweichungen")}</th><th>{t("Details")}</th></tr></thead>
             <tbody>{data.firewalls.map((row) => (
               <tr key={row.id}>
                 <td><Link to={`/firewalls/${row.id}/compare`}>{row.name}</Link></td>
                 <td>{row.error ? <span className="muted">{row.error}</span>
-                  : row.total ? <span className="badge b-warn">{row.total}</span> : <span className="badge b-ok">keine</span>}</td>
+                  : row.total ? <span className="badge b-warn">{row.total}</span> : <span className="badge b-ok">{t("keine")}</span>}</td>
                 <td className="small">
                   {Object.entries(row.entities || {}).map(([e, c]) => (
                     <div key={e}>
                       <button className="link" onClick={() => setOpen(open === row.id + e ? null : row.id + e)}>{data.labels[e] || e}</button>:
-                      {c.missing ? ` ${c.missing} fehlen` : ''}{c.extra ? ` · ${c.extra} zusätzlich` : ''}{c.different ? ` · ${c.different} abweichend` : ''}
-                      {open === row.id + e && <div className="muted">{c.missing_names.length > 0 && <>Fehlen: {c.missing_names.join(', ')}<br /></>}
-                        {c.different_names.length > 0 && <>Abweichend: {c.different_names.join(', ')}</>}</div>}
+                      {c.missing ? ` ${c.missing} fehlen` : ''}{c.extra ? t(" · {0} zusätzlich", c.extra) : ''}{c.different ? ` · ${c.different} abweichend` : ''}
+                      {open === row.id + e && <div className="muted">{c.missing_names.length > 0 && <>{t("Fehlen:")} {c.missing_names.join(', ')}<br /></>}
+                        {c.different_names.length > 0 && <>{t("Abweichend:")} {c.different_names.join(', ')}</>}</div>}
                     </div>))}
                 </td>
               </tr>))}
             </tbody>
           </table></div>
         )}
-        <div className="muted small">Vergleich der zwischengespeicherten Konfiguration nach Objektnamen. Fehlende Objekte lassen sich per Vorlage oder Sammelantrag nachziehen.</div>
+        <div className="muted small">{t("Vergleich der zwischengespeicherten Konfiguration nach Objektnamen. Fehlende Objekte lassen sich per Vorlage oder Sammelantrag nachziehen.")}</div>
       </div>
     </Modal>
   )
@@ -79,19 +80,19 @@ function GroupModal({ group, onClose, onSaved }) {
     try { await api(`/groups/${group.id}`, { method: 'DELETE' }); onSaved() } catch (e) { setError(e.message) }
   }
   return (
-    <Modal title={group ? 'Gruppe bearbeiten' : 'Neue Firewall-Gruppe'} onClose={onClose}>
+    <Modal title={group ? t("Gruppe bearbeiten") : t("Neue Firewall-Gruppe")} onClose={onClose}>
       <div className="stack">
-        <Field label="Name" hint={group?.central ? 'Aus Sophos Central – Name wird dort gepflegt' : ''}>
+        <Field label={t("Name")} hint={group?.central ? t("Aus Sophos Central – Name wird dort gepflegt") : ''}>
           <input value={name} disabled={group?.central} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Beschreibung"><input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
-        <div className="muted small">Gruppen steuern Berechtigungen: Rollen können auf einzelne Gruppen beschränkt werden.</div>
+        <Field label={t("Beschreibung")}><input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+        <div className="muted small">{t("Gruppen steuern Berechtigungen: Rollen können auf einzelne Gruppen beschränkt werden.")}</div>
         <ErrorBox error={error} />
       </div>
       <div className="modal-foot">
-        {group && !group.central && <button className="danger" onClick={remove}>Löschen</button>}
-        <button onClick={onClose}>Abbrechen</button>
-        <button className="primary" disabled={!name} onClick={save}>Speichern</button>
+        {group && !group.central && <button className="danger" onClick={remove}>{t("Löschen")}</button>}
+        <button onClick={onClose}>{t("Abbrechen")}</button>
+        <button className="primary" disabled={!name} onClick={save}>{t("Speichern")}</button>
       </div>
     </Modal>
   )
@@ -114,43 +115,43 @@ export default function Firewalls() {
   const shown = (fws || []).filter((x) => !f || `${x.name} ${x.hostname} ${x.serial} ${x.model}`.toLowerCase().includes(f))
   const byGroup = new Map()
   for (const g of groups || []) byGroup.set(g.id, { group: g, items: [] })
-  byGroup.set(null, { group: { id: null, name: 'Ohne Gruppe' }, items: [] })
+  byGroup.set(null, { group: { id: null, name: t("Ohne Gruppe") }, items: [] })
   for (const fw of shown) (byGroup.get(fw.group_id) || byGroup.get(null)).items.push(fw)
 
   return (
     <>
       <div className="page-head">
-        <h1>Firewalls</h1>
-        <span className="sub">{fws?.length ?? 0} verwaltet</span>
+        <h1>{t("Firewalls")}</h1>
+        <span className="sub">{fws?.length ?? 0} {t("verwaltet")}</span>
         <div className="right row">
-          <input placeholder="Suchen …" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
-          {manage && <button onClick={() => setGroupEdit({})}>Neue Gruppe</button>}
-          {mayAdd && <button className="primary" onClick={() => setAdding(true)}>Firewall hinzufügen</button>}
+          <input placeholder={t("Suchen …")} value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
+          {manage && <button onClick={() => setGroupEdit({})}>{t("Neue Gruppe")}</button>}
+          {mayAdd && <button className="primary" onClick={() => setAdding(true)}>{t("Firewall hinzufügen")}</button>}
         </div>
       </div>
       <ErrorBox error={error} />
       {fws && !fws.length && (
         <div className="panel"><Empty>
-          Noch keine Firewalls. {me.is_superadmin
-            ? <>Firewalls per REST-API (API-Key) hinzufügen oder über <Link to="/admin/central">Sophos Central</Link> übernehmen.</>
-            : 'Bitte einen Superadmin, Firewalls anzubinden oder Ihnen Rechte zu geben.'}
+          {t("Noch keine Firewalls.")} {me.is_superadmin
+            ? <>{t("Firewalls per REST-API (API-Key) hinzufügen oder über")} <Link to="/admin/central">{t("Sophos Central")}</Link> {t("übernehmen.")}</>
+            : t("Bitte einen Superadmin, Firewalls anzubinden oder Ihnen Rechte zu geben.")}
         </Empty></div>
       )}
       {[...byGroup.values()].filter((g) => g.items.length || (manage && g.group.id)).map(({ group, items }) => (
         <div className="panel" key={group.id || 'none'} style={{ marginBottom: 14 }}>
           <div className="panel-head">
             <h3>{group.name}</h3>
-            {group.central && <span className="badge b-info">Sophos Central</span>}
-            <span className="muted small">{items.length} Firewall{items.length === 1 ? '' : 's'}</span>
+            {group.central && <span className="badge b-info">{t("Sophos Central")}</span>}
+            <span className="muted small">{items.length} {t("Firewall")}{items.length === 1 ? '' : 's'}</span>
             <div className="right row">
-              {group.id && items.length >= 2 && <button className="ghost sm" onClick={() => setDrift({ group, items })}>Abgleich</button>}
-              {manage && group.id && <button className="ghost sm" onClick={() => setGroupEdit(group)}>Bearbeiten</button>}
+              {group.id && items.length >= 2 && <button className="ghost sm" onClick={() => setDrift({ group, items })}>{t("Abgleich")}</button>}
+              {manage && group.id && <button className="ghost sm" onClick={() => setGroupEdit(group)}>{t("Bearbeiten")}</button>}
             </div>
           </div>
           {items.length > 0 && (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Name</th><th>Modell / Firmware</th><th>Anbindung</th><th>Status</th><th>Offene Anträge</th></tr></thead>
+                <thead><tr><th>{t("Name")}</th><th>{t("Modell / Firmware")}</th><th>{t("Anbindung")}</th><th>{t("Status")}</th><th>{t("Offene Anträge")}</th></tr></thead>
                 <tbody>
                   {items.map((fw) => (
                     <tr key={fw.id} className="clickable" onClick={() => nav(`/firewalls/${fw.id}`)}>
@@ -168,7 +169,7 @@ export default function Firewalls() {
           )}
         </div>
       ))}
-      {adding && <Modal title="Firewall hinzufügen" onClose={() => setAdding(false)} wide>
+      {adding && <Modal title={t("Firewall hinzufügen")} onClose={() => setAdding(false)} wide>
         <FirewallForm groups={groups || []} onCancel={() => setAdding(false)}
           onSaved={(fw) => { setAdding(false); reload(); nav(`/firewalls/${fw.id}`) }} />
       </Modal>}

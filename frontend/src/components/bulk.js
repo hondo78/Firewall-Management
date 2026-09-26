@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 /** „Mehrfach hinzufügen“: eine Zeile je Objekt, optional „,Name“ (Formate wie im Sophos Config Studio). */
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/
@@ -17,10 +18,10 @@ function splitName(line) {
 
 export const BULK = {
   address: {
-    label: 'IPv4-Adressen / Bereiche / Netze',
+    label: t("IPv4-Adressen / Bereiche / Netze"),
     placeholder: '192.168.1.1\n10.0.0.0/24\n10.0.0.0/255.255.255.0\n172.16.0.1-172.16.0.50\n10.0.0.1+10.0.0.2+10.0.0.3,Meine Liste\n1.1.1.1,dns-server',
-    help: [['192.168.1.1', 'einzelner Host'], ['10.0.0.0/24', 'Netz (CIDR)'], ['10.0.0.0/255.255.255.0', 'Netz (Maske)'],
-      ['172.16.0.1-172.16.0.50', 'Bereich'], ['10.0.0.1+10.0.0.2', 'Liste (+ als Trenner)'], ['1.1.1.1,my-dns', 'mit eigenem Namen']],
+    help: [['192.168.1.1', t("einzelner Host")], ['10.0.0.0/24', t("Netz (CIDR)")], ['10.0.0.0/255.255.255.0', t("Netz (Maske)")],
+      ['172.16.0.1-172.16.0.50', t("Bereich")], ['10.0.0.1+10.0.0.2', t("Liste (+ als Trenner)")], ['1.1.1.1,my-dns', t("mit eigenem Namen")]],
     parse(value) {
       if (value.includes('+')) {
         const ips = value.split('+').map((x) => x.trim())
@@ -33,7 +34,7 @@ export const BULK = {
         const cidr = /^\d+$/.test(m) ? Number(m) : maskToCidr(m)
         if (IPV4.test(net) && cidr != null && cidr >= 0 && cidr <= 32) return { kind: 'network', net, cidr }
       } else if (IPV4.test(value)) return { kind: 'host', ip: value }
-      throw new Error('keine gültige IPv4-Adresse, kein Netz/Bereich/Liste')
+      throw new Error(t('keine gültige IPv4-Adresse, kein Netz/Bereich/Liste'))
     },
     build(p, name, fmt) {
       if (fmt === 'rest') {
@@ -55,35 +56,35 @@ export const BULK = {
   },
   fqdn: {
     label: 'FQDN-Adressen',
-    placeholder: 'updates.example.com\n*.sophos.com,Sophos-Updates',
-    help: [['host.example.com', 'FQDN'], ['*.example.com', 'mit Platzhalter'], ['a.example.com,Mein Name', 'mit eigenem Namen']],
+    placeholder: t("updates.example.com\n*.sophos.com,Sophos-Updates"),
+    help: [['host.example.com', 'FQDN'], ['*.example.com', t("mit Platzhalter")], [t("a.example.com,Mein Name"), t("mit eigenem Namen")]],
     parse(value) {
-      if (!FQDN.test(value)) throw new Error('kein gültiger FQDN')
+      if (!FQDN.test(value)) throw new Error(t('kein gültiger FQDN'))
       return { fqdn: value }
     },
     build: (p, name, fmt) => (fmt === 'rest' ? { name, description: '', fqdn: p.fqdn } : { Name: name, Description: '', FQDN: p.fqdn }),
   },
   mac: {
     label: 'MAC-Adressen',
-    placeholder: 'AA:BB:CC:DD:EE:FF\nAA:BB:CC:DD:EE:01,Drucker',
-    help: [['AA:BB:CC:DD:EE:FF', 'MAC-Adresse'], ['AA:BB:CC:DD:EE:FF,Drucker', 'mit eigenem Namen']],
+    placeholder: t("AA:BB:CC:DD:EE:FF\nAA:BB:CC:DD:EE:01,Drucker"),
+    help: [['AA:BB:CC:DD:EE:FF', 'MAC-Adresse'], ['AA:BB:CC:DD:EE:FF,Drucker', t("mit eigenem Namen")]],
     parse(value) {
-      if (!MAC.test(value)) throw new Error('keine gültige MAC-Adresse')
+      if (!MAC.test(value)) throw new Error(t('keine gültige MAC-Adresse'))
       return { mac: value.toUpperCase().replaceAll('-', ':') }
     },
     build: (p, name, fmt) => (fmt === 'rest' ? { name, description: '', type: 'macAddress', macAddress: p.mac }
       : { Name: name, Description: '', Type: 'MACAddress', MACAddress: p.mac }),
   },
   service: {
-    label: 'Dienste (TCP/UDP)',
-    placeholder: 'tcp/443\nudp/53,DNS-intern\ntcp/8000-8080,Web-Alt\ntcp+udp/3478,STUN',
-    help: [['tcp/443', 'TCP-Port'], ['udp/53', 'UDP-Port'], ['tcp/8000-8080', 'Portbereich'], ['tcp+udp/3478', 'beide Protokolle'], ['tcp/443,Mein Dienst', 'mit eigenem Namen']],
+    label: t("Dienste (TCP/UDP)"),
+    placeholder: t("tcp/443\nudp/53,DNS-intern\ntcp/8000-8080,Web-Alt\ntcp+udp/3478,STUN"),
+    help: [['tcp/443', 'TCP-Port'], ['udp/53', 'UDP-Port'], ['tcp/8000-8080', t("Portbereich")], ['tcp+udp/3478', t("beide Protokolle")], [t("tcp/443,Mein Dienst"), t("mit eigenem Namen")]],
     parse(value) {
       const m = /^(tcp|udp|tcp\+udp)\/(\d{1,5})(?:[-:](\d{1,5}))?$/i.exec(value)
       if (!m) throw new Error('Format: tcp/443, udp/53, tcp/8000-8080 oder tcp+udp/3478')
       const from = Number(m[2])
       const to = m[3] ? Number(m[3]) : from
-      if (from < 1 || to > 65535 || to < from) throw new Error('Port außerhalb von 1–65535')
+      if (from < 1 || to > 65535 || to < from) throw new Error(t('Port außerhalb von 1–65535'))
       return { protocols: m[1].toLowerCase().split('+'), from, to }
     },
     build(p, name, fmt, portsAsText) {

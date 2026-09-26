@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, crNo, fmt } from '../../api'
 import { DiffTable, Empty, ErrorBox, Field, useLoad } from '../../components/ui'
+import { t } from '../../i18n'
 
-const REASON = { initial: 'Erster Stand', sync: 'Änderung erkannt (außerhalb des Tools)', deploy: 'Ausgerollter Antrag' }
+const REASON = { initial: t("Erster Stand"), sync: t("Änderung erkannt (außerhalb des Tools)"), deploy: t("Ausgerollter Antrag") }
 
 function SummaryChips({ summary }) {
   const entries = Object.entries(summary || {})
@@ -11,7 +12,7 @@ function SummaryChips({ summary }) {
   return (
     <span className="chips">
       {entries.map(([e, s]) => (
-        <span key={e} className="chip small">{e}: {s.added ? `+${s.added} ` : ''}{s.removed ? `−${s.removed} ` : ''}{s.modified ? `~${s.modified}` : ''}{s.order_changed && !s.added && !s.removed && !s.modified ? 'Reihenfolge' : ''}</span>
+        <span key={e} className="chip small">{e}: {s.added ? `+${s.added} ` : ''}{s.removed ? `−${s.removed} ` : ''}{s.modified ? `~${s.modified}` : ''}{s.order_changed && !s.added && !s.removed && !s.modified ? t("Reihenfolge") : ''}</span>
       ))}
     </span>
   )
@@ -20,27 +21,27 @@ function SummaryChips({ summary }) {
 /** Vergleich wie im Config Studio: hinzugefügt / entfernt / geändert / unverändert. */
 function CompareResult({ result }) {
   const [open, setOpen] = useState({})
-  if (!result.entities.length) return <Empty>Keine Unterschiede.</Empty>
+  if (!result.entities.length) return <Empty>{t("Keine Unterschiede.")}</Empty>
   return (
     <div className="stack">
       <div className="row">
-        <span className="badge b-ok">{result.totals.added} hinzugefügt</span>
-        <span className="badge b-danger">{result.totals.removed} entfernt</span>
-        <span className="badge b-warn">{result.totals.modified} geändert</span>
+        <span className="badge b-ok">{result.totals.added} {t("hinzugefügt")}</span>
+        <span className="badge b-danger">{result.totals.removed} {t("entfernt")}</span>
+        <span className="badge b-warn">{result.totals.modified} {t("geändert")}</span>
       </div>
       {result.entities.map((e) => (
         <div className="panel" key={e.entity}>
           <div className="panel-head">
-            <h3>{e.label}</h3>
-            <span className="muted small">{e.unchanged} unverändert{e.order_changed ? ' · Reihenfolge geändert' : ''}</span>
+            <h3>{t(e.label)}</h3>
+            <span className="muted small">{e.unchanged} {t("unverändert")}{e.order_changed ? t(" · Reihenfolge geändert") : ''}</span>
           </div>
           <div className="panel-pad stack">
-            {e.added.map((n) => <div key={`a${n}`}><span className="badge b-ok">hinzugefügt</span> {n}</div>)}
-            {e.removed.map((n) => <div key={`r${n}`}><span className="badge b-danger">entfernt</span> {n}</div>)}
+            {e.added.map((n) => <div key={`a${n}`}><span className="badge b-ok">{t("hinzugefügt")}</span> {n}</div>)}
+            {e.removed.map((n) => <div key={`r${n}`}><span className="badge b-danger">{t("entfernt")}</span> {n}</div>)}
             {e.modified.map((m) => (
               <div key={`m${m.name}`}>
                 <button className="link" onClick={() => setOpen({ ...open, [e.entity + m.name]: !open[e.entity + m.name] })}>
-                  <span className="badge b-warn">geändert</span> {m.name} ({m.fields.length} Feld{m.fields.length === 1 ? '' : 'er'})
+                  <span className="badge b-warn">{t("geändert")}</span> {m.name} ({m.fields.length} {t("Feld")}{m.fields.length === 1 ? '' : 'er'})
                 </button>
                 {open[e.entity + m.name] && <div style={{ marginTop: 6 }}><DiffTable rows={m.fields} /></div>}
               </div>
@@ -76,32 +77,32 @@ export default function CompareTab({ fw }) {
     <div className="stack">
       <div className="panel panel-pad">
         <div className="form-grid" style={{ alignItems: 'end' }}>
-          <Field label="Stand A (älter)">
+          <Field label={t("Stand A (älter)")}>
             <select value={a} onChange={(e) => setA(e.target.value)}>
-              <option value="">– wählen –</option>
-              <option value="current">Aktueller Stand</option>
+              <option value="">{t("– wählen –")}</option>
+              <option value="current">{t("Aktueller Stand")}</option>
               {snaps.map((s) => <option key={s.id} value={s.id}>{label(s)}</option>)}
             </select>
           </Field>
-          <Field label="Stand B (neuer) oder andere Firewall">
+          <Field label={t("Stand B (neuer) oder andere Firewall")}>
             <select value={b} onChange={(e) => setB(e.target.value)}>
-              <option value="current">Aktueller Stand</option>
+              <option value="current">{t("Aktueller Stand")}</option>
               {snaps.map((s) => <option key={s.id} value={s.id}>{label(s)}</option>)}
-              <optgroup label="Aktueller Stand einer anderen Firewall">
+              <optgroup label={t("Aktueller Stand einer anderen Firewall")}>
                 {(others || []).filter((o) => o.id !== fw.id).map((o) => <option key={o.id} value={`fw:${o.id}`}>{o.name}</option>)}
               </optgroup>
             </select>
           </Field>
-          <div><button className="primary" disabled={!a} onClick={() => run()}>Vergleichen</button></div>
+          <div><button className="primary" disabled={!a} onClick={() => run()}>{t("Vergleichen")}</button></div>
         </div>
       </div>
       <ErrorBox error={cmpError} />
       {result && <CompareResult result={result} />}
       <div className="panel">
-        <div className="panel-head"><h3>Versionsstände</h3><span className="muted small">Ein neuer Stand entsteht, sobald sich die Konfiguration ändert</span></div>
-        {!snaps.length ? <Empty>Noch keine Versionsstände – bitte synchronisieren.</Empty> : (
+        <div className="panel-head"><h3>{t("Versionsstände")}</h3><span className="muted small">{t("Ein neuer Stand entsteht, sobald sich die Konfiguration ändert")}</span></div>
+        {!snaps.length ? <Empty>{t("Noch keine Versionsstände – bitte synchronisieren.")}</Empty> : (
           <div className="table-wrap"><table>
-            <thead><tr><th>Zeitpunkt</th><th>Anlass</th><th>Änderungen gegenüber Vorgänger</th><th>Hash</th><th /></tr></thead>
+            <thead><tr><th>{t("Zeitpunkt")}</th><th>{t("Anlass")}</th><th>{t("Änderungen gegenüber Vorgänger")}</th><th>{t("Hash")}</th><th /></tr></thead>
             <tbody>
               {snaps.map((s, i) => (
                 <tr key={s.id}>
@@ -110,7 +111,7 @@ export default function CompareTab({ fw }) {
                     {s.change_id && <> · <Link to={`/changes/${s.change_id}`}>{crNo(s.change_number)}</Link></>}</td>
                   <td><SummaryChips summary={s.summary} /></td>
                   <td className="mono small muted">{s.hash}</td>
-                  <td className="actions">{snaps[i + 1] && <button className="ghost sm" onClick={() => { setA(snaps[i + 1].id); setB(s.id); run(snaps[i + 1].id, s.id) }}>Details</button>}</td>
+                  <td className="actions">{snaps[i + 1] && <button className="ghost sm" onClick={() => { setA(snaps[i + 1].id); setB(s.id); run(snaps[i + 1].id, s.id) }}>{t("Details")}</button>}</td>
                 </tr>
               ))}
             </tbody>

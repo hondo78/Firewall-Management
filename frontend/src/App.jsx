@@ -16,6 +16,8 @@ import Sso from './pages/admin/Sso'
 import Roles from './pages/admin/Roles'
 import SettingsPage from './pages/admin/Settings'
 import Users from './pages/admin/Users'
+import { t } from './i18n'
+import LanguageSwitch from './components/LanguageSwitch'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
@@ -65,35 +67,38 @@ function Layout({ children }) {
       <aside className={`sidebar ${open ? 'open' : ''} ${rail ? 'rail' : ''}`}>
         <div className="brand">
           <span className="brand-mark"><Icon d="M5 8h14M5 12h14M5 16h9" /></span>
-          <span>Firewall-Management<small>Sophos Firewall</small></span>
+          <span>{t("Firewall-Management")}<small>{t("Sophos Firewall")}</small></span>
         </div>
-        <button className="menu-toggle sm" onClick={() => setOpen(!open)} aria-label="Menü">☰</button>
-        {inEditor && <button className="rail-toggle" onClick={togglePin} title={rail ? 'Navigation ausklappen' : 'Navigation einklappen'}
-          aria-label={rail ? 'Navigation ausklappen' : 'Navigation einklappen'}><Icon d={rail ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'} /></button>}
+        <button className="menu-toggle sm" onClick={() => setOpen(!open)} aria-label={t("Menü")}>☰</button>
+        {inEditor && <button className="rail-toggle" onClick={togglePin} title={rail ? t("Navigation ausklappen") : t("Navigation einklappen")}
+          aria-label={rail ? t("Navigation ausklappen") : t("Navigation einklappen")}><Icon d={rail ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'} /></button>}
         <nav>
-          {link('/', 'home', 'Übersicht')}
-          {link('/firewalls', 'fw', 'Firewalls')}
-          {link('/changes', 'changes', 'Änderungsanträge',
-            counts.to_approve > 0 && <span className="count" title="Warten auf Ihre Genehmigung">{counts.to_approve}</span>)}
-          {canAnywhere(me, 'audit.view') && link('/audit', 'audit', 'Audit-Log')}
+          {link('/', 'home', t("Übersicht"))}
+          {link('/firewalls', 'fw', t("Firewalls"))}
+          {link('/changes', 'changes', t("Änderungsanträge"),
+            counts.to_approve > 0 && <span className="count" title={t("Warten auf Ihre Genehmigung")}>{counts.to_approve}</span>)}
+          {canAnywhere(me, 'audit.view') && link('/audit', 'audit', t("Audit-Log"))}
           {isAdmin && <>
-            <div className="nav-section">Administration</div>
-            {link('/admin/users', 'users', 'Benutzer')}
-            {link('/admin/roles', 'roles', 'Rollen & Rechte')}
-            {me.is_superadmin && link('/admin/central', 'cloud', 'Sophos Central')}
-            {link('/admin/notifications', 'bell', 'Benachrichtigungen')}
-            {link('/admin/sso', 'roles', 'Anmeldung & SSO')}
-            {link('/admin/settings', 'settings', 'Einstellungen')}
+            <div className="nav-section">{t("Administration")}</div>
+            {link('/admin/users', 'users', t("Benutzer"))}
+            {link('/admin/roles', 'roles', t("Rollen & Rechte"))}
+            {me.is_superadmin && link('/admin/central', 'cloud', t("Sophos Central"))}
+            {link('/admin/notifications', 'bell', t("Benachrichtigungen"))}
+            {link('/admin/sso', 'roles', t("Anmeldung & SSO"))}
+            {link('/admin/settings', 'settings', t("Einstellungen"))}
           </>}
         </nav>
         <div className="me">
           <NavLink to="/profile">{me.display_name || me.username}</NavLink>
-          <small>{me.is_superadmin ? 'Superadmin' : me.assignments.map((a) => a.role).filter((v, i, s) => s.indexOf(v) === i).join(', ') || 'keine Rolle'}</small>
-          <button className="link" onClick={logout}>Abmelden</button>
+          <small>{me.is_superadmin ? t("Superadmin") : me.assignments.map((a) => a.role).filter((v, i, s) => s.indexOf(v) === i).join(', ') || t("keine Rolle")}</small>
+          <div className="row between" style={{ gap: 8 }}>
+            <button className="link" onClick={logout}>{t("Abmelden")}</button>
+            <LanguageSwitch compact />
+          </div>
         </div>
       </aside>
       <main className={`content ${rail ? 'with-rail' : ''}`}>
-        {me.mfa_setup_required && <div className="alert warn">Für Ihre Rolle ist die Zwei-Faktor-Anmeldung Pflicht. Bitte im Profil einrichten – bis dahin sind andere Bereiche gesperrt.</div>}
+        {me.mfa_setup_required && <div className="alert warn">{t("Für Ihre Rolle ist die Zwei-Faktor-Anmeldung Pflicht. Bitte im Profil einrichten – bis dahin sind andere Bereiche gesperrt.")}</div>}
         <ErrorBoundary key={loc.pathname}>{children}</ErrorBoundary>
       </main>
     </div>
