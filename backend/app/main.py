@@ -3,7 +3,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from sqlalchemy import select, text
 
 from . import config, crypto, migrations, permissions, worker
@@ -12,6 +12,7 @@ from .db import Base, SessionLocal, engine
 from .models import Role, User
 from .routers import admin, audit_log, auth, central, changes, firewalls, notifications, templates, backups
 from .security import hash_password
+from .i18n import tr
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("fwm")
@@ -26,7 +27,7 @@ def _wait_for_db(retries: int = 30) -> None:
         except Exception:
             log.info("Warte auf Datenbank … (%s/%s)", i + 1, retries)
             time.sleep(2)
-    raise RuntimeError("Datenbank nicht erreichbar")
+    raise RuntimeError(tr('Datenbank nicht erreichbar'))
 
 
 def bootstrap() -> None:
@@ -39,7 +40,7 @@ def bootstrap() -> None:
         if db.execute(select(User.id).limit(1)).first():
             return
         if not config.ADMIN_PASSWORD:
-            raise RuntimeError("Keine Benutzer vorhanden und ADMIN_PASSWORD nicht gesetzt")
+            raise RuntimeError(tr('Keine Benutzer vorhanden und ADMIN_PASSWORD nicht gesetzt'))
         admin_user = User(username=config.ADMIN_USERNAME.lower(), display_name="Administrator", is_superadmin=True,
                           password_hash=hash_password(config.ADMIN_PASSWORD))
         db.add(admin_user)
@@ -64,6 +65,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Firewall-Management (Sophos)", lifespan=lifespan, docs_url="/api/docs",
               openapi_url="/api/openapi.json")
+
+@app.middleware("http")
+async def language_middleware(request: Request, call_next):
+    # Sprache der Anfrage (Accept-Language vom Frontend) → Meldungen in tr(…) passend übersetzen
+    from . import i18n
+    token = i18n.set_current(i18n.from_header(request.headers.get("accept-language")))
+    try:
+        return await call_next(request)
+    finally:
+        i18n._current.reset(token)
+
 
 for r in (auth, admin, central, firewalls, changes, audit_log, notifications, templates, backups):
     app.include_router(r.router)

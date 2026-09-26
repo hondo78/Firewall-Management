@@ -13,6 +13,7 @@ import httpx
 
 from .. import config
 from . import xmlconv
+from ..i18n import tr
 
 
 class XmlApiError(Exception):
@@ -22,7 +23,7 @@ class XmlApiError(Exception):
 def normalize_base_url(url: str) -> str:
     url = (url or "").strip().rstrip("/")
     if not url:
-        raise XmlApiError("Keine API-Adresse hinterlegt")
+        raise XmlApiError(tr('Keine API-Adresse hinterlegt'))
     if "://" not in url:
         url = "https://" + url
     parsed = urlparse(url)
@@ -49,13 +50,13 @@ class XmlApiClient:
             with httpx.Client(verify=self.verify_tls, timeout=config.HTTP_TIMEOUT_SECONDS) as client:
                 r = client.post(f"{self.base_url}/webconsole/APIController", data={"reqxml": reqxml})
         except httpx.HTTPError as e:
-            raise XmlApiError(f"Firewall nicht erreichbar: {e}") from e
+            raise XmlApiError(tr('Firewall nicht erreichbar: {0}', e)) from e
         if r.status_code != 200:
-            raise XmlApiError(f"HTTP {r.status_code} von der Firewall")
+            raise XmlApiError(tr('HTTP {0} von der Firewall', r.status_code))
         try:
             root = ET.fromstring(r.content)
         except ET.ParseError as e:
-            raise XmlApiError(f"Ungültige XML-Antwort: {e}") from e
+            raise XmlApiError(tr('Ungültige XML-Antwort: {0}', e)) from e
         self.api_version = root.get("APIVersion", self.api_version)
         # Fehler auf Anfrage-Ebene, z. B. 534 „Api operations are not allowed from the requester IP address“
         top = root.find("Status")
@@ -63,7 +64,7 @@ class XmlApiClient:
             raise XmlApiError(f"{top.get('code')}: {(top.text or '').strip()}")
         login = root.findtext("Login/status") or ""
         if login and "success" not in login.lower():
-            raise XmlApiError(f"Anmeldung an der Firewall fehlgeschlagen: {login}")
+            raise XmlApiError(tr('Anmeldung an der Firewall fehlgeschlagen: {0}', login))
         return root
 
     def test(self) -> str:
@@ -86,7 +87,7 @@ class XmlApiClient:
         el = root.find(entity)
         status = el.find("Status") if el is not None else None
         if status is None:
-            raise XmlApiError(f"Keine Statusmeldung für {entity} in der Antwort")
+            raise XmlApiError(tr('Keine Statusmeldung für {0} in der Antwort', entity))
         code, text = status.get("code", ""), (status.text or "").strip()
         if code != "200":
             raise XmlApiError(f"{code}: {text}")

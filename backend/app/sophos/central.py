@@ -18,6 +18,7 @@ import time
 import httpx
 
 from .. import config
+from ..i18n import tr
 
 
 class CentralError(Exception):
@@ -56,9 +57,9 @@ class CentralClient:
                 "client_secret": self.client_secret, "scope": "token",
             })
         except httpx.HTTPError as e:
-            raise CentralError(f"Sophos ID nicht erreichbar: {e}") from e
+            raise CentralError(tr('Sophos ID nicht erreichbar: {0}', e)) from e
         if r.status_code != 200:
-            raise CentralError(f"Anmeldung an Sophos Central fehlgeschlagen (HTTP {r.status_code}): {_msg(r)}")
+            raise CentralError(tr('Anmeldung an Sophos Central fehlgeschlagen (HTTP {0}): {1}', r.status_code, _msg(r)))
         body = r.json()
         self._token = body["access_token"]
         self._token_exp = time.time() + int(body.get("expires_in", 3600))
@@ -68,7 +69,7 @@ class CentralClient:
         h = {"Authorization": f"Bearer {self.token()}", "Accept": "application/json"}
         if tenant:
             if not self.tenant_id:
-                raise CentralError("Kein Tenant ausgewählt")
+                raise CentralError(tr('Kein Tenant ausgewählt'))
             h["X-Tenant-ID"] = self.tenant_id
         return h
 
@@ -101,7 +102,7 @@ class CentralClient:
         try:
             r = self._http.request(method, url, headers=h, timeout=config.HTTP_TIMEOUT_SECONDS, **kw)
         except httpx.HTTPError as e:
-            raise CentralError(f"Sophos Central nicht erreichbar: {e}") from e
+            raise CentralError(tr('Sophos Central nicht erreichbar: {0}', e)) from e
         if r.status_code >= 400:
             short = url.replace(self.data_region, "").replace(self.api_url, "")
             raise CentralError(f"{method} {short} → HTTP {r.status_code}: {_msg(r)}", status=r.status_code)
@@ -120,7 +121,7 @@ class CentralClient:
 
     def _fw(self, method: str, path: str, **kw):
         if not self.data_region:
-            raise CentralError("Daten-Region unbekannt – Central-Konto erneut prüfen")
+            raise CentralError(tr('Daten-Region unbekannt – Central-Konto erneut prüfen'))
         return self._call(method, f"{self.data_region}/firewall/v1{path}", **kw)
 
     def _cfg(self, method: str, path: str, **kw):
@@ -196,7 +197,7 @@ class CentralClient:
     def firewall_alerts(self, limit: int = 200) -> list[dict]:
         """GET <dataRegion>/common/v1/alerts?product=firewall – offene Alerts (neueste zuerst)."""
         if not self.data_region:
-            raise CentralError("Daten-Region unbekannt – Central-Konto erneut prüfen")
+            raise CentralError(tr('Daten-Region unbekannt – Central-Konto erneut prüfen'))
         body = self._call("GET", f"{self.data_region}/common/v1/alerts",
                           params={"product": "firewall", "sort": "raisedAt:desc", "pageSize": min(limit, 1000)})
         return body.get("items", [])
@@ -215,7 +216,7 @@ class CentralClient:
             if tx.get("status") == "finished":
                 return tx
             if time.time() > deadline:
-                raise CentralError(f"Zeitüberschreitung beim Warten auf Transaktion {transaction_id}")
+                raise CentralError(tr('Zeitüberschreitung beim Warten auf Transaktion {0}', transaction_id))
             time.sleep(config.CENTRAL_POLL_SECONDS)
 
     def export_config(self, firewall_id: str, entities: list[str] | None, log=None) -> bytes:
@@ -224,34 +225,34 @@ class CentralClient:
         ref = self._cfg("POST", f"/firewalls/{firewall_id}/export", json=body)
         tx = self.wait_transaction(ref["transactionId"], log)
         if tx.get("result") != "success":
-            raise CentralError(f"Export fehlgeschlagen: {tx.get('result')}")
+            raise CentralError(tr('Export fehlgeschlagen: {0}', tx.get('result')))
         url = (tx.get("response") or {}).get("url")
         if not url:
-            raise CentralError("Export ohne Download-URL")
+            raise CentralError(tr('Export ohne Download-URL'))
         try:
             # Pre-signed URL: keine Central-Header mitsenden (S3 prüft die Signatur)
             r = self._http.get(url, timeout=config.HTTP_TIMEOUT_SECONDS * 4)
         except httpx.HTTPError as e:
-            raise CentralError(f"Download des Exports fehlgeschlagen: {e}") from e
+            raise CentralError(tr('Download des Exports fehlgeschlagen: {0}', e)) from e
         if r.status_code != 200:
-            raise CentralError(f"Download des Exports fehlgeschlagen: HTTP {r.status_code}")
+            raise CentralError(tr('Download des Exports fehlgeschlagen: HTTP {0}', r.status_code))
         return r.content
 
     def import_config(self, firewall_ids: list[str], archive: bytes, log=None) -> dict:
         if not 1 <= len(firewall_ids) <= 25:
-            raise CentralError("Import: 1 bis 25 Firewalls pro Vorgang")
+            raise CentralError(tr('Import: 1 bis 25 Firewalls pro Vorgang'))
         init = self._cfg("POST", "/firewalls/import")
         tx_id, url = init["transactionId"], init["url"]
         if log:
-            log(f"Import-Transaktion {tx_id} angelegt, lade Archiv hoch ({len(archive)} Byte)")
+            log(tr('Import-Transaktion {0} angelegt, lade Archiv hoch ({1} Byte)', tx_id, len(archive)))
         try:
             # S3-PUT ohne eigenen Content-Type – ein nicht mitsignierter Header ließe die Signatur scheitern
             r = self._http.request(init.get("method", "PUT"), url, content=archive,
                                    timeout=config.HTTP_TIMEOUT_SECONDS * 4)
         except httpx.HTTPError as e:
-            raise CentralError(f"Upload des Archivs fehlgeschlagen: {e}") from e
+            raise CentralError(tr('Upload des Archivs fehlgeschlagen: {0}', e)) from e
         if r.status_code >= 300:
-            raise CentralError(f"Upload des Archivs fehlgeschlagen: HTTP {r.status_code} {r.text[:200]}")
+            raise CentralError(tr('Upload des Archivs fehlgeschlagen: HTTP {0} {1}', r.status_code, r.text[:200]))
         self._cfg("POST", f"/firewalls/import/{tx_id}/upload-complete", json={
             "firewallIds": firewall_ids,
             "checksumMd5": hashlib.md5(archive).hexdigest(),

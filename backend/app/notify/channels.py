@@ -7,6 +7,7 @@ from email.message import EmailMessage
 import httpx
 
 from . import config as ncfg
+from ..i18n import tr
 
 log = logging.getLogger("fwm.notify")
 
@@ -43,7 +44,7 @@ def send_teams(cfg: dict, title: str, lines: list[str], url: str = "") -> None:
         "type": "AdaptiveCard", "$schema": "http://adaptivecards.io/schemas/adaptive-card.json", "version": "1.4",
         "body": [{"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True}]
         + [{"type": "TextBlock", "text": line, "wrap": True, "spacing": "Small"} for line in lines],
-        "actions": [{"type": "Action.OpenUrl", "title": "Im Browser öffnen", "url": url}] if url else [],
+        "actions": [{"type": "Action.OpenUrl", "title": tr('Im Browser öffnen'), "url": url}] if url else [],
     }
     payload = {"type": "message", "attachments": [
         {"contentType": "application/vnd.microsoft.card.adaptive", "content": card}]}
@@ -69,7 +70,7 @@ def slack_payload(title: str, lines: list[str], url: str = "", mention: str = ""
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": body[:2900]}})
     if url:
         blocks.append({"type": "actions", "elements": [
-            {"type": "button", "text": {"type": "plain_text", "text": "Im Browser öffnen"}, "url": url, "style": "primary"}]})
+            {"type": "button", "text": {"type": "plain_text", "text": tr('Im Browser öffnen')}, "url": url, "style": "primary"}]})
     # „text“ ist der Fallback für Benachrichtigungen auf dem Telefon/Sperrbildschirm
     fallback = (f"<!{mention}> " if mention in ("here", "channel") else "") + _slack_escape(title)
     return {"text": fallback, "blocks": blocks, "unfurl_links": False}

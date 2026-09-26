@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 
 from .sophos import entities
+from .i18n import tr
 
 SEVERITY_ORDER = {"high": 0, "medium": 1, "info": 2}
 ALL_TIME = {None, "", "All The Time"}
@@ -121,28 +122,26 @@ def check_rule(r: Rule, earlier: list[Rule], wan: set[str]) -> list[dict]:
         return out
     if r.action == "accept":
         if r.src_nets is None and r.dst_nets is None and r.services is None:
-            zones = "" if r.src_zones is None and r.dst_zones is None else " (nur Zonen eingeschränkt)"
+            zones = "" if r.src_zones is None and r.dst_zones is None else tr(' (nur Zonen eingeschränkt)')
             out.append(_f("high", "any_any", r.entity, r.name,
-                          f"Erlaubt beliebige Quelle → beliebiges Ziel mit beliebigen Diensten{zones}"))
+                          tr('Erlaubt beliebige Quelle → beliebiges Ziel mit beliebigen Diensten{0}', zones)))
         from_wan = r.src_zones is None or bool(r.src_zones & wan)
         if from_wan and r.src_zones is not None and (r.dst_nets is None or r.services is None):
             out.append(_f("high", "wan_open", r.entity, r.name,
-                          "Zugriff aus dem Internet (WAN) auf "
+                          tr('Zugriff aus dem Internet (WAN) auf ')
                           + ("beliebige Ziele" if r.dst_nets is None else "beliebige Dienste")))
         if from_wan and r.src_zones is not None and not r.log:
             out.append(_f("medium", "no_log_wan", r.entity, r.name,
-                          "Freigabe aus dem Internet ohne Protokollierung"))
+                          tr('Freigabe aus dem Internet ohne Protokollierung')))
     for p in earlier:
         if p.entity != r.entity or not p.enabled or p.kind == "waf" or not covers(p, r):
             continue
         if p.action == r.action:
             out.append(_f("medium", "shadowed", r.entity, r.name,
-                          f"Wird nie getroffen: Regel „{p.name}“ (Position {p.index + 1}) deckt sie bereits ab "
-                          "(gleiche Aktion – redundant)"))
+                          tr('Wird nie getroffen: Regel „{0}“ (Position {1}) deckt sie bereits ab (gleiche Aktion – redundant)', p.name, p.index + 1)))
         else:
             out.append(_f("high", "shadowed", r.entity, r.name,
-                          f"Wird nie getroffen: Regel „{p.name}“ (Position {p.index + 1}) deckt sie ab und "
-                          f"{'verwirft' if p.action != 'accept' else 'erlaubt'} den Verkehr vorher"))
+                          tr('Wird nie getroffen: Regel „{0}“ (Position {1}) deckt sie ab und {2} den Verkehr vorher', p.name, p.index + 1, 'verwirft' if p.action != 'accept' else 'erlaubt')))
         break
     return out
 
@@ -186,7 +185,7 @@ def analyze(config: dict) -> list[dict]:
     for r in rules:
         findings += check_rule(r, [p for p in rules if p.index < r.index], wan)
         if not r.enabled:
-            findings.append(_f("info", "disabled", r.entity, r.name, "Deaktiviert – löschen, falls nicht mehr benötigt"))
+            findings.append(_f("info", "disabled", r.entity, r.name, tr('Deaktiviert – löschen, falls nicht mehr benötigt')))
     used = _referenced_names(config)
     for entity in _OBJECT_ENTITIES:
         seen: dict[str, str] = {}
@@ -195,12 +194,12 @@ def analyze(config: dict) -> list[dict]:
             if o.get("isInternal"):
                 continue
             if name not in used:
-                findings.append(_f("info", "unused", entity, name, "Wird von keiner Regel, Gruppe oder NAT-Regel verwendet"))
+                findings.append(_f("info", "unused", entity, name, tr('Wird von keiner Regel, Gruppe oder NAT-Regel verwendet')))
             key = _address_key(entity, o)
             if key and key.strip("|"):
                 if key in seen:
                     findings.append(_f("info", "duplicate_address", entity, name,
-                                       f"Gleiche Adresse wie „{seen[key]}“"))
+                                       tr('Gleiche Adresse wie „{0}“', seen[key])))
                 else:
                     seen[key] = name
     return sorted(findings, key=lambda f: (SEVERITY_ORDER[f["severity"]], f["label"], f["name"]))

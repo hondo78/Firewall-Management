@@ -15,6 +15,7 @@ from fastapi import HTTPException
 
 from . import diff
 from .sophos import entities, xmlconv
+from .i18n import tr
 
 MAX_BYTES = 20 * 1024 * 1024
 _sessions: dict[str, dict] = {}
@@ -33,20 +34,20 @@ class Skip(Exception):
 
 def parse_upload(data: bytes) -> tuple[dict[str, list[dict]], str]:
     if len(data) > MAX_BYTES:
-        raise HTTPException(413, "Datei zu groß (max. 20 MB)")
+        raise HTTPException(413, tr('Datei zu groß (max. 20 MB)'))
     import io
     import tarfile
     if tarfile.is_tarfile(io.BytesIO(data)):
         try:
             data = xmlconv.read_tar_entities(data)
         except (ValueError, tarfile.TarError):
-            raise HTTPException(400, "Das Archiv enthält keine Entities.xml")
+            raise HTTPException(400, tr('Das Archiv enthält keine Entities.xml'))
     elif b"<Configuration" not in data[:4000]:
-        raise HTTPException(400, "Keine Entities.xml bzw. kein Export-Archiv (.tar) erkannt")
+        raise HTTPException(400, tr('Keine Entities.xml bzw. kein Export-Archiv (.tar) erkannt'))
     try:
         return xmlconv.parse_entities_xml(data)
     except ET.ParseError as e:
-        raise HTTPException(400, f"XML ungültig: {e}")
+        raise HTTPException(400, tr('XML ungültig: {0}', e))
 
 
 def _list(v) -> list:
@@ -67,14 +68,14 @@ def to_rest(entity: str, o: dict, lookup: dict[str, str]) -> tuple[str, dict]:
     """lookup: Objektname → REST-Entität (für die Zuordnung von Netzen/Diensten in Regeln)."""
     target = REST_TARGET.get(entity)
     if not target:
-        raise Skip("Objekttyp wird für die REST-API noch nicht umgewandelt")
+        raise Skip(tr('Objekttyp wird für die REST-API noch nicht umgewandelt'))
     name = o["Name"]
     if name.startswith("#") or "," in name:
-        raise Skip("Systemobjekt bzw. Name in der REST-API nicht erlaubt")
+        raise Skip(tr('Systemobjekt bzw. Name in der REST-API nicht erlaubt'))
     base = {"name": name, "description": _desc(o)}
     if entity == "IPHost":
         if (o.get("IPFamily") or "IPv4") != "IPv4":
-            raise Skip("IPv6-Hosts werden noch nicht umgewandelt")
+            raise Skip(tr('IPv6-Hosts werden noch nicht umgewandelt'))
         kind = o.get("HostType")
         if kind == "IP":
             return target, {**base, "type": "ipv4Address", "ipv4Address": o["IPAddress"]}
@@ -87,7 +88,7 @@ def to_rest(entity: str, o: dict, lookup: dict[str, str]) -> tuple[str, dict]:
         if kind == "IPList":
             ips = [x.strip() for x in (o.get("ListOfIPAddresses") or "").split(",") if x.strip()]
             return target, {**base, "type": "ipv4List", "ipv4Addresses": ips}
-        raise Skip(f"Host-Typ „{kind}“ ist ein Systemobjekt")
+        raise Skip(tr('Host-Typ „{0}“ ist ein Systemobjekt', kind))
     if entity == "IPHostGroup":
         return target, {**base, "ipv4Addresses": _refs((o.get("HostList") or {}).get("Host"))}
     if entity == "FQDNHost":
@@ -96,11 +97,11 @@ def to_rest(entity: str, o: dict, lookup: dict[str, str]) -> tuple[str, dict]:
         return target, {**base, "fqdns": _refs((o.get("FQDNHostList") or {}).get("FQDNHost"))}
     if entity == "MACHost":
         if o.get("Type") != "MACAddress":
-            raise Skip("MAC-Listen werden noch nicht umgewandelt")
+            raise Skip(tr('MAC-Listen werden noch nicht umgewandelt'))
         return target, {**base, "type": "macAddress", "macAddress": o.get("MACAddress", "")}
     if entity == "Services":
         if o.get("Type") != "TCPorUDP":
-            raise Skip(f"Diensttyp „{o.get('Type')}“ wird noch nicht umgewandelt")
+            raise Skip(tr('Diensttyp „{0}“ wird noch nicht umgewandelt', o.get('Type')))
         details = _list((o.get("ServiceDetails") or {}).get("ServiceDetail"))
         # Ports als Text – so liefert es die echte Firewall
         return target, {**base, "type": "tcpOrUdp", "services": [
@@ -110,9 +111,9 @@ def to_rest(entity: str, o: dict, lookup: dict[str, str]) -> tuple[str, dict]:
         return target, {**base, "services": _refs((o.get("ServiceList") or {}).get("Service"))}
     # FirewallRule
     if o.get("PolicyType") != "Network":
-        raise Skip(f"Regeltyp „{o.get('PolicyType')}“ (Benutzer/WAF) wird noch nicht umgewandelt")
+        raise Skip(tr('Regeltyp „{0}“ (Benutzer/WAF) wird noch nicht umgewandelt', o.get('PolicyType')))
     if (o.get("IPFamily") or "IPv4") != "IPv4":
-        raise Skip("IPv6-Regeln werden noch nicht umgewandelt")
+        raise Skip(tr('IPv6-Regeln werden noch nicht umgewandelt'))
     pol = o.get("NetworkPolicy") or {}
 
     def zones(key):
@@ -187,14 +188,14 @@ def review(config: dict[str, list[dict]], fmt: str, parsed: dict[str, list[dict]
                     entity, data = to_rest(xml_entity, o, lookup)
                 else:
                     if xml_entity not in entities.NAMES:
-                        raise Skip("Objekttyp wird von diesem Tool nicht verwaltet")
+                        raise Skip(tr('Objekttyp wird von diesem Tool nicht verwaltet'))
                     entity, data = xml_entity, o
             except Skip as e:
                 items.append({**item, "entity": None, "label": xml_entity, "status": "unsupported", "reason": str(e)})
                 continue
             except (KeyError, ValueError) as e:
                 items.append({**item, "entity": None, "label": xml_entity, "status": "unsupported",
-                              "reason": f"Unvollständig: {e}"})
+                              "reason": tr('Unvollständig: {0}', e)})
                 continue
             current = index.get(entity, {}).get(data.get("name") or data.get("Name"))
             if current is None:
@@ -219,7 +220,7 @@ def store(user_id: str, firewall_id: str, items: list[dict]) -> str:
 def load(token: str, user_id: str, firewall_id: str) -> list[dict]:
     s = _sessions.get(token)
     if not s or s["user"] != user_id or s["firewall"] != firewall_id or s["created"] < time.time() - 1800:
-        raise HTTPException(410, "Import abgelaufen – bitte die Datei erneut hochladen")
+        raise HTTPException(410, tr('Import abgelaufen – bitte die Datei erneut hochladen'))
     return s["items"]
 
 

@@ -16,6 +16,7 @@ from ..permissions import require_global
 from ..security import (client_ip, create_purpose_token, create_token, get_current_user, hash_password,
                         mfa_satisfied, read_purpose_token, verify_password)
 from ..serializers import user_out
+from ..i18n import tr
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 admin_only = require_global("admin")
@@ -58,7 +59,7 @@ def me_out(db: DbSession, user: User, claims: dict | None = None) -> dict:
 def _locked(name: str) -> None:
     _count, locked_until = _failures.get(name, (0, None))
     if locked_until and locked_until > utcnow():
-        raise HTTPException(429, "Zu viele Fehlversuche – bitte später erneut versuchen")
+        raise HTTPException(429, tr('Zu viele Fehlversuche – bitte später erneut versuchen'))
 
 
 def _fail(db: DbSession, name: str, ip: str, reason: str) -> None:
@@ -86,7 +87,7 @@ def login(body: LoginIn, request: Request, db: DbSession = Depends(get_db)):
     if (not user or not user.active or user.auth_source != "local"
             or not verify_password(body.password, user.password_hash)):
         _fail(db, name, ip, "password")
-        raise HTTPException(401, "Benutzername oder Passwort falsch")
+        raise HTTPException(401, tr('Benutzername oder Passwort falsch'))
     if user.totp_enabled:
         # Passwort stimmt – zweiter Schritt: Code aus der Authenticator-App
         return {"mfa_required": True, "mfa_token": create_purpose_token(user, "login_totp")}
@@ -98,11 +99,11 @@ def login_totp(body: TotpLoginIn, request: Request, db: DbSession = Depends(get_
     ip = client_ip(request)
     user = db.get(User, read_purpose_token(body.mfa_token, "login_totp"))
     if not user or not user.active:
-        raise HTTPException(401, "Benutzer unbekannt oder deaktiviert")
+        raise HTTPException(401, tr('Benutzer unbekannt oder deaktiviert'))
     _locked(user.username)
     if not mfa.check_user_code(user, body.code):
         _fail(db, user.username, ip, "totp")
-        raise HTTPException(401, "Code falsch oder abgelaufen")
+        raise HTTPException(401, tr('Code falsch oder abgelaufen'))
     return _success(db, user, ip, mfa_ok=True, source="local")
 
 
@@ -115,9 +116,9 @@ def me(request: Request, user: User = Depends(get_current_user), db: DbSession =
 def change_password(body: PasswordChangeIn, request: Request, user: User = Depends(get_current_user),
                     db: DbSession = Depends(get_db)):
     if user.auth_source != "local":
-        raise HTTPException(400, "SSO-Benutzer ändern ihr Passwort beim Identity Provider")
+        raise HTTPException(400, tr('SSO-Benutzer ändern ihr Passwort beim Identity Provider'))
     if not verify_password(body.current_password, user.password_hash):
-        raise HTTPException(400, "Aktuelles Passwort ist falsch")
+        raise HTTPException(400, tr('Aktuelles Passwort ist falsch'))
     user.password_hash = hash_password(body.new_password)
     audit(db, "auth.password_changed", actor=user, target_type="user", target_id=user.id, ip=client_ip(request))
     return {"ok": True}
@@ -129,14 +130,14 @@ def reauth(body: ReauthIn, request: Request, user: User = Depends(get_current_us
     """Erneute Anmeldung (vor dem Genehmigen) – liefert ein neues Token mit aktueller Anmeldezeit."""
     ip = client_ip(request)
     if user.auth_source != "local":
-        raise HTTPException(400, "Bitte über SSO neu anmelden")
+        raise HTTPException(400, tr('Bitte über SSO neu anmelden'))
     _locked(user.username)
     if not verify_password(body.password, user.password_hash):
         _fail(db, user.username, ip, "reauth_password")
-        raise HTTPException(400, "Passwort falsch")
+        raise HTTPException(400, tr('Passwort falsch'))
     if user.totp_enabled and not mfa.check_user_code(user, body.code):
         _fail(db, user.username, ip, "reauth_totp")
-        raise HTTPException(400, "Code falsch oder abgelaufen")
+        raise HTTPException(400, tr('Code falsch oder abgelaufen'))
     audit(db, "auth.reauth", actor=user, ip=ip)
     return {"token": create_token(user, mfa=user.totp_enabled, source="local")}
 
@@ -147,7 +148,7 @@ def reauth(body: ReauthIn, request: Request, user: User = Depends(get_current_us
 def totp_setup(user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
     """Neues Geheimnis erzeugen (noch nicht aktiv) – QR-Code für die Authenticator-App."""
     if user.auth_source != "local":
-        raise HTTPException(400, "SSO-Benutzer nutzen den zweiten Faktor ihres Identity Providers")
+        raise HTTPException(400, tr('SSO-Benutzer nutzen den zweiten Faktor ihres Identity Providers'))
     secret = mfa.new_secret()
     user.totp_pending_enc = crypto.encrypt(secret, f"totp-pending:{user.id}")
     db.commit()
@@ -159,10 +160,10 @@ def totp_setup(user: User = Depends(get_current_user), db: DbSession = Depends(g
 def totp_enable(body: CodeIn, request: Request, user: User = Depends(get_current_user),
                 db: DbSession = Depends(get_db)):
     if not user.totp_pending_enc:
-        raise HTTPException(400, "Bitte zuerst die Einrichtung starten")
+        raise HTTPException(400, tr('Bitte zuerst die Einrichtung starten'))
     secret = crypto.decrypt(user.totp_pending_enc, f"totp-pending:{user.id}")
     if not mfa.verify(secret, body.code):
-        raise HTTPException(400, "Code falsch – Uhrzeit des Telefons prüfen und erneut versuchen")
+        raise HTTPException(400, tr('Code falsch – Uhrzeit des Telefons prüfen und erneut versuchen'))
     user.totp_secret_enc = crypto.encrypt(secret, f"totp:{user.id}")
     user.totp_pending_enc = ""
     user.totp_enabled = True
@@ -174,9 +175,9 @@ def totp_enable(body: CodeIn, request: Request, user: User = Depends(get_current
 def totp_disable(body: ReauthIn, request: Request, user: User = Depends(get_current_user),
                  db: DbSession = Depends(get_db)):
     if mfa.required(db, user):
-        raise HTTPException(409, "Zwei-Faktor ist für Ihre Rolle verpflichtend")
+        raise HTTPException(409, tr('Zwei-Faktor ist für Ihre Rolle verpflichtend'))
     if not verify_password(body.password, user.password_hash) or not mfa.check_user_code(user, body.code):
-        raise HTTPException(400, "Passwort oder Code falsch")
+        raise HTTPException(400, tr('Passwort oder Code falsch'))
     user.totp_enabled, user.totp_secret_enc = False, ""
     audit(db, "auth.totp_disabled", actor=user, target_type="user", target_id=user.id, ip=client_ip(request))
     return {"ok": True}
@@ -187,7 +188,7 @@ def totp_reset(user_id: str, request: Request, actor: User = Depends(admin_only)
     """Admin: zweiten Faktor zurücksetzen (z. B. Telefon verloren) – der Benutzer richtet ihn neu ein."""
     u = db.get(User, user_id)
     if not u:
-        raise HTTPException(404, "Benutzer nicht gefunden")
+        raise HTTPException(404, tr('Benutzer nicht gefunden'))
     u.totp_enabled, u.totp_secret_enc, u.totp_pending_enc = False, "", ""
     audit(db, "auth.totp_reset", actor=actor, target_type="user", target_id=u.id, ip=client_ip(request),
           details={"username": u.username})
@@ -199,7 +200,7 @@ def totp_reset(user_id: str, request: Request, actor: User = Depends(admin_only)
 def _redirect_uri(db: DbSession) -> tuple[str, str]:
     base = ncfg.load(db)["public_url"]
     if not base:
-        raise HTTPException(400, "Für SSO bitte unter Administration › Benachrichtigungen die Adresse der Oberfläche eintragen")
+        raise HTTPException(400, tr('Für SSO bitte unter Administration › Benachrichtigungen die Adresse der Oberfläche eintragen'))
     return base, f"{base}/api/auth/oidc/callback"
 
 
@@ -248,7 +249,7 @@ class ExchangeIn(BaseModel):
 def oidc_exchange(body: ExchangeIn, db: DbSession = Depends(get_db)):
     user = db.get(User, oidc.redeem_exchange_code(body.code))
     if not user or not user.active:
-        raise HTTPException(401, "Benutzer unbekannt oder deaktiviert")
+        raise HTTPException(401, tr('Benutzer unbekannt oder deaktiviert'))
     claims = {"mfa": False, "src": "oidc"}
     return {"token": create_token(user, mfa=False, source="oidc"), "user": me_out(db, user, claims)}
 

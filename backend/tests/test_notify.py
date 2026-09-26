@@ -138,3 +138,27 @@ def test_slack_payload_and_validation(client, admin, monkeypatch):
     r = client.post("/api/notifications/test", headers=admin, json={"channel": "slack"}).json()
     assert r["ok"] is False and "no_service" in r["message"] and sent[0][0] == "https://hooks.slack.test/x"
     assert sent[0][1]["blocks"][0]["text"]["text"] == "[Firewall] Testnachricht"
+
+
+def test_messages_follow_language(client, admin, fake, outbox):
+    # Fehlermeldungen: Sprache der Anfrage (Accept-Language)
+    r = client.get("/api/firewalls/gibt-es-nicht", headers={**admin, "Accept-Language": "en-GB,en;q=0.9"})
+    assert r.status_code == 404 and r.json()["detail"] == "Firewall not found"
+    assert client.get("/api/firewalls/gibt-es-nicht", headers=admin).json()["detail"] == "Firewall nicht gefunden"
+    # Benachrichtigungen: Sprache je Empfänger, Kanäle in der Standardsprache
+    enable_all(client, admin)
+    fw_id = setup_firewall(client, admin)
+    op = user_with_mail(client, admin, "operator", "Operator")
+    ap_en = user_with_mail(client, admin, "approver_en", "Approver")
+    user_with_mail(client, admin, "approver_de", "Approver")
+    assert client.put("/api/auth/language", headers=ap_en, json={"language": "en"}).json() == {"language": "en"}
+    assert client.put("/api/auth/language", headers=ap_en, json={"language": "xx"}).status_code == 400
+    submit_new_rule(client, fw_id, op)
+    subjects = {tuple(to): s for to, s, b in outbox["mail"]}
+    assert "Approval required" in subjects[("approver_en@test",)]
+    assert "Genehmigung benötigt" in subjects[("approver_de@test",)]
+    assert "Genehmigung benötigt" in outbox["teams"][-1]
+    client.put("/api/settings", headers=admin, json={"language": "en"})
+    submit_new_rule(client, fw_id, op, name="Neu2")
+    assert "Approval required" in outbox["teams"][-1]
+    assert client.put("/api/settings", headers=admin, json={"language": "fr"}).status_code == 400

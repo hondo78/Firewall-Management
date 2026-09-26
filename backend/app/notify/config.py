@@ -9,6 +9,7 @@ import os
 from sqlalchemy.orm import Session as DbSession
 
 from .. import crypto
+from ..i18n import tr
 from ..models import Setting
 
 KEY = "notifications"
@@ -79,13 +80,13 @@ def save(db: DbSession, incoming: dict) -> dict:
                 continue
             if k in SECRETS[channel]:
                 if v and channel in ("teams", "slack") and k == "webhook_url" and not str(v).startswith("https://"):
-                    raise ValueError("Die Webhook-URL muss mit https:// beginnen")
+                    raise ValueError(tr('Die Webhook-URL muss mit https:// beginnen'))
                 if v:
                     target[f"{k}_enc"] = crypto.encrypt(str(v), f"notify:{channel}.{k}")
                     changed.append(f"{channel}.{k}")
                 continue
             if channel == "slack" and k == "mention" and v not in ("", "here", "channel"):
-                raise ValueError("Slack-Erwähnung muss leer, „here“ oder „channel“ sein")
+                raise ValueError(tr('Slack-Erwähnung muss leer, „here“ oder „channel“ sein'))
             if k in DEFAULTS[channel] and target.get(k) != v:
                 target[k] = int(v) if k == "port" else v
                 changed.append(f"{channel}.{k}")

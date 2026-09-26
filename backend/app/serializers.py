@@ -12,7 +12,7 @@ def user_out(u: User) -> dict:
         "is_superadmin": u.is_superadmin, "active": u.active, "created_at": u.created_at,
         "last_login_at": u.last_login_at, "notify_email": u.notify_email,
         "totp_enabled": u.totp_enabled, "auth_source": u.auth_source,
-        "telegram_linked": bool(u.telegram_chat_id),
+        "telegram_linked": bool(u.telegram_chat_id), "language": u.language,
         "assignments": [{"id": a.id, "role_id": a.role_id, "role": a.role.name, "group_id": a.group_id}
                         for a in u.assignments],
     }

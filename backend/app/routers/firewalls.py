@@ -16,6 +16,7 @@ from ..security import client_ip, get_current_user
 from ..serializers import change_summary, firewall_out, group_out
 from ..sophos import connector, entities, restapi, xmlapi, xmlconv
 from ..sophos.central import CentralError
+from ..i18n import tr
 
 router = APIRouter(prefix="/api", tags=["firewalls"])
 
@@ -53,9 +54,9 @@ def update_group(group_id: str, body: GroupIn, request: Request,
                  user: User = Depends(permissions.require_global("firewall.manage")), db: DbSession = Depends(get_db)):
     g = db.get(FirewallGroup, group_id)
     if not g:
-        raise HTTPException(404, "Gruppe nicht gefunden")
+        raise HTTPException(404, tr('Gruppe nicht gefunden'))
     if g.central_id and body.name.strip() != g.name:
-        raise HTTPException(409, "Gruppen aus Sophos Central werden dort umbenannt")
+        raise HTTPException(409, tr('Gruppen aus Sophos Central werden dort umbenannt'))
     g.name, g.description = body.name.strip(), body.description
     audit(db, "group.updated", actor=user, target_type="group", target_id=g.id, ip=client_ip(request),
           details={"name": g.name})
@@ -67,7 +68,7 @@ def delete_group(group_id: str, request: Request, user: User = Depends(permissio
                  db: DbSession = Depends(get_db)):
     g = db.get(FirewallGroup, group_id)
     if not g:
-        raise HTTPException(404, "Gruppe nicht gefunden")
+        raise HTTPException(404, tr('Gruppe nicht gefunden'))
     db.delete(g)
     audit(db, "group.deleted", actor=user, target_type="group", target_id=group_id, ip=client_ip(request),
           details={"name": g.name})
@@ -99,7 +100,7 @@ CONNECTION_FIELDS = frozenset(("connector", "api_url", "api_username", "api_pass
 
 def _require_superadmin(user: User) -> None:
     if not user.is_superadmin:
-        raise HTTPException(403, "Verbindungseinstellungen einer Firewall darf nur ein Superadmin sehen und ändern")
+        raise HTTPException(403, tr('Verbindungseinstellungen einer Firewall darf nur ein Superadmin sehen und ändern'))
 
 
 def _keep_connection(fw: Firewall, body: FirewallIn) -> FirewallIn:
@@ -119,7 +120,7 @@ def _keep_connection(fw: Firewall, body: FirewallIn) -> FirewallIn:
         if isinstance(v, str):
             v = v.strip()
         if v != current[k]:
-            raise HTTPException(403, "Verbindungseinstellungen einer Firewall darf nur ein Superadmin ändern")
+            raise HTTPException(403, tr('Verbindungseinstellungen einer Firewall darf nur ein Superadmin ändern'))
     return body.model_copy(update=current)
 
 
@@ -146,14 +147,14 @@ def _check_manage_target(db: DbSession, user: User, group_id: str | None) -> Non
     """Anlegen/Verschieben nur in Gruppen, für die der Benutzer firewall.manage hat."""
     probe = Firewall(group_id=group_id)
     if not permissions.can(db, user, "firewall.manage", probe):
-        raise HTTPException(403, "Keine Berechtigung, Firewalls in dieser Gruppe zu verwalten")
+        raise HTTPException(403, tr('Keine Berechtigung, Firewalls in dieser Gruppe zu verwalten'))
 
 
 def _apply_fw(db: DbSession, fw: Firewall, body: FirewallIn) -> None:
     if body.connector not in ("rest", "xmlapi", "central"):
-        raise HTTPException(400, "Connector muss rest, xmlapi oder central sein")
+        raise HTTPException(400, tr('Connector muss rest, xmlapi oder central sein'))
     if body.group_id and not db.get(FirewallGroup, body.group_id):
-        raise HTTPException(400, "Unbekannte Gruppe")
+        raise HTTPException(400, tr('Unbekannte Gruppe'))
     old_fmt = entities.fmt_for(fw.connector) if fw.connector else None
     new_fmt = entities.fmt_for(body.connector)
     if fw.last_sync_at and old_fmt and old_fmt != new_fmt:
@@ -161,7 +162,7 @@ def _apply_fw(db: DbSession, fw: Firewall, body: FirewallIn) -> None:
         if db.execute(select(ChangeRequest.id).where(
                 ChangeRequest.firewall_id == fw.id,
                 ChangeRequest.status.in_(("pending", "approved", "deploying")))).first():
-            raise HTTPException(409, "Wechsel zwischen REST- und XML-Anbindung erst, wenn keine Anträge mehr offen sind")
+            raise HTTPException(409, tr('Wechsel zwischen REST- und XML-Anbindung erst, wenn keine Anträge mehr offen sind'))
         for cr in db.execute(select(ChangeRequest).where(ChangeRequest.firewall_id == fw.id,
                                                          ChangeRequest.status == "draft")).scalars():
             cr.status = "withdrawn"
@@ -180,31 +181,31 @@ def _apply_fw(db: DbSession, fw: Firewall, body: FirewallIn) -> None:
     if body.connector != "rest":
         fw.xml_username, fw.xml_password_enc, fw.xml_status = "", "", ""
     if body.connector == "rest" and fw.xml_username and not fw.xml_password_enc:
-        raise HTTPException(400, "Für den XML-API-Zugang (WAF-Regeln) fehlt das Passwort")
+        raise HTTPException(400, tr('Für den XML-API-Zugang (WAF-Regeln) fehlt das Passwort'))
     if body.connector == "rest":
         fw.api_key_expires_at = (datetime.combine(body.api_key_expires_at, time(23, 59), tzinfo=timezone.utc)
                                  if body.api_key_expires_at else None)
     if body.central_account_id is not None:
         if body.central_account_id and not db.get(CentralAccount, body.central_account_id):
-            raise HTTPException(400, "Unbekanntes Central-Konto")
+            raise HTTPException(400, tr('Unbekanntes Central-Konto'))
         fw.central_account_id = body.central_account_id or None
         fw.central_id = body.central_id or fw.central_id
     if fw.connector == "rest":
         if not fw.api_url or not fw.api_password_enc:
-            raise HTTPException(400, "Für die REST-API sind Adresse und API-Key nötig")
+            raise HTTPException(400, tr('Für die REST-API sind Adresse und API-Key nötig'))
         try:
             restapi.normalize_base_url(fw.api_url)
         except restapi.RestApiError as e:
             raise HTTPException(400, str(e))
     if fw.connector == "xmlapi":
         if not fw.api_url or not fw.api_username or not fw.api_password_enc:
-            raise HTTPException(400, "Für die XML-API sind Adresse, Benutzer und Passwort nötig")
+            raise HTTPException(400, tr('Für die XML-API sind Adresse, Benutzer und Passwort nötig'))
         try:
             xmlapi.normalize_base_url(fw.api_url)
         except xmlapi.XmlApiError as e:
             raise HTTPException(400, str(e))
     if fw.connector == "central" and not (fw.central_account_id and fw.central_id):
-        raise HTTPException(400, "Central-Connector nur für aus Sophos Central übernommene Firewalls")
+        raise HTTPException(400, tr('Central-Connector nur für aus Sophos Central übernommene Firewalls'))
 
 
 @router.post("/firewalls")
@@ -252,7 +253,7 @@ def delete_firewall(firewall_id: str, request: Request, user: User = Depends(get
     fw = firewall_or_404(db, user, firewall_id, "firewall.manage")
     if db.execute(select(ChangeRequest.id).where(ChangeRequest.firewall_id == fw.id,
                                                  ChangeRequest.status.in_(("pending", "approved", "deploying")))).first():
-        raise HTTPException(409, "Es gibt noch offene Anträge für diese Firewall")
+        raise HTTPException(409, tr('Es gibt noch offene Anträge für diese Firewall'))
     # Nur aus der Verwaltung entfernen – auf der Firewall bzw. in Central ändert sich nichts.
     # Archivieren statt löschen: Anträge, Verlauf und Versionsstände bleiben nachvollziehbar.
     fw.archived = True
@@ -285,7 +286,7 @@ def sync_now(firewall_id: str, request: Request, user: User = Depends(get_curren
     try:
         result = sync.sync_firewall(db, fw, actor=user)
     except connector.ConnectorError as e:
-        raise HTTPException(502, f"Synchronisation fehlgeschlagen: {e}")
+        raise HTTPException(502, tr('Synchronisation fehlgeschlagen: {0}', e))
     audit(db, "firewall.synced", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
           details={"firewall": fw.name, "changed": result["changed"]})
     return result
@@ -335,7 +336,7 @@ def object_xml(firewall_id: str, entity: str, name: str, user: User = Depends(ge
     fw = firewall_or_404(db, user, firewall_id)
     obj = next((o for o in sync.cached_config(db, fw).get(entity, []) if entities.oname(o) == name), None)
     if obj is None:
-        raise HTTPException(404, "Objekt nicht gefunden")
+        raise HTTPException(404, tr('Objekt nicht gefunden'))
     used = changes.used_by(sync.cached_config(db, fw), entity, name)
     if entity in entities.REST_RESOURCES:
         import json
@@ -355,12 +356,12 @@ def parse_xml(body: XmlParseIn, _: User = Depends(get_current_user)):
     try:
         el = ET.fromstring(body.xml.strip())
     except ET.ParseError as e:
-        raise HTTPException(400, f"XML ungültig: {e}")
+        raise HTTPException(400, tr('XML ungültig: {0}', e))
     if el.tag != body.entity:
-        raise HTTPException(400, f"Wurzelelement muss <{body.entity}> sein")
+        raise HTTPException(400, tr('Wurzelelement muss <{0}> sein', body.entity))
     data = xmlconv.element_to_value(el)
     if not isinstance(data, dict) or not data.get("Name"):
-        raise HTTPException(400, "Objekt benötigt ein <Name>-Element")
+        raise HTTPException(400, tr('Objekt benötigt ein <Name>-Element'))
     return {"data": xmlconv.strip_position(data)}
 
 
@@ -371,7 +372,7 @@ def export_xml(firewall_id: str, request: Request, user: User = Depends(get_curr
     from fastapi.responses import Response
     fw = firewall_or_404(db, user, firewall_id)
     if entities.fmt_for(fw.connector) == "rest":
-        raise HTTPException(400, "Entities.xml gibt es nur für XML-/Central-Anbindung – REST: JSON-Export nutzen")
+        raise HTTPException(400, tr('Entities.xml gibt es nur für XML-/Central-Anbindung – REST: JSON-Export nutzen'))
     config = sync.cached_config(db, fw)
     objs = [(e, o) for e in entities.NAMES for o in config.get(e, [])]
     audit(db, "config.exported", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
@@ -403,11 +404,11 @@ def _snapshot_data(db: DbSession, fw: Firewall, ref: str) -> dict:
         from ..models import ConfigBackup
         b = db.get(ConfigBackup, ref.removeprefix("backup:"))
         if not b or b.firewall_id != fw.id:
-            raise HTTPException(404, "Sicherung nicht gefunden")
+            raise HTTPException(404, tr('Sicherung nicht gefunden'))
         return backups.config_of(b)
     snap = db.get(ConfigSnapshot, ref)
     if not snap or snap.firewall_id != fw.id:
-        raise HTTPException(404, "Versionsstand nicht gefunden")
+        raise HTTPException(404, tr('Versionsstand nicht gefunden'))
     return snap.data
 
 
@@ -437,7 +438,7 @@ class FirmwareIn(BaseModel):
 def _central_fw(db: DbSession, fw: Firewall):
     acc = db.get(CentralAccount, fw.central_account_id) if fw.central_account_id else None
     if not acc or not fw.central_id:
-        raise HTTPException(400, "Firmware-Verwaltung nur für Firewalls aus Sophos Central")
+        raise HTTPException(400, tr('Firmware-Verwaltung nur für Firewalls aus Sophos Central'))
     return connector.central_client(acc)
 
 
@@ -593,7 +594,7 @@ def import_apply(firewall_id: str, body: ImportApplyIn, request: Request, user: 
             added += 1
         except HTTPException as e:
             db.rollback()
-            skipped.append(f"{entities.LABELS.get(op['entity'], op['entity'])} „{op['name']}“: {e.detail}")
+            skipped.append(f"{tr(entities.LABELS.get(op['entity'], op['entity']))} „{op['name']}“: {e.detail}")
     if draft is None:
         draft = changes.get_draft(db, user, fw)
     audit(db, "config.import_to_draft", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),

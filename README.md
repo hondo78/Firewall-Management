@@ -61,7 +61,9 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 ## Sprachen
 
 Oberfläche auf **Deutsch und Englisch** (Umschalter in der Navigation und auf der Anmeldeseite; Standard =
-Browsersprache). Weitere Sprachen: eine Wörterbuch-Datei ergänzen – siehe `frontend/tools/README-i18n.md`.
+Browsersprache). Auch Fehlermeldungen, Analyse-Hinweise, Probelauf und Benachrichtigungen sind zweisprachig (je Empfänger
+in seiner zuletzt gewählten Sprache; Teams/Slack in der Standardsprache aus den Einstellungen). Weitere Sprachen:
+je eine Wörterbuch-Datei für Frontend und Backend – siehe `frontend/tools/README-i18n.md`.
 
 ## Start
 

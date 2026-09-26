@@ -11,6 +11,7 @@ from ..models import CentralAccount, User, new_id
 from ..permissions import require_superadmin
 from ..security import client_ip
 from ..sophos.central import CentralError
+from ..i18n import tr
 
 router = APIRouter(prefix="/api/central-accounts", tags=["central"])
 # Central-Konten enthalten Zugangsdaten zu allen Firewalls eines Tenants → nur Superadmin
@@ -52,7 +53,7 @@ def _resolve(db: DbSession, acc: CentralAccount) -> list[dict]:
 def create_account(body: AccountIn, request: Request, actor: User = Depends(admin_only),
                    db: DbSession = Depends(get_db)):
     if not body.client_secret:
-        raise HTTPException(400, "Client-Secret fehlt")
+        raise HTTPException(400, tr('Client-Secret fehlt'))
     acc = CentralAccount(id=new_id(), name=body.name, client_id=body.client_id.strip(),
                          id_url=(body.id_url or config.SOPHOS_ID_URL).rstrip("/"),
                          api_url=(body.api_url or config.SOPHOS_API_URL).rstrip("/"), tenant_id=body.tenant_id)
@@ -69,7 +70,7 @@ def update_account(account_id: str, body: AccountIn, request: Request, actor: Us
                    db: DbSession = Depends(get_db)):
     acc = db.get(CentralAccount, account_id)
     if not acc:
-        raise HTTPException(404, "Konto nicht gefunden")
+        raise HTTPException(404, tr('Konto nicht gefunden'))
     acc.name, acc.client_id = body.name, body.client_id.strip()
     acc.id_url = (body.id_url or config.SOPHOS_ID_URL).rstrip("/")
     acc.api_url = (body.api_url or config.SOPHOS_API_URL).rstrip("/")
@@ -87,7 +88,7 @@ def update_account(account_id: str, body: AccountIn, request: Request, actor: Us
 def tenants(account_id: str, _: User = Depends(admin_only), db: DbSession = Depends(get_db)):
     acc = db.get(CentralAccount, account_id)
     if not acc:
-        raise HTTPException(404, "Konto nicht gefunden")
+        raise HTTPException(404, tr('Konto nicht gefunden'))
     result = _resolve(db, acc)
     db.commit()
     return result
@@ -98,9 +99,9 @@ def sync_inventory(account_id: str, request: Request, actor: User = Depends(admi
                    db: DbSession = Depends(get_db)):
     acc = db.get(CentralAccount, account_id)
     if not acc:
-        raise HTTPException(404, "Konto nicht gefunden")
+        raise HTTPException(404, tr('Konto nicht gefunden'))
     if acc.id_type in ("partner", "organization") and not acc.tenant_id:
-        raise HTTPException(400, "Bitte zuerst einen Tenant auswählen")
+        raise HTTPException(400, tr('Bitte zuerst einen Tenant auswählen'))
     try:
         return sync.sync_central_inventory(db, acc, actor)
     except CentralError as e:
@@ -112,7 +113,7 @@ def delete_account(account_id: str, request: Request, actor: User = Depends(admi
                    db: DbSession = Depends(get_db)):
     acc = db.get(CentralAccount, account_id)
     if not acc:
-        raise HTTPException(404, "Konto nicht gefunden")
+        raise HTTPException(404, tr('Konto nicht gefunden'))
     db.delete(acc)
     audit(db, "central.account_deleted", actor=actor, target_type="central_account", target_id=account_id,
           ip=client_ip(request), details={"name": acc.name})
@@ -125,7 +126,7 @@ def diagnose_account(account_id: str, request: Request, actor: User = Depends(ad
     """Probelauf: nur lesende Aufrufe gegen Sophos Central (inkl. Suche nach nicht dokumentierten Endpunkten)."""
     acc = db.get(CentralAccount, account_id)
     if not acc:
-        raise HTTPException(404, "Konto nicht gefunden")
+        raise HTTPException(404, tr('Konto nicht gefunden'))
     result = diagnose.central(db, acc)
     audit(db, "central.diagnosed", actor=actor, target_type="central_account", target_id=acc.id,
           ip=client_ip(request), details={"account": acc.name, "passed": result["passed"], "failed": result["failed"],

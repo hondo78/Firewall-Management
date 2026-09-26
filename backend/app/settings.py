@@ -23,6 +23,8 @@ DEFAULTS: dict = {
     "reauth_minutes": 30,
     # Anmeldungen per SSO (OIDC) erfüllen die Zwei-Faktor-Pflicht (MFA erledigt der Identity Provider)
     "oidc_counts_as_mfa": True,
+    # Standardsprache für Hintergrundaufgaben (Ausroll-Protokoll, Worker), Teams/Slack und Benutzer ohne eigene Wahl
+    "language": "de",
     # Automatische Sicherung der Firewall-Konfigurationen im Tool
     "backup_enabled": True,
     "backup_frequency": "daily",       # daily | weekly | monthly
@@ -56,6 +58,10 @@ def set_many(db: DbSession, values: dict) -> dict:
             value = max(1, min(value, 5))
         if key == "sync_interval_minutes":
             value = max(0, value)
+        if key == "language":
+            from .i18n import LANGS
+            if value not in LANGS:
+                raise ValueError("language")
         if key == "backup_frequency" and value not in ("daily", "weekly", "monthly"):
             raise ValueError("backup_frequency")
         if key == "backup_time":

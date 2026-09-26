@@ -53,5 +53,9 @@ print(json.dumps(sorted(out), ensure_ascii=False, indent=1))
 PY
 ```
 
-Meldungen mit eingesetzten Namen (f-Strings), Analyse-Hinweise und Benachrichtigungen (E-Mail/Teams/Slack/Telegram)
-kommen weiterhin auf Deutsch vom Backend. Das Frontend sendet dafür bereits `Accept-Language` mit.
+Das Backend übersetzt seine Meldungen selbst (siehe `backend/app/i18n.py`, Wörterbuch `backend/app/locales/<code>.json`,
+Prüfung `python backend/tools/i18n_check.py`) anhand von `Accept-Language`. Benachrichtigungen gehen in der Sprache, die der
+Empfänger zuletzt in der Oberfläche gewählt hat; Teams/Slack und Ausroll-Protokolle in der Standardsprache (Einstellungen).
+
+Weitere Sprache im Backend: `backend/app/locales/<code>.json` anlegen (Kopie von `en.json`, Werte übersetzen) und den Code in
+`LANGS` in `backend/app/i18n.py` ergänzen.

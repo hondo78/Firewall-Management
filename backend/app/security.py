@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 from . import config
 from .db import get_db
 from .models import User, utcnow
+from .i18n import tr
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -42,14 +43,14 @@ def read_purpose_token(token: str, purpose: str) -> str:
     try:
         payload = jwt.decode(token, config.JWT_SECRET, algorithms=["HS256"])
     except jwt.PyJWTError:
-        raise HTTPException(401, "Anmeldung abgelaufen – bitte erneut anmelden")
+        raise HTTPException(401, tr('Anmeldung abgelaufen – bitte erneut anmelden'))
     if payload.get("purpose") != purpose:
-        raise HTTPException(401, "Ungültiges Token")
+        raise HTTPException(401, tr('Ungültiges Token'))
     return payload["sub"]
 
 
 # Solange der Pflicht-zweite-Faktor fehlt, sind nur diese Pfade erreichbar
-_MFA_SETUP_PATHS = ("/api/auth/me", "/api/auth/totp/", "/api/auth/password")
+_MFA_SETUP_PATHS = ("/api/auth/me", "/api/auth/totp/", "/api/auth/password", "/api/auth/language")
 
 
 def mfa_satisfied(db: DbSession, claims: dict) -> bool:
@@ -63,22 +64,22 @@ def get_current_user(
     db: DbSession = Depends(get_db),
 ) -> User:
     if not creds:
-        raise HTTPException(401, "Nicht angemeldet")
+        raise HTTPException(401, tr('Nicht angemeldet'))
     try:
         payload = jwt.decode(creds.credentials, config.JWT_SECRET, algorithms=["HS256"])
     except jwt.PyJWTError:
-        raise HTTPException(401, "Sitzung abgelaufen – bitte neu anmelden")
+        raise HTTPException(401, tr('Sitzung abgelaufen – bitte neu anmelden'))
     if payload.get("purpose"):
-        raise HTTPException(401, "Ungültiges Token")
+        raise HTTPException(401, tr('Ungültiges Token'))
     user = db.get(User, payload.get("sub"))
     if not user or not user.active:
-        raise HTTPException(401, "Benutzer unbekannt oder deaktiviert")
+        raise HTTPException(401, tr('Benutzer unbekannt oder deaktiviert'))
     request.state.claims = payload
     from . import mfa  # spät importieren (mfa → permissions → security)
     if (mfa.required(db, user) and not mfa_satisfied(db, payload)
             and not request.url.path.startswith(_MFA_SETUP_PATHS)):
         raise HTTPException(403, {"code": "mfa_setup_required",
-                                  "message": "Bitte zuerst die Zwei-Faktor-Anmeldung einrichten (Profil)"})
+                                  "message": tr('Bitte zuerst die Zwei-Faktor-Anmeldung einrichten (Profil)')})
     return user
 
 
@@ -89,7 +90,7 @@ def require_recent_auth(request: Request, db: DbSession) -> None:
     claims = getattr(request.state, "claims", {}) or {}
     if minutes and utcnow().timestamp() - int(claims.get("iat") or 0) > minutes * 60:
         raise HTTPException(403, {"code": "reauth_required",
-                                  "message": f"Bitte erneut anmelden – die Anmeldung liegt mehr als {minutes} Minuten zurück"})
+                                  "message": tr('Bitte erneut anmelden – die Anmeldung liegt mehr als {0} Minuten zurück', minutes)})
 
 
 def client_ip(request: Request) -> str:

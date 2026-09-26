@@ -125,6 +125,12 @@ The UI is German and English, and more languages can be added. **The key is the 
 - Never wrap API data values or field keys (`'Enable'`, `'Accept'`, `set('Name')`, `<option>` without `value`).
 - Backend texts: `api()` translates fixed error messages, and cfg entity labels/sections are translated when loaded. The list is `tools/i18n-backend-keys.json`.
 - Details and how to add a language: `frontend/tools/README-i18n.md`.
+- **Backend** (`app/i18n.py`): the same principle with `tr('Deutscher Text', arg0, …)` (str.format fields `{0}`, `{0:%d.%m.%Y}`), dictionaries in `app/locales/<code>.json`.
+  - The request language comes from `Accept-Language`, set by `main.language_middleware` via a ContextVar.
+  - Worker steps and background deploys run in the setting `language` (`worker.in_default_language`), so persisted texts such as deploy logs and events use the default language.
+  - Notifications: `notify.deliver(db, cfg, users, render, channel=…, urgent=…)` calls `render()` once per recipient language (`users.language`, saved by the frontend via `PUT /api/auth/language`). Teams/Slack get the default language.
+  - Constants such as `entities.LABELS` and `notify/texts.py` dicts stay German and are translated at the point of use (`tr(entities.LABELS[e])`).
+  - **New messages go in `tr()`**, and `python backend/tools/i18n_check.py` must report „0 fehlen“; it also lists German-looking strings outside `tr()`.
 
 ### Tests
 `tests/test_restapi.py` covers the REST client and connector with `httpx.MockTransport`. `tests/conftest.py` switches to SQLite in memory and monkeypatches `connector.fetch_config`/`apply` with `FakeFirewall`, so the tests need no network. End-to-end against the real connectors without touching the production DB: start the mock (`COMPOSE_PROFILES=mock docker compose up -d sophos-mock`), then `docker compose run --rm --no-deps -T -e DATABASE_URL=sqlite:////tmp/e2e.db -e DISABLE_WORKER=1 backend python <script>` using `TestClient(app)`. Docker has no free address pools here, so a second compose project cannot start. The mock serves REST at `/fw/<serial>/api/firewall-config/v1` (key `sfos_mock_key`). Its REST state is independent of its XML state.

@@ -13,6 +13,7 @@ from . import entities, xmlconv
 from .central import CentralClient, CentralError
 from .restapi import RestApiClient, RestApiError, patch_body
 from .xmlapi import XmlApiClient, XmlApiError
+from ..i18n import tr
 
 ConnectorError = (CentralError, XmlApiError, RestApiError)
 Log = Callable[[str], None]
@@ -53,7 +54,7 @@ def _fetch_waf(db: DbSession, fw: Firewall, log: Log | None) -> list[dict]:
     except XmlApiError as e:
         fw.xml_status = f"Fehler: {e}"[:500]
         if log:
-            log(f"WAF-Regeln (XML-API): {e} – letzter Stand bleibt erhalten")
+            log(tr('WAF-Regeln (XML-API): {0} – letzter Stand bleibt erhalten', e))
         from sqlalchemy import select
         from ..models import ConfigObject
         return list(db.execute(select(ConfigObject.data).where(ConfigObject.firewall_id == fw.id, ConfigObject.entity == "wafRules")
@@ -71,7 +72,7 @@ def rest_client(fw: Firewall) -> RestApiClient:
 def _central_for(db: DbSession, fw: Firewall) -> tuple[CentralClient, str]:
     acc = db.get(CentralAccount, fw.central_account_id) if fw.central_account_id else None
     if not acc or not fw.central_id:
-        raise CentralError("Firewall ist keinem Sophos-Central-Konto zugeordnet")
+        raise CentralError(tr('Firewall ist keinem Sophos-Central-Konto zugeordnet'))
     return central_client(acc), fw.central_id
 
 
@@ -105,7 +106,7 @@ def fetch_config(db: DbSession, fw: Firewall, log: Log | None = None) -> tuple[d
                 # damit der Rest funktioniert; Auth-/Netzfehler dagegen abbrechen
                 if e.status in (403, 404):
                     if log:
-                        log(f"{entities.LABELS[entity]}: übersprungen ({e})")
+                        log(tr('{0}: übersprungen ({1})', tr(entities.LABELS[entity]), e))
                     out[entity] = []
                     continue
                 raise
@@ -122,25 +123,25 @@ def test_connection(db: DbSession, fw: Firewall) -> str:
         client, cid = _central_for(db, fw)
         ids = {f["id"] for f in client.firewalls()}
         if cid not in ids:
-            raise CentralError("Firewall ist im Central-Konto nicht (mehr) vorhanden")
-        return "Sophos Central erreichbar, Firewall gefunden"
+            raise CentralError(tr('Firewall ist im Central-Konto nicht (mehr) vorhanden'))
+        return tr('Sophos Central erreichbar, Firewall gefunden')
     if fw.connector == "rest":
         client = rest_client(fw)
         client.test()
-        msg = f"Anmeldung per API-Key erfolgreich ({client.base_url}{client.prefix})"
+        msg = tr('Anmeldung per API-Key erfolgreich ({0}{1})', client.base_url, client.prefix)
         if has_waf_xml(fw):
             version = waf_xml_client(fw).test()
-            msg += f" · XML-API für WAF-Regeln: Anmeldung erfolgreich (API-Version {version or 'unbekannt'})"
+            msg += tr(' · XML-API für WAF-Regeln: Anmeldung erfolgreich (API-Version {0})', version or 'unbekannt')
         return msg
     version = xml_client(fw).test()
-    return f"Anmeldung erfolgreich (API-Version {version or 'unbekannt'})"
+    return tr('Anmeldung erfolgreich (API-Version {0})', version or 'unbekannt')
 
 
 def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
     ordered = entities.order_operations(ops)
     if fw.connector == "central":
         if any(o["action"] == "remove" for o in ordered):
-            raise DeployError("Löschen ist über den Sophos-Central-Import nicht möglich")
+            raise DeployError(tr('Löschen ist über den Sophos-Central-Import nicht möglich'))
         client, cid = _central_for(db, fw)
         objs = [(o["entity"], xmlconv.with_position(o["data"], o.get("position"))
                  if o["entity"] == "FirewallRule" else o["data"]) for o in ordered]
@@ -150,14 +151,14 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
         mine = next((i for i in items if i.get("firewallId") == cid), None)
         result = (mine or {}).get("result") or tx.get("result")
         if result != "success":
-            raise DeployError(f"Import auf der Firewall fehlgeschlagen (Ergebnis: {result})")
-        log("Import erfolgreich abgeschlossen")
+            raise DeployError(tr('Import auf der Firewall fehlgeschlagen (Ergebnis: {0})', result))
+        log(tr('Import erfolgreich abgeschlossen'))
         return
     if fw.connector == "rest":
         xml = None
         if any(o["entity"] in entities.REST_XML_ENTITIES for o in ordered):
             if not has_waf_xml(fw):
-                raise DeployError("WAF-Regeln brauchen den XML-API-Zugang dieser Firewall (Einstellungen › Anbindung)")
+                raise DeployError(tr('WAF-Regeln brauchen den XML-API-Zugang dieser Firewall (Einstellungen › Anbindung)'))
             xml = waf_xml_client(fw)
         _rest_apply(rest_client(fw), ordered, log, xml)
         return
@@ -167,7 +168,7 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
         try:
             msg = _xml_apply_one(client, o)
         except XmlApiError as e:
-            log(f"FEHLER bei {_label(o)}: {e}")
+            log(tr('FEHLER bei {0}: {1}', _label(o), e))
             _rollback(client, done, log)
             raise DeployError(f"{_label(o)}: {e}") from e
         done.append(o)
@@ -175,7 +176,7 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
 
 
 def _label(o: dict) -> str:
-    return f"{entities.LABELS.get(o['entity'], o['entity'])} „{o['name']}“"
+    return f"{tr(entities.LABELS.get(o['entity'], o['entity']))} „{o['name']}“"
 
 
 def _xml_apply_one(client: XmlApiClient, o: dict) -> str:
@@ -188,7 +189,7 @@ def _rollback(client: XmlApiClient, done: list[dict], log: Log) -> None:
     """Bereits angewendete Operationen rückgängig machen (best effort, umgekehrte Reihenfolge)."""
     if not done:
         return
-    log(f"Rolle {len(done)} bereits angewendete Operation(en) zurück …")
+    log(tr('Rolle {0} bereits angewendete Operation(en) zurück …', len(done)))
     for o in reversed(done):
         try:
             if o["action"] == "add":
@@ -197,9 +198,9 @@ def _rollback(client: XmlApiClient, done: list[dict], log: Log) -> None:
                 client.set(o["entity"], o["before"], "update", o.get("before_position"))
             else:
                 client.set(o["entity"], o["before"], "add", o.get("before_position"))
-            log(f"  zurückgerollt: {_label(o)}")
+            log(tr('  zurückgerollt: {0}', _label(o)))
         except XmlApiError as e:
-            log(f"  Rücknahme fehlgeschlagen für {_label(o)}: {e} – bitte manuell prüfen!")
+            log(tr('  Rücknahme fehlgeschlagen für {0}: {1} – bitte manuell prüfen!', _label(o), e))
 
 
 # --- REST ----------------------------------------------------------------------------------------------------
@@ -218,11 +219,11 @@ def _rest_one(client: RestApiClient, o: dict) -> str:
         body = _singleton_body(o.get("before"), o["data"])
         if body:
             client.update_singleton(path, body)
-        return f"geändert ({', '.join(body)})" if body else "keine Änderung"
+        return tr('geändert ({0})', ', '.join(body)) if body else tr('keine Änderung')
     is_rule = o["entity"] in entities.RULE_ENTITIES
     if o["action"] == "remove":
         client.delete(path, o["name"])
-        return "gelöscht"
+        return tr('gelöscht')
     if o["action"] == "add":
         body = dict(o["data"])
         if is_rule:
@@ -234,11 +235,11 @@ def _rest_one(client: RestApiClient, o: dict) -> str:
     done = []
     if body:
         client.update(path, o["name"], body)
-        done.append(f"geändert ({', '.join(body)})")
+        done.append(tr('geändert ({0})', ', '.join(body)))
     if is_rule and o.get("position"):
         client.move(path, o["name"], o["position"])
         done.append("verschoben")
-    return " und ".join(done) or "keine Änderung"
+    return " und ".join(done) or tr('keine Änderung')
 
 
 def _rest_undo(client: RestApiClient, o: dict) -> None:
@@ -294,15 +295,15 @@ def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log, xml: XmlAp
         try:
             msg = one(o)
         except (RestApiError, XmlApiError) as e:
-            log(f"FEHLER bei {_label(o)}: {e}")
+            log(tr('FEHLER bei {0}: {1}', _label(o), e))
             if done:
-                log(f"Rolle {len(done)} bereits angewendete Operation(en) zurück …")
+                log(tr('Rolle {0} bereits angewendete Operation(en) zurück …', len(done)))
             for d in reversed(done):
                 try:
                     undo(d)
-                    log(f"  zurückgerollt: {_label(d)}")
+                    log(tr('  zurückgerollt: {0}', _label(d)))
                 except (RestApiError, XmlApiError) as ue:
-                    log(f"  Rücknahme fehlgeschlagen für {_label(d)}: {ue} – bitte manuell prüfen!")
+                    log(tr('  Rücknahme fehlgeschlagen für {0}: {1} – bitte manuell prüfen!', _label(d), ue))
             raise DeployError(f"{_label(o)}: {e}") from e
         done.append(o)
         log(f"{_label(o)}: {msg}")

@@ -13,6 +13,7 @@ from ..models import ChangeRequest, Firewall, User
 from ..permissions import firewall_or_404
 from ..security import client_ip, get_current_user, require_recent_auth
 from ..serializers import change_out, change_summary
+from ..i18n import tr
 
 router = APIRouter(prefix="/api", tags=["changes"])
 
@@ -48,9 +49,9 @@ class CommentIn(BaseModel):
 def _change_or_404(db: DbSession, user: User, change_id: str) -> ChangeRequest:
     cr = db.get(ChangeRequest, change_id)
     if not cr or not permissions.can(db, user, "firewall.view", cr.firewall):
-        raise HTTPException(404, "Antrag nicht gefunden")
+        raise HTTPException(404, tr('Antrag nicht gefunden'))
     if cr.status == "draft" and cr.created_by != user.id:
-        raise HTTPException(404, "Antrag nicht gefunden")
+        raise HTTPException(404, tr('Antrag nicht gefunden'))
     return cr
 
 
@@ -68,7 +69,7 @@ def add_operation(firewall_id: str, body: OperationIn, user: User = Depends(get_
                   db: DbSession = Depends(get_db)):
     fw = firewall_or_404(db, user, firewall_id, "change.create")
     if not fw.last_sync_at:
-        raise HTTPException(409, "Firewall wurde noch nie synchronisiert – bitte zuerst synchronisieren")
+        raise HTTPException(409, tr('Firewall wurde noch nie synchronisiert – bitte zuerst synchronisieren'))
     cr, warnings = changes.draft_add(db, user, fw, body.model_dump())
     return {"draft": change_out(db, cr, user), "warnings": warnings}
 
@@ -78,7 +79,7 @@ def remove_operation(change_id: str, index: int, user: User = Depends(get_curren
                      db: DbSession = Depends(get_db)):
     cr = _change_or_404(db, user, change_id)
     if cr.status != "draft" or cr.created_by != user.id:
-        raise HTTPException(409, "Nur eigene Entwürfe können bearbeitet werden")
+        raise HTTPException(409, tr('Nur eigene Entwürfe können bearbeitet werden'))
     changes.draft_remove(db, user, cr, index)
     return change_out(db, cr, user)
 
@@ -183,9 +184,9 @@ def deploy_now(change_id: str, request: Request, user: User = Depends(get_curren
     """Genehmigten (oder fehlgeschlagenen) Antrag sofort ausrollen – im Hintergrund."""
     cr = _change_or_404(db, user, change_id)
     if not permissions.can(db, user, "change.deploy", cr.firewall):
-        raise HTTPException(403, "Keine Berechtigung zum Ausrollen")
+        raise HTTPException(403, tr('Keine Berechtigung zum Ausrollen'))
     if not changes.claim_for_deploy(db, cr.id, ("approved", "failed")):
-        raise HTTPException(409, "Antrag ist nicht genehmigt oder wird bereits ausgerollt")
+        raise HTTPException(409, tr('Antrag ist nicht genehmigt oder wird bereits ausgerollt'))
     audit(db, "change.deploy_requested", actor=user, target_type="change", target_id=cr.id, ip=client_ip(request),
           details={"number": cr.number, "firewall": cr.firewall.name})
     worker.deploy_in_background(cr.id, user.id)

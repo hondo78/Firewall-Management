@@ -16,6 +16,7 @@ from . import diff, notify, permissions, settings, sync
 from .audit import audit
 from .models import ChangeEvent, ChangeRequest, Firewall, User, new_id, utcnow
 from .sophos import connector, entities
+from .i18n import tr
 
 log = logging.getLogger("fwm.changes")
 
@@ -101,8 +102,7 @@ def check_references(config: dict[str, list[dict]]) -> list[str]:
                 if name in entities.BUILTIN_REFS:
                     continue
                 if not any(name in idx.get(e, {}) for e in entities.REF_ENTITIES[kind]):
-                    warnings.append(f"{entities.LABELS[entity]} „{entities.oname(obj)}“ verweist auf unbekanntes "
-                                    f"Objekt „{name}“ – vordefiniertes Objekt der Firewall?")
+                    warnings.append(tr('{0} „{1}“ verweist auf unbekanntes Objekt „{2}“ – vordefiniertes Objekt der Firewall?', tr(entities.LABELS[entity]), entities.oname(obj), name))
     return warnings
 
 
@@ -114,7 +114,7 @@ def used_by(config: dict[str, list[dict]], entity: str, name: str) -> list[str]:
     for ent in entities.REFERRING_ENTITIES:
         for obj in config.get(ent, []):
             if (kind, name) in references(ent, obj):
-                out.append(f"{entities.LABELS[ent]} „{entities.oname(obj)}“")
+                out.append(f"{tr(entities.LABELS[ent])} „{entities.oname(obj)}“")
     return out
 
 
@@ -122,67 +122,65 @@ def _check_backup_settings(d: dict) -> None:
     """SFOS lehnt unvollständige Sicherungsziele erst beim Ausrollen ab – schon im Entwurf prüfen."""
     storage = d.get("backupStorage")
     if storage not in ("local", "ftp", "email"):
-        raise HTTPException(400, "Sicherungsziel muss lokal, FTP oder E-Mail sein")
+        raise HTTPException(400, tr('Sicherungsziel muss lokal, FTP oder E-Mail sein'))
     ftp = d.get("ftp") or {}
     if storage == "ftp" and not (ftp.get("server") and ftp.get("username")):
-        raise HTTPException(400, "Für FTP-Sicherungen sind Server und Benutzer nötig")
+        raise HTTPException(400, tr('Für FTP-Sicherungen sind Server und Benutzer nötig'))
     if storage == "email" and not d.get("emailRecipients"):
-        raise HTTPException(400, "Für Sicherungen per E-Mail ist mindestens ein Empfänger nötig")
+        raise HTTPException(400, tr('Für Sicherungen per E-Mail ist mindestens ein Empfänger nötig'))
     sc = d.get("schedule") or {}
     if sc.get("frequency") not in ("never", "daily", "weekly", "monthly"):
-        raise HTTPException(400, "Ungültige Häufigkeit der Sicherung")
+        raise HTTPException(400, tr('Ungültige Häufigkeit der Sicherung'))
     if sc.get("frequency") == "weekly" and not sc.get("dayOfWeek"):
-        raise HTTPException(400, "Wöchentliche Sicherung braucht einen Wochentag")
+        raise HTTPException(400, tr('Wöchentliche Sicherung braucht einen Wochentag'))
     if sc.get("frequency") == "monthly" and not sc.get("dayOfMonth"):
-        raise HTTPException(400, "Monatliche Sicherung braucht einen Tag im Monat")
+        raise HTTPException(400, tr('Monatliche Sicherung braucht einen Tag im Monat'))
 
 
 def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) -> dict:
     entity, action, name = op.get("entity"), op.get("action"), (op.get("name") or "").strip()
     if entity not in entities.names(entities.fmt_for(fw.connector)):
-        raise HTTPException(400, f"Entität {entity} passt nicht zur Anbindung dieser Firewall")
+        raise HTTPException(400, tr('Entität {0} passt nicht zur Anbindung dieser Firewall', entity))
     if entity in entities.REST_READ_ONLY_ENTITIES:
-        raise HTTPException(400, f"{entities.LABELS[entity]} werden auf der Firewall gepflegt, nicht über dieses Tool")
+        raise HTTPException(400, tr('{0} werden auf der Firewall gepflegt, nicht über dieses Tool', tr(entities.LABELS[entity])))
     if action not in ("add", "update", "remove"):
-        raise HTTPException(400, "Aktion muss add, update oder remove sein")
+        raise HTTPException(400, tr('Aktion muss add, update oder remove sein'))
     if entity in entities.REST_SINGLETONS and action != "update":
-        raise HTTPException(400, f"{entities.LABELS[entity]} kann nur geändert, nicht angelegt oder gelöscht werden")
+        raise HTTPException(400, tr('{0} kann nur geändert, nicht angelegt oder gelöscht werden', tr(entities.LABELS[entity])))
     if not name:
-        raise HTTPException(400, "Name fehlt")
+        raise HTTPException(400, tr('Name fehlt'))
     if action == "remove" and not connector.capabilities(fw)["remove"]:
-        raise HTTPException(400, "Löschen ist über Sophos Central nicht möglich – Objekt stattdessen deaktivieren "
-                                 "oder die Firewall über die REST-API anbinden")
+        raise HTTPException(400, tr('Löschen ist über Sophos Central nicht möglich – Objekt stattdessen deaktivieren oder die Firewall über die REST-API anbinden'))
     existing = _index(config).get(entity, {})
     if action == "remove" and (existing.get(name) or {}).get("isInternal"):
-        raise HTTPException(400, f"{entities.LABELS[entity]} „{name}“ ist ein eingebautes Objekt der Firewall "
-                                 "und kann nicht gelöscht werden")
+        raise HTTPException(400, tr('{0} „{1}“ ist ein eingebautes Objekt der Firewall und kann nicht gelöscht werden', tr(entities.LABELS[entity]), name))
     if action == "add" and name in existing:
-        raise HTTPException(409, f"{entities.LABELS[entity]} „{name}“ existiert bereits")
+        raise HTTPException(409, tr('{0} „{1}“ existiert bereits', tr(entities.LABELS[entity]), name))
     if action in ("update", "remove") and name not in existing:
-        raise HTTPException(404, f"{entities.LABELS[entity]} „{name}“ existiert nicht (mehr)")
+        raise HTTPException(404, tr('{0} „{1}“ existiert nicht (mehr)', tr(entities.LABELS[entity]), name))
     clean = {"entity": entity, "action": action, "name": name}
     if action != "remove":
         data = op.get("data")
         if not isinstance(data, dict):
-            raise HTTPException(400, "Objektdaten fehlen")
+            raise HTTPException(400, tr('Objektdaten fehlen'))
         drop = ("Position", "After", "Before") + entities.REST_READ_ONLY
         data = {k: v for k, v in data.items() if k not in drop}
         if data.get(entities.name_key(entity)) != name:
-            raise HTTPException(400, "Umbenennen ist nicht möglich – neues Objekt anlegen und altes löschen")
+            raise HTTPException(400, tr('Umbenennen ist nicht möglich – neues Objekt anlegen und altes löschen'))
         clean["data"] = data
         if entity == "backupSettings":
             _check_backup_settings(data)
         if action == "update" and diff.canonical(data) == diff.canonical(existing[name]) and not op.get("position"):
-            raise HTTPException(400, "Keine Änderung gegenüber dem aktuellen Stand")
+            raise HTTPException(400, tr('Keine Änderung gegenüber dem aktuellen Stand'))
     if entity in entities.RULE_ENTITIES and op.get("position") and action != "remove":
         pos = op["position"]
         if pos.get("type") not in ("top", "bottom", "after", "before"):
-            raise HTTPException(400, "Ungültige Position")
+            raise HTTPException(400, tr('Ungültige Position'))
         if pos.get("type") in ("after", "before") and pos.get("ref") == name:
-            raise HTTPException(400, "Eine Regel kann nicht relativ zu sich selbst positioniert werden")
+            raise HTTPException(400, tr('Eine Regel kann nicht relativ zu sich selbst positioniert werden'))
         scope = entities.POSITION_SCOPE.get(entity, (entity,))
         if pos.get("type") in ("after", "before") and not any(pos.get("ref") in _index(config).get(e, {}) for e in scope):
-            raise HTTPException(400, f"Bezugsregel „{pos.get('ref')}“ für die Position existiert nicht")
+            raise HTTPException(400, tr('Bezugsregel „{0}“ für die Position existiert nicht', pos.get('ref')))
         clean["position"] = {"type": pos["type"], **({"ref": pos["ref"]} if pos.get("ref") else {})}
     elif entity in entities.RULE_ENTITIES and action == "add":
         clean["position"] = {"type": "bottom"}
@@ -228,7 +226,7 @@ def draft_add(db: DbSession, user: User, fw: Firewall, op: dict) -> tuple[Change
     if clean["action"] == "remove":
         users = [u for u in used_by(working, clean["entity"], clean["name"])]
         if users:
-            raise HTTPException(409, f"Wird noch verwendet von: {', '.join(users)}")
+            raise HTTPException(409, tr('Wird noch verwendet von: {0}', ', '.join(users)))
     ops = merge_operation(list(cr.operations or []), clean)
     cr.operations = with_before(ops, config)
     warnings = check_references(effective_config(config, cr.operations))
@@ -240,10 +238,10 @@ def draft_add(db: DbSession, user: User, fw: Firewall, op: dict) -> tuple[Change
 def draft_remove(db: DbSession, user: User, cr: ChangeRequest, index: int) -> None:
     ops = list(cr.operations or [])
     if not 0 <= index < len(ops):
-        raise HTTPException(404, "Operation nicht gefunden")
+        raise HTTPException(404, tr('Operation nicht gefunden'))
     removed = ops.pop(index)
     cr.operations = ops
-    event(db, cr, "draft_changed", f"entfernt: {removed['action']} {removed['entity']} „{removed['name']}“", user)
+    event(db, cr, "draft_changed", tr('entfernt: {0} {1} „{2}“', removed['action'], removed['entity'], removed['name']), user)
     db.commit()
 
 
@@ -254,10 +252,10 @@ def check_expiry(db: DbSession, expires_at, deploy_after) -> None:
         return
     start = deploy_after or utcnow()
     if expires_at <= start + timedelta(minutes=5):
-        raise HTTPException(400, "Die Befristung muss mindestens 5 Minuten nach dem Ausrollen enden")
+        raise HTTPException(400, tr('Die Befristung muss mindestens 5 Minuten nach dem Ausrollen enden'))
     max_days = int(settings.get(db, "temp_max_days"))
     if max_days and expires_at > start + timedelta(days=max_days):
-        raise HTTPException(400, f"Befristung höchstens {max_days} Tage")
+        raise HTTPException(400, tr('Befristung höchstens {0} Tage', max_days))
 
 
 def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justification: str, ticket_ref: str,
@@ -277,7 +275,7 @@ def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justific
                             operations=ops, batch_id=batch_id)
         db.add(sib)
         db.flush()
-        event(db, sib, "created", f"Sammelantrag mit CR-{cr.number:04d}", user)
+        event(db, sib, "created", tr('Sammelantrag mit CR-{0:04d}', cr.number), user)
         _submit_one(db, user, sib, title=title, justification=justification, ticket_ref=ticket_ref,
                     deploy_after=deploy_after, ip=ip, expires_at=expires_at, announce=False)
         out.append(sib)
@@ -295,11 +293,11 @@ def _prepare_batch(db: DbSession, user: User, cr: ChangeRequest, firewall_ids: l
             continue
         fw = db.get(Firewall, fid)
         if not fw or fw.archived or not permissions.can(db, user, "change.create", fw):
-            raise HTTPException(403, "Keine Berechtigung für eine der ausgewählten Firewalls")
+            raise HTTPException(403, tr('Keine Berechtigung für eine der ausgewählten Firewalls'))
         if entities.fmt_for(fw.connector) != fmt:
-            raise HTTPException(400, f"„{fw.name}“ nutzt ein anderes Format (REST/XML) – nicht im selben Antrag möglich")
+            raise HTTPException(400, tr('„{0}“ nutzt ein anderes Format (REST/XML) – nicht im selben Antrag möglich', fw.name))
         if not fw.last_sync_at:
-            raise HTTPException(409, f"„{fw.name}“ wurde noch nie synchronisiert")
+            raise HTTPException(409, tr('„{0}“ wurde noch nie synchronisiert', fw.name))
         config = sync.cached_config(db, fw)
         working, clean = config, []
         for o in cr.operations or []:
@@ -317,16 +315,16 @@ def _prepare_batch(db: DbSession, user: User, cr: ChangeRequest, firewall_ids: l
 def _submit_one(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justification: str, ticket_ref: str,
                 deploy_after, ip: str, expires_at=None, announce: bool = True) -> None:
     if cr.status != "draft" or cr.created_by != user.id:
-        raise HTTPException(409, "Nur eigene Entwürfe können eingereicht werden")
+        raise HTTPException(409, tr('Nur eigene Entwürfe können eingereicht werden'))
     if not cr.operations:
-        raise HTTPException(400, "Der Entwurf enthält keine Änderungen")
+        raise HTTPException(400, tr('Der Entwurf enthält keine Änderungen'))
     if not title.strip() or not justification.strip():
-        raise HTTPException(400, "Titel und Begründung sind Pflichtfelder")
+        raise HTTPException(400, tr('Titel und Begründung sind Pflichtfelder'))
     if settings.get(db, "require_ticket") and not ticket_ref.strip():
-        raise HTTPException(400, "Ticket-Referenz ist Pflicht")
+        raise HTTPException(400, tr('Ticket-Referenz ist Pflicht'))
     fw = cr.firewall
     if not permissions.can(db, user, "change.create", fw):
-        raise HTTPException(403, "Keine Berechtigung, Änderungen für diese Firewall zu beantragen")
+        raise HTTPException(403, tr('Keine Berechtigung, Änderungen für diese Firewall zu beantragen'))
     config = sync.cached_config(db, fw)
     # Gegen den aktuellen Cache neu prüfen (die Konfiguration kann sich seit Anlage des Entwurfs geändert haben)
     working = config
@@ -368,17 +366,17 @@ def batch_members(db: DbSession, cr: ChangeRequest, states: tuple | None = None)
 
 def _check_decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment: str) -> None:
     if cr.status != "pending":
-        raise HTTPException(409, "Antrag ist nicht (mehr) offen")
+        raise HTTPException(409, tr('Antrag ist nicht (mehr) offen'))
     if not permissions.can(db, user, "change.approve", cr.firewall):
-        raise HTTPException(403, f"Keine Berechtigung zum Genehmigen für die Firewall „{cr.firewall.name}“")
+        raise HTTPException(403, tr('Keine Berechtigung zum Genehmigen für die Firewall „{0}“', cr.firewall.name))
     if cr.created_by == user.id:
-        raise HTTPException(403, "Vier-Augen-Prinzip: eigene Anträge können nicht genehmigt werden")
+        raise HTTPException(403, tr('Vier-Augen-Prinzip: eigene Anträge können nicht genehmigt werden'))
     if any(e.user_id == user.id for e in approvals(cr)):
-        raise HTTPException(409, "Sie haben diesen Antrag bereits genehmigt")
+        raise HTTPException(409, tr('Sie haben diesen Antrag bereits genehmigt'))
     if decision == "reject" and not comment.strip():
-        raise HTTPException(400, "Bitte eine Begründung für die Ablehnung angeben")
+        raise HTTPException(400, tr('Bitte eine Begründung für die Ablehnung angeben'))
     if decision not in ("approve", "reject"):
-        raise HTTPException(400, "Entscheidung muss approve oder reject sein")
+        raise HTTPException(400, tr('Entscheidung muss approve oder reject sein'))
 
 
 def decide(db: DbSession, user: User, cr: ChangeRequest, decision: str, comment: str, ip: str) -> None:
@@ -422,7 +420,7 @@ def withdraw(db: DbSession, user: User, cr: ChangeRequest, ip: str) -> None:
     if cr.batch_id and cr.status != "draft":
         members = [m for m in batch_members(db, cr) if m.status in ("pending", "approved")]
         if cr not in members:
-            raise HTTPException(409, "Antrag kann in diesem Status nicht zurückgezogen werden")
+            raise HTTPException(409, tr('Antrag kann in diesem Status nicht zurückgezogen werden'))
         for m in members:
             _withdraw_one(db, user, m, ip)
         return
@@ -431,9 +429,9 @@ def withdraw(db: DbSession, user: User, cr: ChangeRequest, ip: str) -> None:
 
 def _withdraw_one(db: DbSession, user: User, cr: ChangeRequest, ip: str) -> None:
     if cr.created_by != user.id and not permissions.has_global(db, user, "admin"):
-        raise HTTPException(403, "Nur der Antragsteller kann den Antrag zurückziehen")
+        raise HTTPException(403, tr('Nur der Antragsteller kann den Antrag zurückziehen'))
     if cr.status not in ("draft", "pending", "approved"):
-        raise HTTPException(409, "Antrag kann in diesem Status nicht zurückgezogen werden")
+        raise HTTPException(409, tr('Antrag kann in diesem Status nicht zurückgezogen werden'))
     was_draft = cr.status == "draft"
     cr.status = "withdrawn"
     event(db, cr, "withdrawn", "", user)
@@ -446,7 +444,7 @@ def _withdraw_one(db: DbSession, user: User, cr: ChangeRequest, ip: str) -> None
 
 def comment(db: DbSession, user: User, cr: ChangeRequest, text: str) -> None:
     if not text.strip():
-        raise HTTPException(400, "Kommentar ist leer")
+        raise HTTPException(400, tr('Kommentar ist leer'))
     event(db, cr, "comment", text.strip(), user)
     audit(db, "change.commented", actor=user, target_type="change", target_id=cr.id,
           details={"number": cr.number, "text": text.strip()})
@@ -482,7 +480,7 @@ def _create_revert(db: DbSession, cr: ChangeRequest, actor: User | None, *, just
                    deploy_after, ip: str, preapproved: bool = False) -> ChangeRequest:
     existing = active_revert(db, cr)
     if existing:
-        raise HTTPException(409, f"Für diesen Antrag gibt es bereits die Rücknahme CR-{existing.number:04d}")
+        raise HTTPException(409, tr('Für diesen Antrag gibt es bereits die Rücknahme CR-{0:04d}', existing.number))
     fw = cr.firewall
     config = sync.cached_config(db, fw)
     working, clean_ops = config, []
@@ -490,11 +488,10 @@ def _create_revert(db: DbSession, cr: ChangeRequest, actor: User | None, *, just
         try:
             c = validate_operation(fw, o, working)
         except HTTPException as e:
-            raise HTTPException(409, f"Rücknahme nicht möglich – die Konfiguration hat sich seitdem geändert: "
-                                     f"{e.detail}")
+            raise HTTPException(409, tr('Rücknahme nicht möglich – die Konfiguration hat sich seitdem geändert: {0}', e.detail))
         clean_ops.append(c)
         working = effective_config(working, [c])
-    title = f"Rücknahme von CR-{cr.number:04d}: {cr.title}"[:300]
+    title = tr('Rücknahme von CR-{0:04d}: {1}', cr.number, cr.title)[:300]
     rev = ChangeRequest(number=next_number(db), firewall_id=fw.id, created_by=actor.id if actor else None,
                         status="approved" if preapproved else "pending", title=title,
                         justification=justification.strip(), ticket_ref=ticket_ref.strip(),
@@ -506,9 +503,8 @@ def _create_revert(db: DbSession, cr: ChangeRequest, actor: User | None, *, just
     db.flush()
     event(db, rev, "submitted", justification.strip(), actor)
     if preapproved:
-        event(db, rev, "preapproved", f"Befristung wurde mit CR-{cr.number:04d} genehmigt "
-                                      f"({', '.join(e.actor_name for e in approvals(cr))})")
-    event(db, cr, "comment", f"Rücknahme {'automatisch ' if actor is None else ''}beantragt: CR-{rev.number:04d}", actor)
+        event(db, rev, "preapproved", tr('Befristung wurde mit CR-{0:04d} genehmigt ({1})', cr.number, ', '.join(e.actor_name for e in approvals(cr))))
+    event(db, cr, "comment", tr('Rücknahme {0}beantragt: CR-{1:04d}', 'automatisch ' if actor is None else '', rev.number), actor)
     audit(db, "change.revert_submitted", actor=actor, target_type="change", target_id=rev.id, ip=ip, details={
         "number": rev.number, "reverts": cr.number, "firewall": fw.name, "justification": justification.strip(),
         "automatic": actor is None, "preapproved": preapproved,
@@ -524,11 +520,11 @@ def submit_revert(db: DbSession, user: User, cr: ChangeRequest, *, justification
     """Rücknahme eines ausgerollten Antrags direkt als neuen Antrag einreichen (Vier-Augen-Prinzip gilt weiter:
     wer die Rücknahme stellt, kann sie nicht selbst genehmigen)."""
     if cr.status != "deployed":
-        raise HTTPException(409, "Nur ausgerollte Anträge können rückgängig gemacht werden")
+        raise HTTPException(409, tr('Nur ausgerollte Anträge können rückgängig gemacht werden'))
     if not can_revert(db, user, cr):
-        raise HTTPException(403, "Rücknahme erfordert das Recht zum Beantragen oder Genehmigen für diese Firewall")
+        raise HTTPException(403, tr('Rücknahme erfordert das Recht zum Beantragen oder Genehmigen für diese Firewall'))
     if not justification.strip():
-        raise HTTPException(400, "Bitte eine Begründung für die Rücknahme angeben")
+        raise HTTPException(400, tr('Bitte eine Begründung für die Rücknahme angeben'))
     return _create_revert(db, cr, user, justification=justification, ticket_ref=ticket_ref,
                           deploy_after=deploy_after, ip=ip)
 
@@ -541,7 +537,7 @@ def expire(db: DbSession, cr: ChangeRequest) -> ChangeRequest | None:
         return None
     preapproved = bool(settings.get(db, "temp_revert_preapproved"))
     try:
-        rev = _create_revert(db, cr, None, justification=f"Befristung abgelaufen ({cr.expires_at:%d.%m.%Y %H:%M} UTC)",
+        rev = _create_revert(db, cr, None, justification=tr('Befristung abgelaufen ({0:%d.%m.%Y %H:%M} UTC)', cr.expires_at),
                              ticket_ref=cr.ticket_ref, deploy_after=None, ip="", preapproved=preapproved)
     except HTTPException as e:
         db.rollback()
@@ -572,15 +568,15 @@ def drift_conflicts(current: dict[str, list[dict]], ops: list[dict]) -> list[str
     problems = []
     for o in ops:
         cur = idx.get(o["entity"], {}).get(o["name"])
-        label = f"{entities.LABELS[o['entity']]} „{o['name']}“"
+        label = f"{tr(entities.LABELS[o['entity']])} „{o['name']}“"
         if o["action"] == "add" and cur is not None:
-            problems.append(f"{label} existiert inzwischen bereits auf der Firewall")
+            problems.append(tr('{0} existiert inzwischen bereits auf der Firewall', label))
         elif o["action"] in ("update", "remove"):
             if cur is None:
-                problems.append(f"{label} existiert nicht mehr auf der Firewall")
+                problems.append(tr('{0} existiert nicht mehr auf der Firewall', label))
             elif diff.canonical(cur) != diff.canonical(o.get("before")):
                 fields = ", ".join(d["field"] for d in diff.diff_objects(o.get("before"), cur)[:5])
-                problems.append(f"{label} wurde seit dem Einreichen verändert ({fields})")
+                problems.append(tr('{0} wurde seit dem Einreichen verändert ({1})', label, fields))
     return problems
 
 
@@ -594,12 +590,11 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
         def logline(msg: str) -> None:
             lines.append({"ts": utcnow().isoformat(), "msg": msg})
 
-        logline(f"Ausrollen gestartet ({'manuell durch ' + actor.username if actor else 'automatisch'}) "
-                f"über {connector.capabilities(fw)['label']}")
+        logline(tr('Ausrollen gestartet ({0}) über {1}', 'manuell durch ' + actor.username if actor else 'automatisch', connector.capabilities(fw)['label']))
         event(db, cr, "deploy_started", "", actor)
         db.commit()
         try:
-            logline("Lese aktuelle Konfiguration zur Drift-Prüfung …")
+            logline(tr('Lese aktuelle Konfiguration zur Drift-Prüfung …'))
             current, _ = connector.fetch_config(db, fw, logline)
             problems = drift_conflicts(current, cr.operations)
             if problems:
@@ -612,20 +607,19 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
                 sync.store_config(db, fw, current, reason="sync")
                 notify.change_event(cr.id, "conflict")
                 return
-            logline("Keine Abweichungen – wende Änderungen an …")
+            logline(tr('Keine Abweichungen – wende Änderungen an …'))
             connector.apply(db, fw, cr.operations, logline)
-            logline("Lese Konfiguration nach dem Ausrollen …")
+            logline(tr('Lese Konfiguration nach dem Ausrollen …'))
             try:
                 sync.sync_firewall(db, fw, actor=actor, reason="deploy", change_id=cr.id)
                 after = _index(sync.cached_config(db, fw))
                 for o in cr.operations:
                     present = o["name"] in after.get(o["entity"], {})
                     if present != (o["action"] != "remove"):
-                        logline(f"WARNUNG: {entities.LABELS[o['entity']]} „{o['name']}“ – Ergebnis entspricht "
-                                f"nicht der Erwartung ({o['action']})")
+                        logline(tr('WARNUNG: {0} „{1}“ – Ergebnis entspricht nicht der Erwartung ({2})', tr(entities.LABELS[o['entity']]), o['name'], o['action']))
             except connector.ConnectorError as e:
                 # Änderung ist bereits angewendet – nur die Kontrolle ist gescheitert
-                logline(f"WARNUNG: Kontroll-Synchronisation fehlgeschlagen: {e}")
+                logline(tr('WARNUNG: Kontroll-Synchronisation fehlgeschlagen: {0}', e))
                 cr = db.get(ChangeRequest, change_id)
             logline("Fertig.")
             cr.status, cr.error, cr.deployed_at, cr.deploy_log = "deployed", "", utcnow(), lines
@@ -649,8 +643,8 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
             log.exception("Ausrollen von %s fehlgeschlagen", change_id)
             db.rollback()
             cr = db.get(ChangeRequest, change_id)
-            logline(f"Interner Fehler: {e}")
-            cr.status, cr.error, cr.deploy_log = "failed", f"Interner Fehler: {e}", lines
+            logline(tr('Interner Fehler: {0}', e))
+            cr.status, cr.error, cr.deploy_log = "failed", tr('Interner Fehler: {0}', e), lines
             event(db, cr, "failed", str(e), actor)
             audit(db, "change.deploy_failed", actor=actor, target_type="change", target_id=cr.id,
                   details={"number": cr.number, "error": f"intern: {e}"})

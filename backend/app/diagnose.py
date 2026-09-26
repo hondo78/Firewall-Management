@@ -15,6 +15,7 @@ from .sophos import connector, entities, xmlconv
 from .sophos.central import CentralError
 from .sophos.restapi import RestApiError
 from .sophos.xmlapi import XmlApiError
+from .i18n import tr
 
 
 class Report:
@@ -54,62 +55,61 @@ def _err(body) -> str:
 
 def _verdict(status: int) -> str:
     if status == 200:
-        return "vorhanden (liefert Daten)"
+        return tr('vorhanden (liefert Daten)')
     if status == 405:
-        return "Route vorhanden, GET aber nicht erlaubt"
+        return tr('Route vorhanden, GET aber nicht erlaubt')
     if status in (401, 403):
-        return "Route vermutlich vorhanden, aber keine Berechtigung"
+        return tr('Route vermutlich vorhanden, aber keine Berechtigung')
     if status == 404:
-        return "nicht vorhanden"
-    return "unklar"
+        return tr('nicht vorhanden')
+    return tr('unklar')
 
 
 def central(db: DbSession, acc: CentralAccount) -> dict:
     rep = Report()
     client = connector.central_client(acc)
-    if not rep.run("Token von Sophos ID", lambda: (client.token(), "Service Principal angemeldet"),
+    if not rep.run(tr('Token von Sophos ID'), lambda: (client.token(), tr('Service Principal angemeldet')),
                    method="POST", path="/api/v2/oauth2/token"):
         return rep.out()
-    who = rep.run("whoami", lambda: (lambda w: (w, f"{w.get('idType')} {w.get('id')} · Region "
-                                                   f"{(w.get('apiHosts') or {}).get('dataRegion', '–')}"))(client.whoami()),
+    who = rep.run("whoami", lambda: (lambda w: (w, tr('{0} {1} · Region {2}', w.get('idType'), w.get('id'), (w.get('apiHosts') or {}).get('dataRegion', '–'))))(client.whoami()),
                   method="GET", path="/whoami/v1")
     if who and who.get("idType") in ("partner", "organization"):
-        rep.run("Tenants auflisten", lambda: (lambda t: (t, f"{len(t)} Tenant(s)"))(
+        rep.run(tr('Tenants auflisten'), lambda: (lambda t: (t, tr('{0} Tenant(s)', len(t))))(
             client.tenants(who["idType"], who["id"])), method="GET", path=f"/{who['idType']}/v1/tenants")
         if not acc.tenant_id:
-            rep.add("Tenant ausgewählt", False, "Bitte im Konto einen Tenant wählen")
+            rep.add(tr('Tenant ausgewählt'), False, tr('Bitte im Konto einen Tenant wählen'))
             return rep.out()
-    fws = rep.run("Firewalls auflisten", lambda: (lambda f: (f, f"{len(f)} Firewall(s); Status: " + ", ".join(
+    fws = rep.run(tr('Firewalls auflisten'), lambda: (lambda f: (f, tr('{0} Firewall(s); Status: ', len(f)) + ", ".join(
         sorted({str((x.get('status') or {}).get('managingStatus') or (x.get('status') or {}).get('managing'))
                 for x in f})) if f else "keine"))(client.firewalls()), method="GET", path="/firewall/v1/firewalls")
-    groups = rep.run("Firewall-Gruppen (inkl. Untergruppen)", lambda: (lambda g: (g, f"{len(g)} Gruppe(n)"))(
+    groups = rep.run(tr('Firewall-Gruppen (inkl. Untergruppen)'), lambda: (lambda g: (g, tr('{0} Gruppe(n)', len(g))))(
         client.groups()), method="GET", path="/firewall/v1/firewall-groups?recurseSubgroups=true")
     if groups:
         g = groups[0]
-        rep.run(f"Sync-Status Gruppe „{g['name']}“", lambda: (lambda s: (s, ", ".join(
-            f"{x.get('status')}" for x in s) or "keine Mitglieder"))(client.group_sync_status(g["id"])),
+        rep.run(tr('Sync-Status Gruppe „{0}“', g['name']), lambda: (lambda s: (s, ", ".join(
+            f"{x.get('status')}" for x in s) or tr('keine Mitglieder')))(client.group_sync_status(g["id"])),
             method="GET", path="/firewall/v1/firewall-groups/{id}/firewalls/sync-status")
     if fws:
         ids = [f["id"] for f in fws[:10]]
-        rep.run("Firmware-Prüfung", lambda: (lambda r: (r, ", ".join(
-            f"{x.get('serialNumber')}: {', '.join(x.get('upgradeToVersion') or []) or 'aktuell'}"
+        rep.run(tr('Firmware-Prüfung'), lambda: (lambda r: (r, ", ".join(
+            f"{x.get('serialNumber')}: {', '.join(x.get('upgradeToVersion') or []) or tr('aktuell')}"
             for x in r.get("firewalls", [])[:5])))(client.firmware_check(ids)),
             method="POST", path="/firewall/v1/firewalls/actions/firmware-upgrade-check")
-    rep.run("Firewall-Lizenzen (Licensing API)", lambda: (lambda l: (l, f"{len(l)} Firewall(s) mit Lizenzdaten"))(
+    rep.run(tr('Firewall-Lizenzen (Licensing API)'), lambda: (lambda l: (l, tr('{0} Firewall(s) mit Lizenzdaten', len(l))))(
         client.firewall_licenses()), method="GET", path="/licenses/v1/licenses/firewalls")
-    rep.run("Firewall-Alerts (Common API)", lambda: (lambda a: (a, f"{len(a)} offene Alert(s)"))(
+    rep.run(tr('Firewall-Alerts (Common API)'), lambda: (lambda a: (a, tr('{0} offene Alert(s)', len(a))))(
         client.firewall_alerts(50)), method="GET", path="/common/v1/alerts?product=firewall")
 
     # Pfad-Abweichung Leitfaden ↔ Spezifikation: welche Variante kennt die API?
     dummy = str(uuid.uuid4())
-    for label, path in (("Spezifikation", f"/firewall/v1/firewall-config/firewalls/transactions/{dummy}"),
-                        ("Leitfaden", f"/firewall/v1/firewalls/transactions/{dummy}")):
+    for label, path in ((tr('Spezifikation'), f"/firewall/v1/firewall-config/firewalls/transactions/{dummy}"),
+                        (tr('Leitfaden'), f"/firewall/v1/firewalls/transactions/{dummy}")):
         status, body = client.probe("GET", f"{client.data_region}{path}")
         msg = _err(body)
         known = status not in (0, 404) or "transaction" in msg.lower()
-        rep.add(f"Transaktions-Endpunkt ({label})", None,
-                f"HTTP {status}: {msg} → {'Route vorhanden' if known else 'Route vermutlich unbekannt'}",
-                method="GET", path=path.replace(dummy, "{zufällige ID}"), status=status, kind="endpoint")
+        rep.add(tr('Transaktions-Endpunkt ({0})', label), None,
+                f"HTTP {status}: {msg} → {tr('Route vorhanden') if known else tr('Route vermutlich unbekannt')}",
+                method="GET", path=path.replace(dummy, tr('{zufällige ID}')), status=status, kind="endpoint")
 
     # Export-Test: liest nur die Zonen einer Firewall (ändert nichts), prüft Recht fwcm.firewall.api.config:write
     target = next((f for f in fws or [] if (f.get("status") or {}).get("connected")), None)
@@ -117,23 +117,23 @@ def central(db: DbSession, acc: CentralAccount) -> dict:
         def export():
             data = client.export_config(target["id"], ["Zone"])
             objs, version = xmlconv.parse_entities_xml(xmlconv.read_tar_entities(data), {"Zone"})
-            return objs, f"{target.get('name')}: {len(objs.get('Zone', []))} Zone(n), API-Version {version or '?'}"
-        rep.run("Export-Test (nur Zonen)", export, method="POST", path="/firewall/v1/firewall-config/firewalls/{id}/export")
+            return objs, tr('{0}: {1} Zone(n), API-Version {2}', target.get('name'), len(objs.get('Zone', [])), version or '?')
+        rep.run(tr('Export-Test (nur Zonen)'), export, method="POST", path="/firewall/v1/firewall-config/firewalls/{id}/export")
 
     # Nicht dokumentierte, naheliegende GET-Endpunkte (nur lesend)
     if fws:
         fid = fws[0]["id"]
-        probes = [("Einzelne Firewall", f"/firewall/v1/firewalls/{fid}")]
+        probes = [(tr('Einzelne Firewall'), f"/firewall/v1/firewalls/{fid}")]
         if groups:
-            probes.append(("Einzelne Gruppe", f"/firewall/v1/firewall-groups/{groups[0]['id']}"))
-        probes += [("Transaktionsliste je Firewall", f"/firewall/v1/firewall-config/firewalls/{fid}/transactions"),
+            probes.append((tr('Einzelne Gruppe'), f"/firewall/v1/firewall-groups/{groups[0]['id']}"))
+        probes += [(tr('Transaktionsliste je Firewall'), f"/firewall/v1/firewall-config/firewalls/{fid}/transactions"),
                    ("Firewall-Konfigurationsobjekte", f"/firewall/v1/firewall-config/firewalls/{fid}")]
         for label, path in probes:
             status, body = client.probe("GET", f"{client.data_region}{path}")
             shown = path.replace(fid, "{id}")
             if groups:
                 shown = shown.replace(groups[0]["id"], "{groupId}")
-            rep.add(f"Undokumentiert: {label}", None,
+            rep.add(tr('Undokumentiert: {0}', tr(label)), None,
                     f"HTTP {status}" + ("" if status == 200 else f" ({_err(body)})") + f" → {_verdict(status)}",
                     method="GET", path=shown, status=status, kind="undocumented")
     return rep.out()
@@ -144,7 +144,7 @@ def firewall(db: DbSession, fw: Firewall) -> dict:
         acc = db.get(CentralAccount, fw.central_account_id) if fw.central_account_id else None
         if not acc:
             rep = Report()
-            rep.add("Central-Konto", False, "Firewall ist keinem Central-Konto zugeordnet")
+            rep.add("Central-Konto", False, tr('Firewall ist keinem Central-Konto zugeordnet'))
             return rep.out()
         result = central(db, acc)
         return result
@@ -152,17 +152,15 @@ def firewall(db: DbSession, fw: Firewall) -> dict:
         return rest(db, fw)
     rep = Report()
     client = connector.xml_client(fw)
-    if not rep.run("Anmeldung an der XML-API", lambda: (client.test(), f"API-Version {client.api_version or '?'}"),
+    if not rep.run(tr('Anmeldung an der XML-API'), lambda: (client.test(), f"API-Version {client.api_version or '?'}"),
                    method="POST", path="/webconsole/APIController"):
         return rep.out()
     for entity in entities.NAMES:
-        rep.run(f"Lesen: {entities.LABELS[entity]}", lambda e=entity: (lambda objs: (objs, f"{len(objs)} Objekt(e)"))(
+        rep.run(tr('Lesen: {0}', tr(entities.LABELS[entity])), lambda e=entity: (lambda objs: (objs, tr('{0} Objekt(e)', len(objs))))(
             client.get(e)), method="POST", path=f"<Get><{entity}/></Get>")
     cached = sync.cached_config(db, fw)
-    rep.add("Schreibrechte", None, "Werden erst beim Ausrollen geprüft (kein schreibender Test im Probelauf). "
-            "Das Geräteprofil des API-Administrators muss Lese-/Schreibzugriff auf Firewall und Objekte haben.")
-    rep.add("Zwischenspeicher", None, f"{sum(len(v) for v in cached.values())} Objekte im Cache, "
-            f"letzte Synchronisation {fw.last_sync_at.isoformat() if fw.last_sync_at else 'nie'}")
+    rep.add(tr('Schreibrechte'), None, tr('Werden erst beim Ausrollen geprüft (kein schreibender Test im Probelauf). Das Geräteprofil des API-Administrators muss Lese-/Schreibzugriff auf Firewall und Objekte haben.'))
+    rep.add(tr('Zwischenspeicher'), None, tr('{0} Objekte im Cache, letzte Synchronisation {1}', sum(len(v) for v in cached.values()), fw.last_sync_at.isoformat() if fw.last_sync_at else 'nie'))
     return rep.out()
 
 
@@ -171,31 +169,30 @@ def rest(db: DbSession, fw: Firewall) -> dict:
     from datetime import datetime, timezone
     rep = Report()
     client = connector.rest_client(fw)
-    if not rep.run("Anmeldung per API-Key", lambda: (client.test(), f"{client.base_url}{client.prefix}"),
+    if not rep.run(tr('Anmeldung per API-Key'), lambda: (client.test(), f"{client.base_url}{client.prefix}"),
                    method="GET", path="/network/zones"):
         return rep.out()
     if client.prefix != "/api/firewall-config/v1":
-        rep.add("Basis-Pfad", None, f"Firewall antwortet unter {client.prefix} (nicht wie in der Spezifikation)",
+        rep.add("Basis-Pfad", None, tr('Firewall antwortet unter {0} (nicht wie in der Spezifikation)', client.prefix),
                 kind="endpoint")
-    rep.run("API-Einstellungen", lambda: (lambda r: (r, ", ".join(f"{k}={v}" for k, v in r.items()
+    rep.run(tr('API-Einstellungen'), lambda: (lambda r: (r, ", ".join(f"{k}={v}" for k, v in r.items()
                                                                    if not isinstance(v, (dict, list)))[:200] or "ok"))(
         client.request("GET", "/administration/api-settings")), method="GET", path="/administration/api-settings")
     for entity, (path, label, _) in entities.REST_RESOURCES.items():
         t = time.monotonic()
         try:
             n = len(client.list(path))
-            rep.add(f"Lesen: {label}", True, f"{n} Objekt(e)", method="GET", path=path,
+            rep.add(tr('Lesen: {0}', tr(label)), True, tr('{0} Objekt(e)', n), method="GET", path=path,
                     ms=int((time.monotonic() - t) * 1000))
         except RestApiError as e:
             # 404: Ressource gibt es auf dieser Firmware nicht; 403: Admin-Profil erlaubt es nicht
-            rep.add(f"Lesen: {label}", None if e.status == 404 else False, str(e), method="GET", path=path,
+            rep.add(tr('Lesen: {0}', tr(label)), None if e.status == 404 else False, str(e), method="GET", path=path,
                     status=e.status, ms=int((time.monotonic() - t) * 1000))
     if fw.api_key_expires_at:
         days = (fw.api_key_expires_at - datetime.now(timezone.utc)).days
-        rep.add("Ablauf des API-Keys", days > 30 if days >= 0 else False,
-                f"läuft am {fw.api_key_expires_at.date().isoformat()} ab (in {days} Tagen)")
+        rep.add(tr('Ablauf des API-Keys'), days > 30 if days >= 0 else False,
+                tr('läuft am {0} ab (in {1} Tagen)', fw.api_key_expires_at.date().isoformat(), days))
     else:
-        rep.add("Ablauf des API-Keys", None, "Ablaufdatum nicht hinterlegt – bitte in den Einstellungen eintragen")
-    rep.add("Schreibrechte", None, "Werden erst beim Ausrollen geprüft (kein schreibender Test im Probelauf). "
-            "Das Geräteprofil des Admins, der den Key erzeugt hat, braucht Lese-/Schreibzugriff auf Regeln und Objekte.")
+        rep.add(tr('Ablauf des API-Keys'), None, tr('Ablaufdatum nicht hinterlegt – bitte in den Einstellungen eintragen'))
+    rep.add(tr('Schreibrechte'), None, tr('Werden erst beim Ausrollen geprüft (kein schreibender Test im Probelauf). Das Geräteprofil des Admins, der den Key erzeugt hat, braucht Lese-/Schreibzugriff auf Regeln und Objekte.'))
     return rep.out()

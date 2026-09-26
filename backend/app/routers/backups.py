@@ -15,6 +15,7 @@ from ..models import ConfigBackup, Firewall, User, utcnow
 from ..permissions import firewall_or_404
 from ..security import client_ip, get_current_user
 from ..sophos import connector, entities, xmlconv
+from ..i18n import tr
 
 router = APIRouter(prefix="/api/firewalls/{firewall_id}/backups", tags=["backups"])
 
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api/firewalls/{firewall_id}/backups", tags=["backups
 def _backup_or_404(db: DbSession, fw: Firewall, backup_id: str) -> ConfigBackup:
     b = db.get(ConfigBackup, backup_id)
     if not b or b.firewall_id != fw.id:
-        raise HTTPException(404, "Sicherung nicht gefunden")
+        raise HTTPException(404, tr('Sicherung nicht gefunden'))
     return b
 
 
@@ -72,7 +73,7 @@ def backup_now(firewall_id: str, body: BackupIn, request: Request, user: User = 
     except connector.ConnectorError as e:
         audit(db, "backup.failed", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
               details={"firewall": fw.name, "error": str(e)})
-        raise HTTPException(502, f"Sicherung fehlgeschlagen: {e}")
+        raise HTTPException(502, tr('Sicherung fehlgeschlagen: {0}', e))
     return _out(db, b, None)
 
 
@@ -123,7 +124,7 @@ def download_backup(firewall_id: str, backup_id: str, request: Request, format: 
           details={"firewall": fw.name, "backup_id": b.id, "format": format})
     if format == "xml":
         if b.format == "rest":
-            raise HTTPException(400, "Entities.xml gibt es nur für Sicherungen im XML-Format")
+            raise HTTPException(400, tr('Entities.xml gibt es nur für Sicherungen im XML-Format'))
         objs = [(e, o) for e in entities.NAMES for o in doc["config"].get(e, [])]
         return Response(xmlconv.build_entities_xml(objs, fw.api_version), media_type="application/xml",
                         headers={"Content-Disposition": f'attachment; filename="Entities_{base}_{stamp}.xml"'})
@@ -138,7 +139,7 @@ def restore_review(firewall_id: str, backup_id: str, user: User = Depends(get_cu
     fw = firewall_or_404(db, user, firewall_id, "change.create")
     b = _backup_or_404(db, fw, backup_id)
     if b.format != entities.fmt_for(fw.connector):
-        raise HTTPException(409, "Die Sicherung stammt aus einer anderen Anbindung (REST/XML) und passt nicht zum aktuellen Format")
+        raise HTTPException(409, tr('Die Sicherung stammt aus einer anderen Anbindung (REST/XML) und passt nicht zum aktuellen Format'))
     items = backups.restore_review(sync.cached_config(db, fw), backups.config_of(b), b.format)
     token = importer.store(user.id, fw.id, items)
     counts = {s: sum(1 for i in items if i["status"] == s) for s in ("new", "changed", "removed")}
@@ -167,7 +168,7 @@ def restore_apply(firewall_id: str, backup_id: str, body: RestoreIn, request: Re
             added += 1
         except HTTPException as e:
             db.rollback()
-            skipped.append(f"{entities.LABELS.get(op['entity'], op['entity'])} „{op['name']}“: {e.detail}")
+            skipped.append(f"{tr(entities.LABELS.get(op['entity'], op['entity']))} „{op['name']}“: {e.detail}")
     if draft is None:
         draft = changes.get_draft(db, user, fw)
     audit(db, "backup.restore_to_draft", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),

@@ -16,7 +16,7 @@ import Sso from './pages/admin/Sso'
 import Roles from './pages/admin/Roles'
 import SettingsPage from './pages/admin/Settings'
 import Users from './pages/admin/Users'
-import { t } from './i18n'
+import { lang, t } from './i18n'
 import LanguageSwitch from './components/LanguageSwitch'
 
 const AuthCtx = createContext(null)
@@ -130,6 +130,10 @@ export default function App() {
     return () => clearInterval(t)
   }, [me, refreshCounts])
 
+  // Oberflächensprache am Benutzer merken – Benachrichtigungen an ihn kommen dann in dieser Sprache
+  useEffect(() => {
+    if (me && me.language !== lang) api('/auth/language', { method: 'PUT', body: { language: lang } }).catch(() => {})
+  }, [me])
   const logout = () => { setToken(null); setMe(null) }
   if (!ready) return null
   if (!me) return <Login onLogin={(token, user) => { setToken(token); setMe(user) }} />

@@ -10,6 +10,7 @@ Regeln (verlustfrei für die von der XML-API bzw. in Entities.xml verwendeten St
 import io
 import tarfile
 import xml.etree.ElementTree as ET
+from ..i18n import tr
 
 # Schreib-Anweisungen für Regeln – nicht Teil des gespeicherten Objekts, sondern pro Operation angegeben
 POSITION_KEYS = ("Position", "After", "Before")
@@ -140,7 +141,7 @@ def read_tar_entities(archive: bytes) -> bytes:
                 f = tar.extractfile(member)
                 if f:
                     return f.read()
-    raise ValueError("Archiv enthält keine Entities.xml")
+    raise ValueError(tr('Archiv enthält keine Entities.xml'))
 
 
 def build_tar(entities_xml: bytes) -> bytes:

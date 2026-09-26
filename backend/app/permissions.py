@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session as DbSession
 from .db import get_db
 from .models import Firewall, Role, RoleAssignment, User
 from .security import get_current_user
+from .i18n import tr
 
 PERMISSIONS: dict[str, str] = {
     "firewall.view": "Firewalls und Konfiguration ansehen",
@@ -99,7 +100,7 @@ def visible_group_ids(db: DbSession, user: User, perm: str = "firewall.view") ->
 def require_superadmin(user: User = Depends(get_current_user)) -> User:
     """Nur Superadmins – z. B. für Verbindungs- und Zugangsdaten (Firewalls, Sophos Central)."""
     if not user.is_superadmin:
-        raise HTTPException(403, "Nur für Superadmins")
+        raise HTTPException(403, tr('Nur für Superadmins'))
     return user
 
 
@@ -120,7 +121,7 @@ def redact(value, user: User):
 def require_global(perm: str):
     def dep(user: User = Depends(get_current_user), db: DbSession = Depends(get_db)) -> User:
         if not has_global(db, user, perm):
-            raise HTTPException(403, "Keine Berechtigung")
+            raise HTTPException(403, tr('Keine Berechtigung'))
         return user
     return dep
 
@@ -129,7 +130,7 @@ def firewall_or_404(db: DbSession, user: User, firewall_id: str, perm: str = "fi
     """Unsichtbare Firewalls antworten mit 404, fehlende Einzelrechte mit 403."""
     fw = db.get(Firewall, firewall_id)
     if not fw or fw.archived or not can(db, user, "firewall.view", fw):
-        raise HTTPException(404, "Firewall nicht gefunden")
+        raise HTTPException(404, tr('Firewall nicht gefunden'))
     if perm != "firewall.view" and not can(db, user, perm, fw):
-        raise HTTPException(403, "Keine Berechtigung für diese Firewall")
+        raise HTTPException(403, tr('Keine Berechtigung für diese Firewall'))
     return fw

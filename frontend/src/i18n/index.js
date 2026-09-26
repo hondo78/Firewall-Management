@@ -42,5 +42,10 @@ export function t(text, ...args) {
 export function setLang(code) {
   if (!LANGS[code] || code === lang) return
   try { localStorage.setItem(KEY, code) } catch { /* privater Modus */ }
-  window.location.reload()
+  // Angemeldet: Sprache auch am Benutzer speichern (für Benachrichtigungen), danach neu laden
+  let token = null
+  try { token = localStorage.getItem('fwm_token') } catch { /* privater Modus */ }
+  const save = token ? fetch('/api/auth/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ language: code }) }).catch(() => {}) : Promise.resolve()
+  save.finally(() => window.location.reload())
 }

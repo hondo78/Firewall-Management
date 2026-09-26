@@ -15,6 +15,7 @@ from urllib.parse import quote, urlparse
 import httpx
 
 from .. import config
+from ..i18n import tr
 
 API_PREFIXES = ("/api/firewall-config/v1", "/firewall-config/v1")
 _PREFIX_BY_BASE: dict[str, str] = {}
@@ -33,7 +34,7 @@ class RestApiError(Exception):
 def normalize_base_url(url: str) -> str:
     url = (url or "").strip().rstrip("/")
     if not url:
-        raise RestApiError("Keine API-Adresse hinterlegt")
+        raise RestApiError(tr('Keine API-Adresse hinterlegt'))
     if "://" not in url:
         url = "https://" + url
     parsed = urlparse(url)
@@ -58,12 +59,12 @@ class RestApiClient:
 
     def _send(self, method: str, url: str, **kw) -> httpx.Response:
         if not self.api_key:
-            raise RestApiError("Kein API-Key hinterlegt")
+            raise RestApiError(tr('Kein API-Key hinterlegt'))
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
         try:
             return self._http.request(method, url, headers=headers, **kw)
         except httpx.HTTPError as e:
-            raise RestApiError(f"Firewall nicht erreichbar: {e}") from e
+            raise RestApiError(tr('Firewall nicht erreichbar: {0}', e)) from e
 
     def request(self, method: str, path: str, *, json=None, params: dict | None = None):
         known = _PREFIX_BY_BASE.get(self.base_url)
@@ -89,8 +90,8 @@ class RestApiClient:
                 msg = body.get("message") or body.get("error") or msg
             except ValueError:
                 pass
-            hint = {401: " – API-Key ungültig oder abgelaufen",
-                    403: " – das Admin-Profil des Keys erlaubt diese Aktion nicht oder IP nicht freigegeben"}
+            hint = {401: tr(' – API-Key ungültig oder abgelaufen'),
+                    403: tr(' – das Admin-Profil des Keys erlaubt diese Aktion nicht oder IP nicht freigegeben')}
             raise RestApiError(f"{method} {path} → HTTP {r.status_code}: {msg}{hint.get(r.status_code, '')}",
                                status=r.status_code, code=code)
         if not r.content:
@@ -98,7 +99,7 @@ class RestApiClient:
         try:
             return r.json()
         except ValueError:
-            raise RestApiError(f"{method} {path}: keine JSON-Antwort (HTTP {r.status_code})", status=r.status_code)
+            raise RestApiError(tr('{0} {1}: keine JSON-Antwort (HTTP {2})', method, path, r.status_code), status=r.status_code)
 
     # --- Objekte -----------------------------------------------------------------------------------------
 
@@ -187,7 +188,7 @@ def request_preview(path: str, action: str, data: dict | None, name: str, positi
     lines = [f"PATCH {base}/{quote_name(name)}\n{dump(body)}"] if body else []
     if is_rule and position:
         lines.append(f"POST {base}/move\n{dump({'name': name, **position_body(position)})}")
-    return "\n\n".join(lines) or "(keine Änderung)"
+    return "\n\n".join(lines) or tr('(keine Änderung)')
 
 
 def patch_body(before: dict | None, after: dict | None) -> dict:

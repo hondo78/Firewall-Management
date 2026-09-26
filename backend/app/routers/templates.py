@@ -12,6 +12,7 @@ from ..permissions import firewall_or_404
 from ..security import client_ip, get_current_user
 from ..serializers import change_out
 from ..sophos import entities
+from ..i18n import tr
 
 router = APIRouter(prefix="/api", tags=["templates"])
 
@@ -42,12 +43,12 @@ def create_template(body: TemplateIn, request: Request, user: User = Depends(get
     """Vorlage aus einem Entwurf oder Antrag (dessen Operationen, ohne firewall-spezifischen Vorher-Stand)."""
     cr = db.get(ChangeRequest, body.change_id)
     if not cr or not permissions.can(db, user, "change.create", cr.firewall):
-        raise HTTPException(404, "Antrag nicht gefunden")
+        raise HTTPException(404, tr('Antrag nicht gefunden'))
     if db.execute(select(ChangeTemplate).where(ChangeTemplate.name == body.name.strip())).scalar():
-        raise HTTPException(409, "Eine Vorlage mit diesem Namen existiert bereits")
+        raise HTTPException(409, tr('Eine Vorlage mit diesem Namen existiert bereits'))
     ops = [{k: v for k, v in o.items() if k not in ("before", "before_position")} for o in cr.operations or []]
     if not ops:
-        raise HTTPException(400, "Der Antrag enthält keine Änderungen")
+        raise HTTPException(400, tr('Der Antrag enthält keine Änderungen'))
     t = ChangeTemplate(name=body.name.strip(), description=body.description, operations=ops,
                        format=entities.fmt_for(cr.firewall.connector), created_by=user.id)
     db.add(t)
@@ -62,9 +63,9 @@ def delete_template(template_id: str, request: Request, user: User = Depends(get
                     db: DbSession = Depends(get_db)):
     t = db.get(ChangeTemplate, template_id)
     if not t:
-        raise HTTPException(404, "Vorlage nicht gefunden")
+        raise HTTPException(404, tr('Vorlage nicht gefunden'))
     if t.created_by != user.id and not permissions.has_global(db, user, "admin"):
-        raise HTTPException(403, "Nur der Ersteller oder ein Administrator kann die Vorlage löschen")
+        raise HTTPException(403, tr('Nur der Ersteller oder ein Administrator kann die Vorlage löschen'))
     db.delete(t)
     audit(db, "template.deleted", actor=user, target_type="template", target_id=template_id, ip=client_ip(request),
           details={"name": t.name})
@@ -78,9 +79,9 @@ def apply_template(firewall_id: str, template_id: str, user: User = Depends(get_
     fw = firewall_or_404(db, user, firewall_id, "change.create")
     t = db.get(ChangeTemplate, template_id)
     if not t:
-        raise HTTPException(404, "Vorlage nicht gefunden")
+        raise HTTPException(404, tr('Vorlage nicht gefunden'))
     if t.format != entities.fmt_for(fw.connector):
-        raise HTTPException(400, "Die Vorlage passt nicht zum Format (REST/XML) dieser Firewall")
+        raise HTTPException(400, tr('Die Vorlage passt nicht zum Format (REST/XML) dieser Firewall'))
     cr, warnings, skipped = None, [], []
     for o in t.operations:
         try:
@@ -88,9 +89,9 @@ def apply_template(firewall_id: str, template_id: str, user: User = Depends(get_
             warnings = w
         except HTTPException as e:
             db.rollback()
-            skipped.append(f"{entities.LABELS.get(o['entity'], o['entity'])} „{o['name']}“: {e.detail}")
+            skipped.append(f"{tr(entities.LABELS.get(o['entity'], o['entity']))} „{o['name']}“: {e.detail}")
     if cr is None:
-        raise HTTPException(409, "Keine Operation der Vorlage passt: " + "; ".join(skipped))
+        raise HTTPException(409, tr('Keine Operation der Vorlage passt: ') + "; ".join(skipped))
     if not cr.title:
         cr.title = t.name[:300]
         db.commit()
@@ -103,7 +104,7 @@ def group_drift(group_id: str, reference: str, user: User = Depends(get_current_
     """Abgleich aller Firewalls einer Gruppe gegen eine Referenz-Firewall (je Entität: +/−/~)."""
     group = db.get(FirewallGroup, group_id)
     if not group:
-        raise HTTPException(404, "Gruppe nicht gefunden")
+        raise HTTPException(404, tr('Gruppe nicht gefunden'))
     ref = firewall_or_404(db, user, reference)
     ref_cfg = sync.cached_config(db, ref)
     fmt = entities.fmt_for(ref.connector)

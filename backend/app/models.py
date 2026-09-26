@@ -56,6 +56,8 @@ class User(Base):
     telegram_chat_id: Mapped[str] = mapped_column(String(40), default="", server_default="")
     # Gelöscht, aber in Anträgen/Verlauf referenziert: anonymisiert, ausgeblendet, nicht mehr anmeldbar
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Sprache für Benachrichtigungen ("" = Standardsprache aus den Einstellungen)
+    language: Mapped[str] = mapped_column(String(5), default="", server_default="")
 
     assignments: Mapped[list["RoleAssignment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 

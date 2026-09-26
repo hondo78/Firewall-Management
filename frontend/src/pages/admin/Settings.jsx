@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { ErrorBox, Field, useLoad } from '../../components/ui'
-import { t } from '../../i18n'
+import { LANGS, t } from '../../i18n'
 
 export default function SettingsPage() {
   const [settings, error] = useLoad(() => api('/settings'), [])
@@ -45,6 +45,12 @@ export default function SettingsPage() {
           <span>{t("Automatische Rücknahme nach Ablauf ohne erneute Freigabe ausrollen")} <span className="muted small">{t("(die Befristung ist Teil der ursprünglichen Genehmigung)")}</span></span></label>
         <Field label={t("Maximale Befristung (Tage)")} hint="0 = unbegrenzt">
           <input type="number" min={0} value={form.temp_max_days} onChange={(e) => setForm({ ...form, temp_max_days: Number(e.target.value) })} style={{ maxWidth: 200 }} />
+        </Field>
+        <h3 style={{ margin: '10px 0 0' }}>{t("Sprache")}</h3>
+        <Field label={t("Standardsprache")} hint={t("Für Teams/Slack, Ausroll-Protokolle und Benachrichtigungen an Benutzer ohne eigene Sprachwahl. Jeder Benutzer erhält Nachrichten in der Sprache, die er zuletzt in der Oberfläche gewählt hat.")}>
+          <select value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} style={{ maxWidth: 240 }}>
+            {Object.entries(LANGS).map(([code, l]) => <option key={code} value={code}>{l.label}</option>)}
+          </select>
         </Field>
         <h3 style={{ margin: '10px 0 0' }}>{t("Synchronisation")}</h3>
         <Field label={t("Intervall (Minuten)")} hint={t("Liest regelmäßig die Konfiguration aller Firewalls und erkennt Änderungen außerhalb dieses Tools. 0 = aus.")}>

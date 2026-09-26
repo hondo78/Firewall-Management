@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session as DbSession
 from . import crypto
 from .models import FirewallGroup, Role, RoleAssignment, Setting, User
 from .security import hash_password
+from .i18n import tr
 
 KEY = "oidc"
 DEFAULTS = {
@@ -97,14 +98,14 @@ def discovery(issuer: str) -> dict:
         r.raise_for_status()
         doc = r.json()
     except (httpx.HTTPError, ValueError) as e:
-        raise HTTPException(502, f"OIDC-Discovery fehlgeschlagen: {e}")
+        raise HTTPException(502, tr('OIDC-Discovery fehlgeschlagen: {0}', e))
     _discovery[issuer] = (doc, time.time() + 3600)
     return doc
 
 
 def start(cfg: dict, redirect_uri: str) -> str:
     if not (cfg["enabled"] and cfg["issuer"] and cfg["client_id"]):
-        raise HTTPException(400, "SSO ist nicht eingerichtet")
+        raise HTTPException(400, tr('SSO ist nicht eingerichtet'))
     doc = discovery(cfg["issuer"])
     now = time.time()
     for k in [k for k, v in _pending.items() if v["created"] < now - 600]:
@@ -122,7 +123,7 @@ def finish(cfg: dict, code: str, state: str, redirect_uri: str) -> dict:
     """Code gegen Tokens tauschen, ID-Token prüfen; liefert die Claims (inkl. userinfo)."""
     pending = _pending.pop(state or "", None)
     if not pending or pending["created"] < time.time() - 600:
-        raise HTTPException(400, "Anmeldung abgelaufen oder ungültig – bitte erneut versuchen")
+        raise HTTPException(400, tr('Anmeldung abgelaufen oder ungültig – bitte erneut versuchen'))
     doc = discovery(cfg["issuer"])
     try:
         r = _http.post(doc["token_endpoint"], data={
@@ -130,9 +131,9 @@ def finish(cfg: dict, code: str, state: str, redirect_uri: str) -> dict:
             "client_id": cfg["client_id"], "client_secret": cfg["client_secret"],
             "code_verifier": pending["verifier"]})
     except httpx.HTTPError as e:
-        raise HTTPException(502, f"Token-Abruf beim Identity Provider fehlgeschlagen: {e}")
+        raise HTTPException(502, tr('Token-Abruf beim Identity Provider fehlgeschlagen: {0}', e))
     if r.status_code != 200:
-        raise HTTPException(502, f"Token-Abruf abgelehnt (HTTP {r.status_code}): {r.text[:200]}")
+        raise HTTPException(502, tr('Token-Abruf abgelehnt (HTTP {0}): {1}', r.status_code, r.text[:200]))
     tokens = r.json()
     claims = verify_id_token(cfg, doc, tokens.get("id_token", ""), pending["nonce"])
     if doc.get("userinfo_endpoint") and tokens.get("access_token"):
@@ -147,7 +148,7 @@ def finish(cfg: dict, code: str, state: str, redirect_uri: str) -> dict:
 
 def verify_id_token(cfg: dict, doc: dict, id_token: str, nonce: str) -> dict:
     if not id_token:
-        raise HTTPException(502, "Identity Provider hat kein ID-Token geliefert")
+        raise HTTPException(502, tr('Identity Provider hat kein ID-Token geliefert'))
     try:
         header = jwt.get_unverified_header(id_token)
         jwks = _http.get(doc["jwks_uri"]).json()
@@ -155,16 +156,16 @@ def verify_id_token(cfg: dict, doc: dict, id_token: str, nonce: str) -> dict:
         if key is None and len(jwks.get("keys", [])) == 1:
             key = jwks["keys"][0]
         if key is None:
-            raise HTTPException(502, "Signaturschlüssel des ID-Tokens nicht gefunden")
+            raise HTTPException(502, tr('Signaturschlüssel des ID-Tokens nicht gefunden'))
         alg = header.get("alg", "RS256")
         if alg == "none" or alg.startswith("HS"):
-            raise HTTPException(502, "Unsicherer Signaturalgorithmus im ID-Token")
+            raise HTTPException(502, tr('Unsicherer Signaturalgorithmus im ID-Token'))
         claims = jwt.decode(id_token, jwt.PyJWK.from_dict(key).key, algorithms=[alg], audience=cfg["client_id"],
                             issuer=doc.get("issuer", cfg["issuer"]), leeway=60)
     except (jwt.PyJWTError, httpx.HTTPError, ValueError) as e:
-        raise HTTPException(401, f"ID-Token ungültig: {e}")
+        raise HTTPException(401, tr('ID-Token ungültig: {0}', e))
     if claims.get("nonce") != nonce:
-        raise HTTPException(401, "ID-Token ungültig: nonce passt nicht")
+        raise HTTPException(401, tr('ID-Token ungültig: nonce passt nicht'))
     return claims
 
 
@@ -179,17 +180,17 @@ def map_user(db: DbSession, cfg: dict, claims: dict) -> tuple[User, dict]:
     sub = str(claims.get("sub") or "")
     username = str(claims.get(cfg["username_claim"]) or claims.get("email") or sub).strip().lower()
     if not sub or not username:
-        raise HTTPException(401, "ID-Token ohne Benutzerkennung")
+        raise HTTPException(401, tr('ID-Token ohne Benutzerkennung'))
     user = db.execute(select(User).where(User.oidc_subject == sub)).scalar()
     created = False
     if user is None:
         user = db.execute(select(User).where(User.username == username)).scalar()
         if user is not None and user.is_superadmin and user.auth_source == "local":
             # Lokaler Notfall-Superadmin wird nie automatisch an ein SSO-Konto gebunden
-            raise HTTPException(403, "Dieser Benutzername ist dem lokalen Administrator vorbehalten")
+            raise HTTPException(403, tr('Dieser Benutzername ist dem lokalen Administrator vorbehalten'))
         if user is None:
             if not cfg["auto_create"]:
-                raise HTTPException(403, f"Benutzer „{username}“ ist nicht freigeschaltet")
+                raise HTTPException(403, tr('Benutzer „{0}“ ist nicht freigeschaltet', username))
             # Defaults der Spalten greifen erst beim flush → active ausdrücklich setzen
             user = User(username=username, password_hash=hash_password(secrets.token_urlsafe(32)),
                         auth_source="oidc", active=True, is_superadmin=False)
@@ -197,7 +198,7 @@ def map_user(db: DbSession, cfg: dict, claims: dict) -> tuple[User, dict]:
             created = True
         user.oidc_subject = sub
     if not user.active:
-        raise HTTPException(403, "Benutzer ist deaktiviert")
+        raise HTTPException(403, tr('Benutzer ist deaktiviert'))
     user.display_name = str(claims.get("name") or user.display_name or "")
     if claims.get("email"):
         user.email = str(claims["email"])
@@ -228,5 +229,5 @@ def issue_exchange_code(user: User) -> str:
 def redeem_exchange_code(code: str) -> str:
     entry = _exchange.pop(code or "", None)
     if not entry or entry[2] < time.time():
-        raise HTTPException(401, "SSO-Anmeldung abgelaufen – bitte erneut versuchen")
+        raise HTTPException(401, tr('SSO-Anmeldung abgelaufen – bitte erneut versuchen'))
     return entry[0]

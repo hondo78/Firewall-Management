@@ -12,6 +12,7 @@ from ..models import (ChangeEvent, ChangeRequest, ChangeTemplate, ConfigBackup, 
 from ..permissions import require_global
 from ..security import client_ip, get_current_user, hash_password
 from ..serializers import user_out
+from ..i18n import tr
 
 router = APIRouter(prefix="/api", tags=["admin"])
 admin_only = require_global("admin")
@@ -61,10 +62,10 @@ def _apply_assignments(db: DbSession, u: User, items: list[AssignmentIn]) -> lis
         seen.add(key)
         role = db.get(Role, a.role_id)
         if not role:
-            raise HTTPException(400, "Unbekannte Rolle")
+            raise HTTPException(400, tr('Unbekannte Rolle'))
         group = db.get(FirewallGroup, a.group_id) if a.group_id else None
         if a.group_id and not group:
-            raise HTTPException(400, "Unbekannte Firewall-Gruppe")
+            raise HTTPException(400, tr('Unbekannte Firewall-Gruppe'))
         u.assignments.append(RoleAssignment(role_id=role.id, group_id=a.group_id))
         labels.append(f"{role.name} @ {group.name if group else 'alle Firewalls'}")
     return labels
@@ -75,16 +76,16 @@ def _check_last_superadmin(db: DbSession, u: User, is_superadmin: bool, active: 
         others = db.execute(select(func.count()).select_from(User).where(
             User.is_superadmin.is_(True), User.active.is_(True), User.id != u.id)).scalar()
         if not others:
-            raise HTTPException(409, "Der letzte aktive Superadmin kann nicht herabgestuft werden")
+            raise HTTPException(409, tr('Der letzte aktive Superadmin kann nicht herabgestuft werden'))
 
 
 @router.post("/users")
 def create_user(body: UserIn, request: Request, actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
     name = body.username.strip().lower()
     if db.execute(select(User).where(User.username == name)).scalar():
-        raise HTTPException(409, "Benutzername existiert bereits")
+        raise HTTPException(409, tr('Benutzername existiert bereits'))
     if not body.password or len(body.password) < 10:
-        raise HTTPException(400, "Passwort muss mindestens 10 Zeichen haben")
+        raise HTTPException(400, tr('Passwort muss mindestens 10 Zeichen haben'))
     u = User(username=name, display_name=body.display_name, email=body.email, active=body.active,
              is_superadmin=body.is_superadmin, password_hash=hash_password(body.password))
     db.add(u)
@@ -100,14 +101,14 @@ def update_user(user_id: str, body: UserIn, request: Request, actor: User = Depe
                 db: DbSession = Depends(get_db)):
     u = db.get(User, user_id)
     if not u or u.deleted:
-        raise HTTPException(404, "Benutzer nicht gefunden")
+        raise HTTPException(404, tr('Benutzer nicht gefunden'))
     _check_last_superadmin(db, u, body.is_superadmin, body.active)
     before = {"roles": [f"{a.role.name} @ {a.group_id or 'alle'}" for a in u.assignments],
               "superadmin": u.is_superadmin, "active": u.active}
     u.display_name, u.email, u.active, u.is_superadmin = body.display_name, body.email, body.active, body.is_superadmin
     if body.password:
         if len(body.password) < 10:
-            raise HTTPException(400, "Passwort muss mindestens 10 Zeichen haben")
+            raise HTTPException(400, tr('Passwort muss mindestens 10 Zeichen haben'))
         u.password_hash = hash_password(body.password)
     labels = _apply_assignments(db, u, body.assignments)
     audit(db, "user.updated", actor=actor, target_type="user", target_id=u.id, ip=client_ip(request), details={
@@ -121,11 +122,11 @@ def update_user(user_id: str, body: UserIn, request: Request, actor: User = Depe
 def delete_user(user_id: str, request: Request, actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
     u = db.get(User, user_id)
     if not u:
-        raise HTTPException(404, "Benutzer nicht gefunden")
+        raise HTTPException(404, tr('Benutzer nicht gefunden'))
     if u.id == actor.id:
-        raise HTTPException(409, "Sie können sich nicht selbst löschen")
+        raise HTTPException(409, tr('Sie können sich nicht selbst löschen'))
     if u.deleted:
-        raise HTTPException(404, "Benutzer nicht gefunden")
+        raise HTTPException(404, tr('Benutzer nicht gefunden'))
     _check_last_superadmin(db, u, False, False)
     name = u.username
     if not _has_history(db, u):
@@ -177,14 +178,14 @@ def list_roles(_: User = Depends(get_current_user), db: DbSession = Depends(get_
 def _clean_perms(perms: list[str]) -> list[str]:
     bad = [p for p in perms if p not in permissions.PERMISSIONS]
     if bad:
-        raise HTTPException(400, f"Unbekannte Rechte: {', '.join(bad)}")
+        raise HTTPException(400, tr('Unbekannte Rechte: {0}', ', '.join(bad)))
     return sorted(set(perms))
 
 
 @router.post("/roles")
 def create_role(body: RoleIn, request: Request, actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
     if db.execute(select(Role).where(Role.name == body.name.strip())).scalar():
-        raise HTTPException(409, "Rolle existiert bereits")
+        raise HTTPException(409, tr('Rolle existiert bereits'))
     r = Role(name=body.name.strip(), description=body.description, permissions=_clean_perms(body.permissions))
     db.add(r)
     db.flush()
@@ -198,7 +199,7 @@ def update_role(role_id: str, body: RoleIn, request: Request, actor: User = Depe
                 db: DbSession = Depends(get_db)):
     r = db.get(Role, role_id)
     if not r:
-        raise HTTPException(404, "Rolle nicht gefunden")
+        raise HTTPException(404, tr('Rolle nicht gefunden'))
     before = list(r.permissions)
     r.name, r.description, r.permissions = body.name.strip(), body.description, _clean_perms(body.permissions)
     audit(db, "role.updated", actor=actor, target_type="role", target_id=r.id, ip=client_ip(request),
@@ -210,12 +211,12 @@ def update_role(role_id: str, body: RoleIn, request: Request, actor: User = Depe
 def delete_role(role_id: str, request: Request, actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
     r = db.get(Role, role_id)
     if not r:
-        raise HTTPException(404, "Rolle nicht gefunden")
+        raise HTTPException(404, tr('Rolle nicht gefunden'))
     if r.builtin:
-        raise HTTPException(409, "Vordefinierte Rollen können nicht gelöscht werden")
+        raise HTTPException(409, tr('Vordefinierte Rollen können nicht gelöscht werden'))
     in_use = db.execute(select(func.count()).select_from(RoleAssignment).where(RoleAssignment.role_id == r.id)).scalar()
     if in_use:
-        raise HTTPException(409, f"Rolle ist noch {in_use}× zugewiesen")
+        raise HTTPException(409, tr('Rolle ist noch {0}× zugewiesen', in_use))
     db.delete(r)
     audit(db, "role.deleted", actor=actor, target_type="role", target_id=role_id, ip=client_ip(request),
           details={"name": r.name})
@@ -234,7 +235,7 @@ def put_settings(body: dict, request: Request, actor: User = Depends(admin_only)
     try:
         changed = settings.set_many(db, body)
     except (TypeError, ValueError):
-        raise HTTPException(400, "Ungültiger Wert")
+        raise HTTPException(400, tr('Ungültiger Wert'))
     if changed:
         audit(db, "settings.updated", actor=actor, target_type="settings", ip=client_ip(request), details=changed)
     else:

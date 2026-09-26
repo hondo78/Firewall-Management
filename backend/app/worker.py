@@ -11,11 +11,28 @@ from .db import SessionLocal
 from .models import CentralAccount, ChangeRequest, Firewall, User, utcnow
 from .sophos import connector
 from .sophos.central import CentralError
+from .i18n import tr
 
 log = logging.getLogger("fwm.worker")
 
 
+def default_language() -> str:
+    with SessionLocal() as db:
+        return settings.get(db, "language")
+
+
+def in_default_language(fn):
+    """Hintergrundarbeit in der Standardsprache (gespeicherte Texte wie Ausroll-Protokoll sind für alle gleich)."""
+    def wrapped(*args, **kwargs):
+        from . import i18n
+        with i18n.use(default_language()):
+            return fn(*args, **kwargs)
+    wrapped.__name__ = getattr(fn, "__name__", "step")
+    return wrapped
+
+
 def deploy_in_background(change_id: str, actor_id: str | None) -> None:
+    @in_default_language
     def run():
         with SessionLocal() as db:
             actor = db.get(User, actor_id) if actor_id else None
@@ -128,7 +145,7 @@ def _recover_stuck() -> None:
     with SessionLocal() as db:
         for cr in db.execute(select(ChangeRequest).where(ChangeRequest.status == "deploying")).scalars():
             cr.status = "failed"
-            cr.error = "Ausrollen durch Neustart des Dienstes unterbrochen – Stand auf der Firewall prüfen"
+            cr.error = tr('Ausrollen durch Neustart des Dienstes unterbrochen – Stand auf der Firewall prüfen')
             changes.event(db, cr, "failed", cr.error)
         db.commit()
 
@@ -140,7 +157,7 @@ async def run_forever() -> None:
     while True:
         for step in (_expire_due, _deploy_due, _sync_due, _backup_due, notify.check_reminders):
             try:
-                await asyncio.to_thread(step)
+                await asyncio.to_thread(in_default_language(step))
             except Exception:
                 log.exception("Worker-Schritt %s fehlgeschlagen", step.__name__)
         await asyncio.sleep(config.WORKER_INTERVAL_SECONDS)

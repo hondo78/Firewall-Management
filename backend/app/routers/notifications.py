@@ -10,6 +10,7 @@ from ..models import User
 from ..notify import channels, config as ncfg
 from ..permissions import require_global
 from ..security import client_ip, get_current_user
+from ..i18n import tr
 
 router = APIRouter(prefix="/api", tags=["notifications"])
 admin_only = require_global("admin")
@@ -25,9 +26,9 @@ def put_config(body: dict, request: Request, actor: User = Depends(admin_only), 
     try:
         result = ncfg.save(db, body)
     except ValueError as e:
-        raise HTTPException(400, str(e) or "Ungültiger Wert")
+        raise HTTPException(400, str(e) or tr('Ungültiger Wert'))
     except TypeError:
-        raise HTTPException(400, "Ungültiger Wert")
+        raise HTTPException(400, tr('Ungültiger Wert'))
     if result["changed"]:
         audit(db, "notifications.updated", actor=actor, ip=client_ip(request), details=result)
     else:
@@ -43,26 +44,26 @@ class TestIn(BaseModel):
 def send_test(body: TestIn, actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
     """Testnachricht an den eigenen Benutzer (Mail/Telegram) bzw. den Teams-/Slack-Kanal."""
     cfg = ncfg.load(db)
-    subject, text = "[Firewall] Testnachricht", f"Test der Benachrichtigungen, ausgelöst von {actor.username}."
+    subject, text = tr('[Firewall] Testnachricht'), tr('Test der Benachrichtigungen, ausgelöst von {0}.', actor.username)
     try:
         if body.channel == "email":
             if not actor.email:
-                raise HTTPException(400, "Für Ihren Benutzer ist keine E-Mail-Adresse hinterlegt")
+                raise HTTPException(400, tr('Für Ihren Benutzer ist keine E-Mail-Adresse hinterlegt'))
             channels.send_mail(cfg, [actor.email], subject, text)
         elif body.channel == "telegram":
             if not actor.telegram_chat_id:
-                raise HTTPException(400, "Ihr Benutzer ist nicht mit Telegram verknüpft (Profil)")
+                raise HTTPException(400, tr('Ihr Benutzer ist nicht mit Telegram verknüpft (Profil)'))
             me = channels.tg_call(cfg, "getMe")
             channels.send_telegram(cfg, actor.telegram_chat_id, f"{subject}\n\n{text}")
-            return {"ok": True, "message": f"Gesendet über @{me.get('username')}"}
+            return {"ok": True, "message": tr('Gesendet über @{0}', me.get('username'))}
         elif body.channel == "teams":
             channels.send_teams(cfg, subject, [text], cfg["public_url"])
         elif body.channel == "slack":
             if not cfg["slack"]["webhook_url"]:
-                raise HTTPException(400, "Keine Slack-Webhook-URL hinterlegt")
+                raise HTTPException(400, tr('Keine Slack-Webhook-URL hinterlegt'))
             channels.send_slack(cfg, subject, [text], cfg["public_url"])
         else:
-            raise HTTPException(400, "Unbekannter Kanal")
+            raise HTTPException(400, tr('Unbekannter Kanal'))
     except HTTPException:
         raise
     except Exception as e:
@@ -86,11 +87,28 @@ def my_prefs(body: PrefsIn, user: User = Depends(get_current_user), db: DbSessio
     return {"notify_email": user.notify_email, "email": user.email, "telegram_linked": bool(user.telegram_chat_id)}
 
 
+class LanguageIn(BaseModel):
+    language: str
+
+
+@router.put("/auth/language")
+def my_language(body: LanguageIn, user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
+    """Sprache der Oberfläche merken – Benachrichtigungen an diesen Benutzer kommen in dieser Sprache."""
+    from .. import i18n
+    code = i18n.normalize(body.language)
+    if not code:
+        raise HTTPException(400, tr('Nicht unterstützte Sprache'))
+    if user.language != code:
+        user.language = code
+        db.commit()
+    return {"language": code}
+
+
 @router.post("/auth/telegram-link")
 def telegram_link(user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
     cfg = ncfg.load(db)
     if not (cfg["telegram"]["enabled"] and cfg["telegram"]["bot_token"]):
-        raise HTTPException(400, "Telegram ist nicht eingerichtet")
+        raise HTTPException(400, tr('Telegram ist nicht eingerichtet'))
     code = notify.create_link_code(user)
     bot = cfg["telegram"].get("bot_username") or ""
     return {"code": code, "bot": bot, "url": f"https://t.me/{bot}?start={code}" if bot else "",

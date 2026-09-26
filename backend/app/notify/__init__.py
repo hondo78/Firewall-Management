@@ -20,6 +20,7 @@ from ..audit import audit
 from ..db import SessionLocal
 from ..models import ChangeRequest, Firewall, User, utcnow
 from . import channels, config as ncfg, texts
+from ..i18n import tr
 
 log = logging.getLogger("fwm.notify")
 _pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="notify")
@@ -72,36 +73,51 @@ def _recipients(db, cr: ChangeRequest, kind: str) -> list[User]:
     return [u for u in people.values() if u.active]
 
 
-def deliver(db, cfg: dict, users: list[User], subject: str, body: str, buttons=None, teams: tuple | None = None,
-            urgent: bool = False):
-    """An Benutzer (Mail + Telegram) und optional an die Kanäle (Teams, Slack) senden; Fehler je Kanal protokollieren.
+def deliver(db, cfg: dict, users: list[User], render, *, channel: bool = False, urgent: bool = False):
+    """Persönlich (Mail + Telegram) je Empfängersprache und optional an die Kanäle (Teams, Slack) senden.
 
-    teams = (Titel, Zeilen[, Link]) – die Kanal-Nachricht für Teams und Slack; urgent → Slack-Erwähnung (@here).
+    render() liefert {"subject", "body", "buttons"?, "channel"?: (Titel, Zeilen, Link)} und wird für jede Sprache
+    einmal aufgerufen (i18n.use). Kanäle bekommen die Standardsprache. urgent → Slack-Erwähnung (@here).
+    Fehler je Kanal werden protokolliert.
     """
+    from .. import i18n, settings
+    default = settings.get(db, "language")
+    by_lang: dict[str, list[User]] = {}
+    for u in users:
+        by_lang.setdefault(i18n.normalize(u.language) or default, []).append(u)
     errors = []
-    if cfg["email"]["enabled"] and cfg["email"]["host"]:
-        to = [u.email for u in users if u.email and u.notify_email]
-        try:
-            channels.send_mail(cfg, to, subject, body)
-        except Exception as e:
-            errors.append(f"E-Mail: {e}")
-    if cfg["telegram"]["enabled"] and cfg["telegram"]["bot_token"]:
-        for u in users:
-            if u.telegram_chat_id:
+    for lang, group in by_lang.items():
+        with i18n.use(lang):
+            m = render()
+        if cfg["email"]["enabled"] and cfg["email"]["host"]:
+            to = [u.email for u in group if u.email and u.notify_email]
+            try:
+                channels.send_mail(cfg, to, m["subject"], m["body"])
+            except Exception as e:
+                errors.append(f"E-Mail: {e}")
+        if cfg["telegram"]["enabled"] and cfg["telegram"]["bot_token"]:
+            for u in group:
+                if u.telegram_chat_id:
+                    try:
+                        channels.send_telegram(cfg, u.telegram_chat_id, f"{m['subject']}\n\n{m['body']}", m.get("buttons"))
+                    except Exception as e:
+                        errors.append(f"Telegram ({u.username}): {e}")
+    teams_on = cfg["teams"]["enabled"] and cfg["teams"]["webhook_url"]
+    slack_on = cfg["slack"]["enabled"] and cfg["slack"]["webhook_url"]
+    if channel and (teams_on or slack_on):
+        with i18n.use(default):
+            m = render()
+            msg = m.get("channel") or (m["subject"], m["body"].split("\n"), "")
+            if teams_on:
                 try:
-                    channels.send_telegram(cfg, u.telegram_chat_id, f"{subject}\n\n{body}", buttons)
+                    channels.send_teams(cfg, *msg)
                 except Exception as e:
-                    errors.append(f"Telegram ({u.username}): {e}")
-    if teams and cfg["teams"]["enabled"] and cfg["teams"]["webhook_url"]:
-        try:
-            channels.send_teams(cfg, *teams)
-        except Exception as e:
-            errors.append(f"Teams: {e}")
-    if teams and cfg["slack"]["enabled"] and cfg["slack"]["webhook_url"]:
-        try:
-            channels.send_slack(cfg, *teams, urgent=urgent)
-        except Exception as e:
-            errors.append(f"Slack: {e}")
+                    errors.append(f"Teams: {e}")
+            if slack_on:
+                try:
+                    channels.send_slack(cfg, *msg, urgent=urgent)
+                except Exception as e:
+                    errors.append(f"Slack: {e}")
     for err in errors:
         log.warning("Benachrichtigung: %s", err)
     return errors
@@ -114,14 +130,16 @@ def _change_event(change_id: str, kind: str) -> None:
             return
         cfg = ncfg.load(db)
         users = _recipients(db, cr, kind)
-        subject, body = texts.change_message(cr, kind, cfg["public_url"])
-        buttons = None
-        if kind == "pending" and cfg["telegram"].get("allow_approve"):
-            buttons = [[{"text": "✅ Genehmigen", "callback_data": f"approve:{cr.id}"}]]
-        url = texts.link(cfg["public_url"], cr)
-        teams = (subject, texts.change_lines(cr, kind), url) if kind in (
-            "pending", "deployed", "failed", "conflict", "expiry_failed") else None
-        deliver(db, cfg, users, subject, body, buttons, teams, urgent=kind == "pending")
+
+        def render():
+            subject, body = texts.change_message(cr, kind, cfg["public_url"])
+            buttons = None
+            if kind == "pending" and cfg["telegram"].get("allow_approve"):
+                buttons = [[{"text": tr('✅ Genehmigen'), "callback_data": f"approve:{cr.id}"}]]
+            return {"subject": subject, "body": body, "buttons": buttons,
+                    "channel": (subject, texts.change_lines(cr, kind), texts.link(cfg["public_url"], cr))}
+        deliver(db, cfg, users, render, channel=kind in ("pending", "deployed", "failed", "conflict", "expiry_failed"),
+                urgent=kind == "pending")
 
 
 def check_reminders() -> None:
@@ -134,8 +152,8 @@ def check_reminders() -> None:
                 ChangeRequest.status == "deployed", ChangeRequest.expires_at.is_not(None),
                 ChangeRequest.expires_at <= now + timedelta(hours=24), ChangeRequest.expires_at > now,
                 ChangeRequest.expiry_warned.is_(False))).scalars():
-            subject, body = texts.change_message(cr, "expiry_soon", cfg["public_url"])
-            deliver(db, cfg, _recipients(db, cr, "expiry_soon"), subject, body)
+            deliver(db, cfg, _recipients(db, cr, "expiry_soon"), lambda cr=cr: dict(zip(
+                ("subject", "body"), texts.change_message(cr, "expiry_soon", cfg["public_url"]))))
             cr.expiry_warned = True
             db.commit()
         # API-Keys: Warnung 30, 7 und 1 Tag vor Ablauf (jede Stufe einmal)
@@ -146,13 +164,15 @@ def check_reminders() -> None:
             level = next((d for d in reversed(KEY_WARN_DAYS) if days < d), None)
             if level is None or (fw.api_key_warned_days and fw.api_key_warned_days <= level):
                 continue
-            text = (f"Der API-Key der Firewall „{fw.name}“ läuft am {fw.api_key_expires_at:%d.%m.%Y} ab "
-                    f"({'abgelaufen' if days < 0 else f'in {days} Tagen'}). Bitte auf der Firewall unter "
-                    "Administration › API access einen neuen Key erzeugen und in den Einstellungen eintragen.")
-            if cfg["public_url"]:
-                text += f"\n\n{cfg['public_url']}/firewalls/{fw.id}/settings"
-            subject = f"[Firewall] API-Key läuft ab: {fw.name}"
-            deliver(db, cfg, managers(db, fw), subject, text, teams=(subject, [text]))
+            def render(fw=fw, days=days):
+                text = tr('Der API-Key der Firewall „{0}“ läuft am {1:%d.%m.%Y} ab ({2}). Bitte auf der Firewall unter '
+                          'Administration › API access einen neuen Key erzeugen und in den Einstellungen eintragen.',
+                          fw.name, fw.api_key_expires_at, tr('abgelaufen') if days < 0 else tr('in {0} Tagen', days))
+                if cfg["public_url"]:
+                    text += f"\n\n{cfg['public_url']}/firewalls/{fw.id}/settings"
+                subject = tr('[Firewall] API-Key läuft ab: {0}', fw.name)
+                return {"subject": subject, "body": text, "channel": (subject, [text], "")}
+            deliver(db, cfg, managers(db, fw), render, channel=True)
             fw.api_key_warned_days = level
             db.commit()
 
@@ -162,13 +182,16 @@ def drift_detected(firewall_id: str, summary: dict) -> None:
         with SessionLocal() as db:
             fw = db.get(Firewall, firewall_id)
             cfg = ncfg.load(db)
-            parts = [f"{e}: +{s['added']} −{s['removed']} ~{s['modified']}" for e, s in summary.items()]
-            text = (f"An der Firewall „{fw.name}“ wurde die Konfiguration außerhalb dieses Tools geändert:\n"
-                    + "\n".join(parts))
-            if cfg["public_url"]:
-                text += f"\n\nVergleich: {cfg['public_url']}/firewalls/{fw.id}/compare"
-            subject = f"[Firewall] Änderung außerhalb des Tools: {fw.name}"
-            deliver(db, cfg, managers(db, fw), subject, text, teams=(subject, text.split("\n")))
+            from ..sophos import entities
+
+            def render():
+                parts = [f"{tr(entities.LABELS.get(e, e))}: +{s['added']} −{s['removed']} ~{s['modified']}" for e, s in summary.items()]
+                text = tr('An der Firewall „{0}“ wurde die Konfiguration außerhalb dieses Tools geändert:\n', fw.name) + "\n".join(parts)
+                if cfg["public_url"]:
+                    text += tr('\n\nVergleich: {0}', f"{cfg['public_url']}/firewalls/{fw.id}/compare")
+                subject = tr('[Firewall] Änderung außerhalb des Tools: {0}', fw.name)
+                return {"subject": subject, "body": text, "channel": (subject, text.split("\n"), "")}
+            deliver(db, cfg, managers(db, fw), render, channel=True)
     if SYNC:
         _safe(run)
     else:
@@ -180,11 +203,13 @@ def backup_failed(firewall_id: str, error: str) -> None:
         with SessionLocal() as db:
             fw = db.get(Firewall, firewall_id)
             cfg = ncfg.load(db)
-            text = f"Die automatische Sicherung der Firewall „{fw.name}“ ist fehlgeschlagen:\n{error}"
-            if cfg["public_url"]:
-                text += f"\n\nSicherungen: {cfg['public_url']}/firewalls/{fw.id}/backups"
-            subject = f"[Firewall] Sicherung fehlgeschlagen: {fw.name}"
-            deliver(db, cfg, managers(db, fw), subject, text, teams=(subject, text.split("\n")))
+            def render():
+                text = tr('Die automatische Sicherung der Firewall „{0}“ ist fehlgeschlagen:\n{1}', fw.name, error)
+                if cfg["public_url"]:
+                    text += tr('\n\nSicherungen: {0}', f"{cfg['public_url']}/firewalls/{fw.id}/backups")
+                subject = tr('[Firewall] Sicherung fehlgeschlagen: {0}', fw.name)
+                return {"subject": subject, "body": text, "channel": (subject, text.split("\n"), "")}
+            deliver(db, cfg, managers(db, fw), render, channel=True)
     if SYNC:
         _safe(run)
     else:
@@ -203,6 +228,17 @@ def create_link_code(user: User) -> str:
 
 
 def handle_update(update: dict) -> None:
+    """Antworten in der Sprache des verknüpften Benutzers (sonst Standardsprache)."""
+    from .. import i18n, settings
+    chat = (update.get("message") or (update.get("callback_query") or {}).get("message") or {}).get("chat") or {}
+    with SessionLocal() as db:
+        u = db.execute(select(User).where(User.telegram_chat_id == str(chat.get("id") or "-"))).scalar()
+        lang = (u.language if u else "") or settings.get(db, "language")
+    with i18n.use(lang):
+        _handle_update(update)
+
+
+def _handle_update(update: dict) -> None:
     with SessionLocal() as db:
         cfg = ncfg.load(db)
         msg = update.get("message") or {}
@@ -212,19 +248,19 @@ def handle_update(update: dict) -> None:
             code = text.split(maxsplit=1)[1].strip().upper() if " " in text else ""
             entry = _link_codes.pop(code, None)
             if not entry or entry[1] < time.time():
-                channels.send_telegram(cfg, chat_id, "Code ungültig oder abgelaufen – im Profil einen neuen erzeugen.")
+                channels.send_telegram(cfg, chat_id, tr('Code ungültig oder abgelaufen – im Profil einen neuen erzeugen.'))
                 return
             user = db.get(User, entry[0])
             user.telegram_chat_id = chat_id
             audit(db, "user.telegram_linked", actor=user, target_type="user", target_id=user.id)
-            channels.send_telegram(cfg, chat_id, f"Verknüpft mit {user.username}. Sie erhalten jetzt Benachrichtigungen.")
+            channels.send_telegram(cfg, chat_id, tr('Verknüpft mit {0}. Sie erhalten jetzt Benachrichtigungen.', user.username))
             return
         cb = update.get("callback_query")
         if not cb:
             return
         chat_id = str(((cb.get("message") or {}).get("chat") or {}).get("id") or "")
         data = cb.get("data") or ""
-        answer = "Unbekannte Aktion"
+        answer = tr('Unbekannte Aktion')
         user = db.execute(select(User).where(User.telegram_chat_id == chat_id, User.active.is_(True))).scalar()
         if data.startswith("approve:") and user and cfg["telegram"].get("allow_approve"):
             from fastapi import HTTPException
@@ -232,13 +268,13 @@ def handle_update(update: dict) -> None:
             cr = db.get(ChangeRequest, data.split(":", 1)[1])
             try:
                 if not cr:
-                    raise HTTPException(404, "Antrag nicht gefunden")
+                    raise HTTPException(404, tr('Antrag nicht gefunden'))
                 changes.decide(db, user, cr, "approve", "per Telegram", ip="telegram")
-                answer = f"{texts.cr_no(cr)} genehmigt" + (" – wird ausgerollt" if cr.status == "approved" else "")
+                answer = tr('{0} genehmigt', texts.cr_no(cr)) + (tr(' – wird ausgerollt') if cr.status == "approved" else "")
             except HTTPException as e:
                 answer = str(e.detail)
         elif not user:
-            answer = "Dieser Chat ist mit keinem Benutzer verknüpft"
+            answer = tr('Dieser Chat ist mit keinem Benutzer verknüpft')
         try:
             channels.tg_call(cfg, "answerCallbackQuery", callback_query_id=cb.get("id"), text=answer[:190],
                              show_alert=True)
