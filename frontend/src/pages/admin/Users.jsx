@@ -24,8 +24,8 @@ function UserModal({ user, roles, groups, onClose, onSaved }) {
       onSaved()
     } catch (e) { setError(e.message) }
   }
-  const deactivate = async () => {
-    try { await api(`/users/${user.id}`, { method: 'DELETE' }); onSaved() } catch (e) { setError(e.message) }
+  const remove = async () => {
+    try { await api(`/users/${user.id}`, { method: 'DELETE' }); onSaved() } catch (e) { setError(e.message); setConfirmDelete(false) }
   }
 
   return (
@@ -64,14 +64,17 @@ function UserModal({ user, roles, groups, onClose, onSaved }) {
           </table>
           <div><button className="sm" onClick={() => setForm({ ...form, assignments: [...form.assignments, { role_id: roles[0]?.id, group_id: null }] })}>{t("+ Rolle zuweisen")}</button></div>
         </>}
+        {confirmDelete && <div className="alert warn small">
+          {t("Benutzer „{0}“ löschen? Ohne Beteiligung an Anträgen wird er endgültig entfernt. Hat er Anträge gestellt, genehmigt oder Vorlagen angelegt, wird er anonymisiert: Zugangsdaten, E-Mail, 2FA und Verknüpfungen werden entfernt, im Verlauf bleibt der Name als „… (gelöscht)“ erhalten.", user.username)}
+        </div>}
         <ErrorBox error={error} />
       </div>
       <div className="modal-foot">
         {user?.totp_enabled && <button onClick={async () => { await api(`/auth/users/${user.id}/totp/reset`, { method: 'POST' }); onSaved() }}
           title={t("z. B. bei Verlust des Telefons")}>{t("2FA zurücksetzen")}</button>}
-        {user && user.id !== me.id && user.active && (confirmDelete
-          ? <button className="danger solid" onClick={deactivate}>{t("Wirklich deaktivieren")}</button>
-          : <button className="danger" onClick={() => setConfirmDelete(true)}>{t("Deaktivieren")}</button>)}
+        {user && user.id !== me.id && (confirmDelete
+          ? <button className="danger solid" onClick={remove}>{t("Endgültig löschen")}</button>
+          : <button className="danger" onClick={() => setConfirmDelete(true)}>{t("Löschen …")}</button>)}
         <button onClick={onClose}>{t("Abbrechen")}</button>
         <button className="primary" disabled={!form.username} onClick={save}>{t("Speichern")}</button>
       </div>

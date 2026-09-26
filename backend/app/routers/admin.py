@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session as DbSession
 from .. import permissions, settings
 from ..audit import audit
 from ..db import get_db
-from ..models import FirewallGroup, Role, RoleAssignment, User
+from ..models import (ChangeEvent, ChangeRequest, ChangeTemplate, ConfigBackup, FirewallGroup, Role, RoleAssignment,
+                      User)
 from ..permissions import require_global
 from ..security import client_ip, get_current_user, hash_password
 from ..serializers import user_out
@@ -42,7 +43,7 @@ class RoleIn(BaseModel):
 @router.get("/users")
 def list_users(user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
     # Namensliste für alle (Filter im Antragsverlauf); Details nur für Admins
-    users = db.execute(select(User).order_by(User.username)).scalars().all()
+    users = db.execute(select(User).where(User.deleted.is_(False)).order_by(User.username)).scalars().all()
     if permissions.has_global(db, user, "admin"):
         return [user_out(u) for u in users]
     return [{"id": u.id, "username": u.username, "display_name": u.display_name} for u in users]
@@ -98,7 +99,7 @@ def create_user(body: UserIn, request: Request, actor: User = Depends(admin_only
 def update_user(user_id: str, body: UserIn, request: Request, actor: User = Depends(admin_only),
                 db: DbSession = Depends(get_db)):
     u = db.get(User, user_id)
-    if not u:
+    if not u or u.deleted:
         raise HTTPException(404, "Benutzer nicht gefunden")
     _check_last_superadmin(db, u, body.is_superadmin, body.active)
     before = {"roles": [f"{a.role.name} @ {a.group_id or 'alle'}" for a in u.assignments],
@@ -123,13 +124,38 @@ def delete_user(user_id: str, request: Request, actor: User = Depends(admin_only
         raise HTTPException(404, "Benutzer nicht gefunden")
     if u.id == actor.id:
         raise HTTPException(409, "Sie können sich nicht selbst löschen")
+    if u.deleted:
+        raise HTTPException(404, "Benutzer nicht gefunden")
     _check_last_superadmin(db, u, False, False)
-    # Benutzer mit Historie werden nur deaktiviert (Anträge/Verlauf verweisen auf sie)
-    u.active = False
+    name = u.username
+    if not _has_history(db, u):
+        # Nie beteiligt gewesen → endgültig löschen (Rollenzuweisungen werden mit entfernt)
+        db.delete(u)
+        audit(db, "user.deleted", actor=actor, target_type="user", target_id=user_id, ip=client_ip(request),
+              details={"username": name, "mode": "removed"})
+        return {"ok": True, "mode": "removed"}
+    # Anträge, Genehmigungen oder Vorlagen verweisen auf den Benutzer → anonymisieren statt löschen, damit der
+    # Verlauf nachvollziehbar bleibt. Der Benutzername wird frei (umbenannt), Anmeldung ist nicht mehr möglich.
+    new_name = f"{name} (gelöscht)"[:100]
+    n = 2
+    while db.execute(select(User.id).where(User.username == new_name)).first():
+        new_name = f"{name} (gelöscht {n})"[:100]
+        n += 1
+    u.username, u.deleted, u.active, u.is_superadmin = new_name, True, False, False
+    u.email, u.password_hash, u.oidc_subject, u.telegram_chat_id = "", "!", "", ""
+    u.totp_enabled, u.totp_secret_enc, u.totp_pending_enc = False, "", ""
     u.assignments.clear()
-    audit(db, "user.deactivated", actor=actor, target_type="user", target_id=u.id, ip=client_ip(request),
-          details={"username": u.username})
-    return {"ok": True}
+    audit(db, "user.deleted", actor=actor, target_type="user", target_id=u.id, ip=client_ip(request),
+          details={"username": name, "mode": "anonymized"})
+    return {"ok": True, "mode": "anonymized"}
+
+
+def _has_history(db: DbSession, u: User) -> bool:
+    checks = (select(ChangeRequest.id).where(ChangeRequest.created_by == u.id),
+              select(ChangeEvent.id).where(ChangeEvent.user_id == u.id),
+              select(ChangeTemplate.id).where(ChangeTemplate.created_by == u.id),
+              select(ConfigBackup.id).where(ConfigBackup.created_by == u.id))
+    return any(db.execute(q.limit(1)).first() for q in checks)
 
 
 # --- Rollen ------------------------------------------------------------------------------------------------

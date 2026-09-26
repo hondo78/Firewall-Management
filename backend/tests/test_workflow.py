@@ -340,3 +340,29 @@ def test_central_and_audit_connection_data_superadmin_only(client, admin, fake):
     assert client.get("/api/audit", headers=admin, params={"q": "fw.test"}).json()["total"] >= 1
     csv_text = client.get("/api/audit/export.csv", headers=aud).text
     assert "fw.test" not in csv_text
+
+
+def test_delete_users(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    users = {u["username"]: u["id"] for u in client.get("/api/users", headers=admin).json()}
+    make_user(client, admin, "neuling", [("Betrachter", None)])
+    op = make_user(client, admin, "operator", [("Operator", None)])
+    cid = submit_new_rule(client, fw_id, op)
+    ids = {u["username"]: u["id"] for u in client.get("/api/users", headers=admin).json()}
+
+    # Ohne Historie → endgültig gelöscht
+    r = client.delete(f"/api/users/{ids['neuling']}", headers=admin)
+    assert r.status_code == 200 and r.json()["mode"] == "removed"
+    # Mit Antrag → anonymisiert, ausgeblendet, Anmeldung gesperrt, Name wieder frei
+    r = client.delete(f"/api/users/{ids['operator']}", headers=admin)
+    assert r.status_code == 200 and r.json()["mode"] == "anonymized"
+    names = [u["username"] for u in client.get("/api/users", headers=admin).json()]
+    assert "operator" not in names and "neuling" not in names and "operator (gelöscht)" not in names
+    assert client.post("/api/auth/login", json={"username": "operator", "password": "secret-password-1"}).status_code == 401
+    assert client.get(f"/api/changes/{cid}", headers=admin).json()["created_by"] == "operator (gelöscht)"
+    make_user(client, admin, "operator", [("Operator", None)])   # Name wieder verwendbar
+    # Nicht sich selbst, nicht doppelt
+    assert client.delete(f"/api/users/{users['admin']}", headers=admin).status_code == 409
+    assert client.delete(f"/api/users/{ids['operator']}", headers=admin).status_code == 404
+    actions = [e["details"].get("mode") for e in client.get("/api/audit", headers=admin).json()["items"] if e["action"] == "user.deleted"]
+    assert sorted(actions) == ["anonymized", "removed"]
