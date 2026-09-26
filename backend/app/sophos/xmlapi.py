@@ -64,7 +64,13 @@ class XmlApiClient:
             raise XmlApiError(f"{top.get('code')}: {(top.text or '').strip()}")
         login = root.findtext("Login/status") or ""
         if login and "success" not in login.lower():
-            raise XmlApiError(tr('Anmeldung an der Firewall fehlgeschlagen: {0}', login))
+            msg = tr('Anmeldung an der Firewall fehlgeschlagen: {0}', login)
+            if "authentication failure" in login.lower():
+                # Die Firewall nennt keinen Grund – typische Ursachen mitliefern
+                msg += tr(' – Benutzer/Passwort prüfen. Das Konto muss ein lokaler Administrator sein (nicht AD/RADIUS), '
+                          'ohne Einmal-Passwort (OTP) für die Web-Administration; den genauen Grund zeigt die Firewall '
+                          'im Log-Viewer unter „Admin events“.')
+            raise XmlApiError(msg)
         return root
 
     def test(self) -> str:

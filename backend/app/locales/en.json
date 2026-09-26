@@ -9,6 +9,7 @@
  " (nur Zonen eingeschränkt)": " (zones only restricted)",
  " · XML-API für WAF-Regeln: Anmeldung erfolgreich (API-Version {0})": " · XML API for WAF rules: login successful (API version {0})",
  " – API-Key ungültig oder abgelaufen": " – API key invalid or expired",
+ " – Benutzer/Passwort prüfen. Das Konto muss ein lokaler Administrator sein (nicht AD/RADIUS), ohne Einmal-Passwort (OTP) für die Web-Administration; den genauen Grund zeigt die Firewall im Log-Viewer unter „Admin events“.": " – check user/password. The account must be a local administrator (not AD/RADIUS) without a one-time password (OTP) for web administration; the firewall shows the exact reason in the log viewer under “Admin events”.",
  " – das Admin-Profil des Keys erlaubt diese Aktion nicht oder IP nicht freigegeben": " – the key’s admin profile does not allow this action or the IP is not permitted",
  " – wird ausgerollt": " – being deployed",
  "(keine Änderung)": "(no change)",
