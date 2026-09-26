@@ -24,7 +24,9 @@ def get_config(_: User = Depends(admin_only), db: DbSession = Depends(get_db)):
 def put_config(body: dict, request: Request, actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
     try:
         result = ncfg.save(db, body)
-    except (TypeError, ValueError):
+    except ValueError as e:
+        raise HTTPException(400, str(e) or "Ungültiger Wert")
+    except TypeError:
         raise HTTPException(400, "Ungültiger Wert")
     if result["changed"]:
         audit(db, "notifications.updated", actor=actor, ip=client_ip(request), details=result)
@@ -39,7 +41,7 @@ class TestIn(BaseModel):
 
 @router.post("/notifications/test")
 def send_test(body: TestIn, actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
-    """Testnachricht an den eigenen Benutzer (Mail/Telegram) bzw. den Teams-Kanal."""
+    """Testnachricht an den eigenen Benutzer (Mail/Telegram) bzw. den Teams-/Slack-Kanal."""
     cfg = ncfg.load(db)
     subject, text = "[Firewall] Testnachricht", f"Test der Benachrichtigungen, ausgelöst von {actor.username}."
     try:
@@ -55,6 +57,10 @@ def send_test(body: TestIn, actor: User = Depends(admin_only), db: DbSession = D
             return {"ok": True, "message": f"Gesendet über @{me.get('username')}"}
         elif body.channel == "teams":
             channels.send_teams(cfg, subject, [text], cfg["public_url"])
+        elif body.channel == "slack":
+            if not cfg["slack"]["webhook_url"]:
+                raise HTTPException(400, "Keine Slack-Webhook-URL hinterlegt")
+            channels.send_slack(cfg, subject, [text], cfg["public_url"])
         else:
             raise HTTPException(400, "Unbekannter Kanal")
     except HTTPException:

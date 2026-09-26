@@ -12,7 +12,7 @@ from .. import crypto
 from ..models import Setting
 
 KEY = "notifications"
-SECRETS = {"email": ("password",), "telegram": ("bot_token",), "teams": ("webhook_url",)}
+SECRETS = {"email": ("password",), "telegram": ("bot_token",), "teams": ("webhook_url",), "slack": ("webhook_url",)}
 DEFAULTS = {
     # Adresse der Web-Oberfläche für Links in Nachrichten, z. B. http://10.0.1.111:8096
     "public_url": "",
@@ -20,6 +20,8 @@ DEFAULTS = {
               "sender": ""},
     "telegram": {"enabled": False, "bot_token": "", "bot_username": "", "allow_approve": True},
     "teams": {"enabled": False, "webhook_url": ""},
+    # Slack: Incoming Webhook einer Slack-App; mention = "" | "here" | "channel" (nur bei neuen Anträgen)
+    "slack": {"enabled": False, "webhook_url": "", "mention": ""},
 }
 # Nur für Tests mit Attrappen überschreiben
 TELEGRAM_API_BASE = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
@@ -65,7 +67,7 @@ def save(db: DbSession, incoming: dict) -> dict:
         if url != stored.get("public_url"):
             changed.append("public_url")
         stored["public_url"] = url
-    for channel in ("email", "telegram", "teams"):
+    for channel in ("email", "telegram", "teams", "slack"):
         data = incoming.get(channel) or {}
         target = stored[channel]
         for k, v in data.items():
@@ -76,10 +78,14 @@ def save(db: DbSession, incoming: dict) -> dict:
                     changed.append(f"{channel}.{field}")
                 continue
             if k in SECRETS[channel]:
+                if v and channel in ("teams", "slack") and k == "webhook_url" and not str(v).startswith("https://"):
+                    raise ValueError("Die Webhook-URL muss mit https:// beginnen")
                 if v:
                     target[f"{k}_enc"] = crypto.encrypt(str(v), f"notify:{channel}.{k}")
                     changed.append(f"{channel}.{k}")
                 continue
+            if channel == "slack" and k == "mention" and v not in ("", "here", "channel"):
+                raise ValueError("Slack-Erwähnung muss leer, „here“ oder „channel“ sein")
             if k in DEFAULTS[channel] and target.get(k) != v:
                 target[k] = int(v) if k == "port" else v
                 changed.append(f"{channel}.{k}")

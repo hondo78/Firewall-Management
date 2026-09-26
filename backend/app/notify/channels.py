@@ -1,4 +1,4 @@
-"""Versand über E-Mail (SMTP), Microsoft Teams (Workflow-Webhook) und Telegram (Bot)."""
+"""Versand über E-Mail (SMTP), Microsoft Teams (Workflow-Webhook), Slack (Incoming Webhook) und Telegram (Bot)."""
 import logging
 import smtplib
 import ssl
@@ -50,6 +50,36 @@ def send_teams(cfg: dict, title: str, lines: list[str], url: str = "") -> None:
     r = httpx.post(cfg["teams"]["webhook_url"], json=payload, timeout=15)
     if r.status_code >= 300:
         raise RuntimeError(f"Teams-Webhook: HTTP {r.status_code} {r.text[:200]}")
+
+
+# --- Slack ---------------------------------------------------------------------------------------------------
+
+def _slack_escape(text: str) -> str:
+    # Slack-mrkdwn: nur &, < und > müssen maskiert werden (sonst Links/Erwähnungen)
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def slack_payload(title: str, lines: list[str], url: str = "", mention: str = "") -> dict:
+    """Block-Kit-Nachricht: Überschrift, Zeilen, Knopf „Im Browser öffnen“; optional @here/@channel."""
+    body = "\n".join(_slack_escape(line) for line in lines if line)
+    blocks = [{"type": "header", "text": {"type": "plain_text", "text": title[:150], "emoji": True}}]
+    if mention in ("here", "channel"):
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"<!{mention}>"}})
+    if body:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": body[:2900]}})
+    if url:
+        blocks.append({"type": "actions", "elements": [
+            {"type": "button", "text": {"type": "plain_text", "text": "Im Browser öffnen"}, "url": url, "style": "primary"}]})
+    # „text“ ist der Fallback für Benachrichtigungen auf dem Telefon/Sperrbildschirm
+    fallback = (f"<!{mention}> " if mention in ("here", "channel") else "") + _slack_escape(title)
+    return {"text": fallback, "blocks": blocks, "unfurl_links": False}
+
+
+def send_slack(cfg: dict, title: str, lines: list[str], url: str = "", urgent: bool = False) -> None:
+    s = cfg["slack"]
+    r = httpx.post(s["webhook_url"], json=slack_payload(title, lines, url, s.get("mention", "") if urgent else ""), timeout=15)
+    if r.status_code >= 300:
+        raise RuntimeError(f"Slack-Webhook: HTTP {r.status_code} {r.text[:200]}")
 
 
 # --- Telegram ------------------------------------------------------------------------------------------------

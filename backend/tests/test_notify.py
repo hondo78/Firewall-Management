@@ -9,11 +9,13 @@ from .test_workflow import deploy_sync, login, make_user, setup_firewall, submit
 
 @pytest.fixture()
 def outbox(monkeypatch):
-    box = {"mail": [], "telegram": [], "teams": [], "tg_calls": []}
+    box = {"mail": [], "telegram": [], "teams": [], "slack": [], "tg_calls": []}
     monkeypatch.setattr(channels, "send_mail", lambda cfg, to, s, b: box["mail"].append((sorted(to), s, b)))
     monkeypatch.setattr(channels, "send_telegram",
                         lambda cfg, chat, text, buttons=None: box["telegram"].append((chat, text, buttons)))
     monkeypatch.setattr(channels, "send_teams", lambda cfg, title, lines, url="": box["teams"].append(title))
+    monkeypatch.setattr(channels, "send_slack",
+                        lambda cfg, title, lines, url="", urgent=False: box["slack"].append((title, urgent, url)))
     monkeypatch.setattr(channels, "tg_call", lambda cfg, method, http_timeout=15, **p: box["tg_calls"].append((method, p)) or {})
     return box
 
@@ -23,10 +25,12 @@ def enable_all(client, admin):
         "public_url": "http://fwm.test",
         "email": {"enabled": True, "host": "smtp.test", "sender": "fwm@test", "password": "geheim"},
         "telegram": {"enabled": True, "bot_token": "123:abc", "bot_username": "fwm_bot"},
-        "teams": {"enabled": True, "webhook_url": "https://teams.test/hook"}})
+        "teams": {"enabled": True, "webhook_url": "https://teams.test/hook"},
+        "slack": {"enabled": True, "webhook_url": "https://hooks.slack.test/services/T/B/x", "mention": "here"}})
     assert r.status_code == 200
     cfg = r.json()
     assert cfg["email"]["password_set"] and "password" not in cfg["email"] and cfg["teams"]["webhook_url_set"]
+    assert cfg["slack"]["webhook_url_set"] and "webhook_url" not in cfg["slack"] and cfg["slack"]["mention"] == "here"
 
 
 def user_with_mail(client, admin, name, role):
@@ -45,6 +49,8 @@ def test_approvers_get_notified_and_requester_gets_result(client, admin, fake, o
     to, subject, body = outbox["mail"][-1]
     assert to == ["approver@test"] and "Genehmigung benötigt" in subject and "http://fwm.test/changes/" in body
     assert outbox["teams"] and "Genehmigung benötigt" in outbox["teams"][-1]
+    title, urgent, url = outbox["slack"][-1]
+    assert "Genehmigung benötigt" in title and urgent and url.startswith("http://fwm.test/changes/")
     client.post(f"/api/changes/{cid}/decision", headers=ap, json={"decision": "approve"})
     assert outbox["mail"][-1][0] == ["operator@test"] and "genehmigt" in outbox["mail"][-1][1]
     deploy_sync(cid)
@@ -107,3 +113,28 @@ def test_key_expiry_reminder_levels(client, admin, fake, outbox):
         db.commit()
     notify.check_reminders()
     assert len([m for m in outbox["mail"] if "API-Key" in m[1]]) == 2
+
+
+def test_slack_payload_and_validation(client, admin, monkeypatch):
+    p = channels.slack_payload("[Firewall] Genehmigung benötigt", ["Regel <A> & B", ""], "http://fwm.test/changes/1", "here")
+    assert p["blocks"][0]["type"] == "header" and p["blocks"][1]["text"]["text"] == "<!here>"
+    assert p["blocks"][2]["text"]["text"] == "Regel &lt;A&gt; &amp; B"
+    assert p["blocks"][3]["elements"][0]["url"] == "http://fwm.test/changes/1"
+    assert p["text"].startswith("<!here> ")
+    assert "<!" not in channels.slack_payload("T", ["x"], "", "")["text"]
+    # Nur https-Webhooks, Erwähnung nur here/channel
+    r = client.put("/api/notifications/config", headers=admin, json={"slack": {"webhook_url": "http://intern/hook"}})
+    assert r.status_code == 400 and "https" in r.json()["detail"]
+    assert client.put("/api/notifications/config", headers=admin, json={"slack": {"mention": "everyone"}}).status_code == 400
+    # Testnachricht: Webhook-Fehler wird als Meldung zurückgegeben
+    import httpx
+    sent = []
+
+    def fake_post(url, json=None, timeout=None):
+        sent.append((url, json))
+        return httpx.Response(404, text="no_service")
+    monkeypatch.setattr(channels.httpx, "post", fake_post)
+    client.put("/api/notifications/config", headers=admin, json={"slack": {"enabled": True, "webhook_url": "https://hooks.slack.test/x"}})
+    r = client.post("/api/notifications/test", headers=admin, json={"channel": "slack"}).json()
+    assert r["ok"] is False and "no_service" in r["message"] and sent[0][0] == "https://hooks.slack.test/x"
+    assert sent[0][1]["blocks"][0]["text"]["text"] == "[Firewall] Testnachricht"

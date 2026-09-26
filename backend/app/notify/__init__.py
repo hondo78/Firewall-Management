@@ -1,4 +1,4 @@
-"""Benachrichtigungen per E-Mail, Microsoft Teams und Telegram.
+"""Benachrichtigungen per E-Mail, Microsoft Teams, Slack und Telegram.
 
 change_event(change_id, kind): nach Workflow-Schritten (eingereicht, entschieden, ausgerollt …) – läuft im
 Thread-Pool, damit langsame Mailserver/Webhooks die API nicht bremsen.
@@ -72,8 +72,12 @@ def _recipients(db, cr: ChangeRequest, kind: str) -> list[User]:
     return [u for u in people.values() if u.active]
 
 
-def deliver(db, cfg: dict, users: list[User], subject: str, body: str, buttons=None, teams: tuple | None = None):
-    """An Benutzer (Mail + Telegram) und optional an den Teams-Kanal senden; Fehler je Kanal protokollieren."""
+def deliver(db, cfg: dict, users: list[User], subject: str, body: str, buttons=None, teams: tuple | None = None,
+            urgent: bool = False):
+    """An Benutzer (Mail + Telegram) und optional an die Kanäle (Teams, Slack) senden; Fehler je Kanal protokollieren.
+
+    teams = (Titel, Zeilen[, Link]) – die Kanal-Nachricht für Teams und Slack; urgent → Slack-Erwähnung (@here).
+    """
     errors = []
     if cfg["email"]["enabled"] and cfg["email"]["host"]:
         to = [u.email for u in users if u.email and u.notify_email]
@@ -93,6 +97,11 @@ def deliver(db, cfg: dict, users: list[User], subject: str, body: str, buttons=N
             channels.send_teams(cfg, *teams)
         except Exception as e:
             errors.append(f"Teams: {e}")
+    if teams and cfg["slack"]["enabled"] and cfg["slack"]["webhook_url"]:
+        try:
+            channels.send_slack(cfg, *teams, urgent=urgent)
+        except Exception as e:
+            errors.append(f"Slack: {e}")
     for err in errors:
         log.warning("Benachrichtigung: %s", err)
     return errors
@@ -112,7 +121,7 @@ def _change_event(change_id: str, kind: str) -> None:
         url = texts.link(cfg["public_url"], cr)
         teams = (subject, texts.change_lines(cr, kind), url) if kind in (
             "pending", "deployed", "failed", "conflict", "expiry_failed") else None
-        deliver(db, cfg, users, subject, body, buttons, teams)
+        deliver(db, cfg, users, subject, body, buttons, teams, urgent=kind == "pending")
 
 
 def check_reminders() -> None:

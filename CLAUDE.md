@@ -59,7 +59,7 @@ The SFOS REST API only returns WAF rules as `ruleType: waf` with a placeholder `
 
 ### Notifications (`notify/`)
 - `notify.change_event(id, kind)` is called **inside** the workflow functions (submit/decide/deploy/expire…), so web and Telegram trigger the same messages. It runs in a thread pool; tests set `notify.SYNC = True` (SQLite StaticPool).
-- Channels: SMTP, a Teams workflow webhook with an Adaptive Card, and Telegram (long polling in a thread started by the worker, linked via a one-time code; `approve:<id>` callbacks go through `changes.decide`).
+- Channels: SMTP, a Teams workflow webhook with an Adaptive Card, a Slack incoming webhook with Block Kit (`deliver(..., teams=(title, lines, url))` feeds both Teams and Slack; `urgent` adds the configured `@here`/`@channel`; webhook URLs must be https), and Telegram (long polling in a thread started by the worker, linked via a one-time code; `approve:<id>` callbacks go through `changes.decide`).
 - Config lives in `settings["notifications"]` with secrets encrypted (AAD `notify:<channel>.<field>`). `check_reminders` (worker) handles expiry within 24 h and API keys at 30/7/1 days (`api_key_warned_days`).
 - `public_url` there is also the base for OIDC redirects.
 

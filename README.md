@@ -50,7 +50,7 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   wiederverwendbare Vorlagen, Abgleich einer Gruppe gegen eine Referenz-Firewall.
 - **Regel-Prüfung**: Any-Any, offen aus dem Internet, verdeckte/redundante Regeln, fehlende Protokollierung,
   ungenutzte/doppelte Objekte – beim Einreichen, für den Approver und als Tab „Analyse“.
-- **Benachrichtigungen**: E-Mail, Microsoft Teams, Telegram (mit Genehmigen-Knopf) für neue Anträge, Entscheidungen,
+- **Benachrichtigungen**: E-Mail, Microsoft Teams, Slack (Incoming Webhook, optional @here bei neuen Anträgen), Telegram (mit Genehmigen-Knopf) für neue Anträge, Entscheidungen,
   Ausrollen/Fehler, ablaufende Befristungen und API-Keys sowie Änderungen außerhalb des Tools.
 - **Anmeldung**: Zwei-Faktor (TOTP) wahlweise verpflichtend, SSO per OpenID Connect (Entra ID, Authentik, Keycloak …)
   mit Rollen aus Gruppen, erneute Anmeldung vor dem Genehmigen.

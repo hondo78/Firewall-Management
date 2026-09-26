@@ -19,7 +19,7 @@ export default function Notifications() {
   const [msg, setMsg] = useState(null)
   const [test, setTest] = useState({})
   useEffect(() => {
-    if (cfg) setForm({ ...cfg, email: { ...cfg.email, password: '' }, telegram: { ...cfg.telegram, bot_token: '' }, teams: { ...cfg.teams, webhook_url: '' } })
+    if (cfg) setForm({ ...cfg, email: { ...cfg.email, password: '' }, telegram: { ...cfg.telegram, bot_token: '' }, teams: { ...cfg.teams, webhook_url: '' }, slack: { ...cfg.slack, webhook_url: '' } })
   }, [cfg])
   if (error) return <ErrorBox error={error} />
   if (!form) return null
@@ -74,6 +74,23 @@ export default function Notifications() {
           <Secret label="Webhook-URL" isSet={cfg.teams.webhook_url_set} value={form.teams.webhook_url} onChange={set('teams', 'webhook_url')}
             onClear={() => save({ teams: { ...form.teams, clear_webhook_url: true } })} />
           <div className="row"><button className="sm" onClick={() => runTest('teams')}>Testkarte senden</button><TestResult ch="teams" /></div>
+        </div>
+
+        <div className="panel panel-pad stack">
+          <label className="check"><input type="checkbox" checked={form.slack.enabled} onChange={set('slack', 'enabled')} /><b>Slack</b></label>
+          <div className="muted small">Nachricht in einen Kanal: unter <b>api.slack.com/apps</b> eine App anlegen, „Incoming Webhooks“ aktivieren,
+            „Add New Webhook to Workspace“ → Kanal wählen und die Webhook-URL (https://hooks.slack.com/services/…) hier eintragen.
+            Gesendet werden neue Anträge, Ausrollen/Fehler, Änderungen außerhalb des Tools, fehlgeschlagene Sicherungen und ablaufende API-Keys.</div>
+          <Secret label="Webhook-URL" isSet={cfg.slack.webhook_url_set} value={form.slack.webhook_url} onChange={set('slack', 'webhook_url')}
+            onClear={() => save({ slack: { ...form.slack, clear_webhook_url: true } })} />
+          <Field label="Bei neuen Anträgen erwähnen" hint="Damit Genehmiger sofort benachrichtigt werden">
+            <select value={form.slack.mention} onChange={set('slack', 'mention')} style={{ maxWidth: 320 }}>
+              <option value="">niemanden</option>
+              <option value="here">@here (alle Aktiven im Kanal)</option>
+              <option value="channel">@channel (alle im Kanal)</option>
+            </select>
+          </Field>
+          <div className="row"><button className="sm" onClick={() => runTest('slack')}>Testnachricht senden</button><TestResult ch="slack" /></div>
         </div>
 
         <div className="panel panel-pad stack">
