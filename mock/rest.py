@@ -28,6 +28,8 @@ RESOURCES = {
     "/intrusion-prevention/policies": "ipsPolicies", "/traffic-shaping/policies": "trafficShapingPolicies",
     "/authentication/user-groups": "userGroups", "/authentication/users": "users",
     "/network/interfaces/network-interfaces": "interfaces",
+    "/waf/servers": "wafServers", "/waf/protection/policies": "wafProtectionPolicies",
+    "/waf/authentication/policies": "wafAuthPolicies",
 }
 RULES = {"firewallRulesIpv4", "firewallRulesIpv6", "natRulesIpv4"}
 REF_TARGETS = {"zone": ["zones"], "network": ["addressesIpv4", "addressGroupsIpv4", "addressesFqdn", "addressGroupsFqdn",
@@ -145,7 +147,19 @@ def _demo_extras(out: dict[str, list[dict]]) -> None:
     users = [{"name": "admin", "displayName": "Administrator", "group": {"name": "Open Group"}, "active": True}]
     ifs = [{"name": "Port1", "hardwareName": "Port1", "zone": {"name": "LAN"}, "ipv4": {"assignment": "static", "address": "192.168.1.1"}, "enabled": True},
            {"name": "Port2", "hardwareName": "Port2", "zone": {"name": "WAN"}, "ipv4": {"assignment": "dhcp"}, "enabled": True}]
-    for key, items in [("webPolicies", web), ("applicationPolicies", app), ("ipsPolicies", ips), ("trafficShapingPolicies", ts),
+    waf_servers = [{"name": "shop-web", "description": "", "server": {"ipv4Address": {"name": "Webserver-DMZ"}}, "protocol": "http",
+                    "port": 8080, "keepAlive": True, "timeout": 300, "disableConnectionPooling": False}]
+    waf_prot = [{"name": "shop", "description": "Shop", "action": "reject", "bypassMicrosoftOutlook": False, "cookieSigning": True,
+                 "formHardening": True, "staticUrlHardening": {"enabled": False, "urls": []}, "httpStrictTransportSecurity": True,
+                 "mimeTypeSniffingProtection": True, "requestSizeLimit": 10,
+                 "antivirus": {"enabled": True, "scanEngine": "sophos", "direction": "uploadsAndDownloads", "blockUnscannableContent": False},
+                 "blockClientsWithBadReputation": {"enabled": True, "skipRemoteLookups": False},
+                 "threatFilter": {"enabled": True, "filterStrength": "level2", "skipOwaspCrsRuleIds": [], "applicationAttacks": True,
+                                  "sqlInjectionAttacks": True, "xssAttacks": True, "protocolEnforcement": True, "scannerDetection": True,
+                                  "dataLeakage": False}}]
+    waf_auth = [{"name": "Basic with passthrough", "description": "", "clients": {"basic": {}}, "authenticationForwarding": {"basic": {}}}]
+    for key, items in [("wafServers", waf_servers), ("wafProtectionPolicies", waf_prot), ("wafAuthPolicies", waf_auth),
+                       ("webPolicies", web), ("applicationPolicies", app), ("ipsPolicies", ips), ("trafficShapingPolicies", ts),
                        ("userGroups", groups), ("users", users), ("interfaces", ifs)]:
         out[key] = [meta(i) for i in items]
     if out["firewallRulesIpv4"]:

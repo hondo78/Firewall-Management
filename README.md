@@ -36,6 +36,9 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 - **Dokumentation**: Audit-Log mit SHA-256-Hash-Kette (Integritätsprüfung, CSV-Export, optional Syslog),
   Verlauf/Kommentare je Antrag, Ausroll-Protokoll mit dem gesendeten XML, Versionsstände der Konfiguration
   inkl. Vergleich (auch zwischen Firewalls) und Erkennung von Änderungen außerhalb des Tools.
+- **WAF-Regeln (Webserver-Schutz)**: vollständig wie in SFOS (gehosteter Server, Domänen, Traffic Routing, Ausnahmen,
+  Schutz/IPS/Traffic-Shaping, Zusatzoptionen) – über einen optionalen zusätzlichen XML-API-Zugang, weil die REST-API
+  WAF-Regeln nicht vollständig liefert. Webserver und WAF-Schutzrichtlinien per REST mit eigenen Formularen.
 - **Sicherungen**: automatische Sicherung der Konfiguration aller Firewalls nach Zeitplan (täglich/wöchentlich/monatlich,
   Aufbewahrung, Anheften, optional zusätzlich als Datei in `backups/`), manuell „Jetzt sichern“, Download (JSON bzw.
   Entities.xml), Vergleich mit dem aktuellen Stand und Wiederherstellen über einen Entwurf (Vier-Augen-Freigabe).

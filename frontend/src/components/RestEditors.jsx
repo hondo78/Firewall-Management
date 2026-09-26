@@ -3,6 +3,7 @@ import { EditorShell } from './Editors'
 import { SINGLETON_ENTITIES, asList, restRefOptions } from './entities'
 import { Field, Picker, Seg } from './ui'
 import { NEW_POLICY, policyForm } from './SophosPolicies'
+import { NEW_WAF, WafProtectionForm, WafServerForm } from './SophosWaf'
 
 /** Editoren für das Format der SFOS REST-API (Objekte 1:1 wie von der API geliefert). */
 
@@ -23,6 +24,7 @@ const NEW_REST = {
   addressesMac: { name: '', description: '', type: 'macAddress', macAddress: '' },
   addressesIpv6: { name: '', description: '', type: 'ipv6Address', ipv6Address: '' },
   ...NEW_POLICY,
+  ...NEW_WAF,
 }
 
 const SFOS_DAYS = [['monday', 'Montag'], ['tuesday', 'Dienstag'], ['wednesday', 'Mittwoch'], ['thursday', 'Donnerstag'],
@@ -266,6 +268,8 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
     addressesMac: <MacForm {...props} />,
     addressesIpv6: <Ipv6Form {...props} />,
     backupSettings: <BackupSettingsForm {...props} />,
+    wafServers: <WafServerForm {...props} config={config} />,
+    wafProtectionPolicies: <WafProtectionForm {...props} />,
   }
   return (
     <EditorShell title={isNew ? `${label}: neu` : SINGLETON_ENTITIES.has(entity) ? `${label} bearbeiten` : `${label} „${object.name}“ bearbeiten`} entity={entity}

@@ -153,15 +153,15 @@ export function Fold({ title, open: initial, children, badge }) {
   )
 }
 
-function Heading({ title, desc }) {
+export function Heading({ title, desc }) {
   return <div className="sf-heading"><h3>{title}</h3>{desc && <p>{desc}</p>}</div>
 }
 
-function Label({ children, required }) {
+export function Label({ children, required }) {
   return <div className="sf-label">{children}{required && <span className="req"> *</span>}</div>
 }
 
-function Select({ value, onChange, options, none, disabled }) {
+export function Select({ value, onChange, options, none, disabled }) {
   return (
     <select value={value || ''} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
       {none !== undefined && <option value="">{none}</option>}
@@ -171,7 +171,7 @@ function Select({ value, onChange, options, none, disabled }) {
   )
 }
 
-function PositionSelect({ position, setPosition, rules, name, isNew }) {
+export function PositionSelect({ position, setPosition, rules, name, isNew }) {
   const others = rules.filter((r) => r !== name)
   return (
     <div className="stack" style={{ gap: 6 }}>
@@ -184,7 +184,7 @@ function PositionSelect({ position, setPosition, rules, name, isNew }) {
 
 const ACTIONS = [['accept', 'Annehmen'], ['drop', 'Verwerfen'], ['reject', 'Ablehnen']]
 
-export function SophosRuleEditor({ entity, config, rule, onClose, onSubmit, page }) {
+export function SophosRuleEditor({ entity, config, rule, onClose, onSubmit, page, wafXml, mayConfigure }) {
   const isNew = !rule
   const v6 = entity === 'firewallRulesIpv6'
   const opts = useMemo(() => restRefOptions(config), [config])
@@ -251,11 +251,20 @@ export function SophosRuleEditor({ entity, config, rule, onClose, onSubmit, page
       {head}
       <hr />
       <Heading title="Webserver-Schutz" desc="Diese Firewall-Regel veröffentlicht einen Webserver über die Web Application Firewall (WAF)." />
+      <div className={`alert ${wafXml ? 'warn' : 'info'} small`}>
+        {wafXml ? 'Diese WAF-Regel fehlt in den Daten der XML-API – nach der nächsten Synchronisation erneut öffnen.'
+          : <>Gehosteter Server, Domänen, Traffic Routing und Ausnahmen liefert die REST-API nicht. Für die vollständige Bearbeitung
+            {mayConfigure ? ' unter Einstellungen › Anbindung einen XML-API-Zugang hinterlegen.' : ' muss ein Superadmin einen XML-API-Zugang hinterlegen.'}</>}
+      </div>
+      <hr />
+      <Heading title="Erweitert" />
       <div className="sf-grid3">
-        <div><Label>WAF-Regel</Label><input value={refName(d.wafRule) || '–'} disabled aria-label="WAF-Regel" /></div>
-        <div><Label>WAF-Dienst</Label><input value={d.wafService ?? '–'} disabled aria-label="WAF-Dienst" /></div>
-        <div className="sf-hint" style={{ alignSelf: 'end' }}>Hosted Server, geschützte Server und Pfade werden auf der Firewall unter
-          „Webserver“ gepflegt; die REST-API stellt sie hier nicht bereit.</div>
+        <div><Label>Angriffsvorbeugung</Label>
+          <Select value={refName(sec.ipsPolicy)} none="Keine" options={opts.ipsPolicies} onChange={(n) => setSec({ ipsPolicy: polRef(n) })} /></div>
+        <div><Label>Traffic-Shaping</Label>
+          <Select value={refName(d.qos?.trafficShapingPolicy)} none="Keine" options={opts.tsPolicies} onChange={(n) => sub('qos', { trafficShapingPolicy: polRef(n) })} /></div>
+        <div style={{ alignSelf: 'end' }}><Check checked={sec.scanWithNdrActiveThreatIntelligence} label="Mit NDR Active Threat Intelligence scannen"
+          onChange={(v) => setSec({ scanWithNdrActiveThreatIntelligence: v })} /></div>
       </div>
     </div>
   )

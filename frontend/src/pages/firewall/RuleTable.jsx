@@ -79,7 +79,7 @@ function AddMenu({ label, items }) {
 }
 
 export default function RuleTable({ entity, entities, rows, fw, mayEdit, pendingBy, draftBy, findings, onSelect, onEdit, onAddFor,
-  onOp, onShow, onBulkDelete, onBulkToggle }) {
+  onOp, onShow, onBulkDelete, onBulkToggle, onAddWaf }) {
   const rest = isRestEntity(entity)
   const isNat = entity === 'natRulesIpv4'
   const cols = isNat ? NAT_COLS : RULE_COLS(rest)
@@ -124,7 +124,8 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
     ? [{ label: 'NAT-Regel hinzufügen', onClick: () => onAddFor(entity) }]
     : rest
       ? [{ label: 'Neue Firewall-Regel (IPv4)', onClick: () => onAddFor('firewallRulesIpv4') },
-        has('firewallRulesIpv6') && { label: 'Neue Firewall-Regel (IPv6)', onClick: () => onAddFor('firewallRulesIpv6') }].filter(Boolean)
+        has('firewallRulesIpv6') && { label: 'Neue Firewall-Regel (IPv6)', onClick: () => onAddFor('firewallRulesIpv6') },
+        onAddWaf && { label: 'Neue WAF-Regel (Webserver-Schutz)', onClick: onAddWaf }].filter(Boolean)
       : [{ label: 'Firewall-Regel hinzufügen', onClick: () => onAddFor(entity) }]
 
   return (

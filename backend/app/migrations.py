@@ -24,6 +24,9 @@ POSTGRES = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject VARCHAR(255) NOT NULL DEFAULT ''",
     "CREATE INDEX IF NOT EXISTS ix_users_oidc_subject ON users (oidc_subject)",
     "CREATE INDEX IF NOT EXISTS ix_change_requests_batch_id ON change_requests (batch_id)",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS xml_username VARCHAR(200) NOT NULL DEFAULT ''",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS xml_password_enc TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS xml_status VARCHAR(500) NOT NULL DEFAULT ''",
 ]
 
 

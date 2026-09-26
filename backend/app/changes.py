@@ -52,6 +52,9 @@ def _index(config: dict[str, list[dict]]) -> dict[str, dict[str, dict]]:
 
 def rule_position(config: dict[str, list[dict]], name: str, entity: str = "FirewallRule") -> dict:
     """Aktuelle Position einer Regel als Positionsangabe (nach Vorgänger bzw. ganz oben)."""
+    # WAF-Regeln: Position in der gemeinsamen Regelliste (REST), sofern dort vorhanden
+    if entity in entities.POSITION_SCOPE and any(entities.oname(r) == name for r in config.get(entities.POSITION_SCOPE[entity][0], [])):
+        entity = entities.POSITION_SCOPE[entity][0]
     names = [entities.oname(r) for r in config.get(entity, [])]
     if name not in names:
         return {"type": "bottom"}
@@ -177,7 +180,8 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
             raise HTTPException(400, "Ungültige Position")
         if pos.get("type") in ("after", "before") and pos.get("ref") == name:
             raise HTTPException(400, "Eine Regel kann nicht relativ zu sich selbst positioniert werden")
-        if pos.get("type") in ("after", "before") and pos.get("ref") not in _index(config).get(entity, {}):
+        scope = entities.POSITION_SCOPE.get(entity, (entity,))
+        if pos.get("type") in ("after", "before") and not any(pos.get("ref") in _index(config).get(e, {}) for e in scope):
             raise HTTPException(400, f"Bezugsregel „{pos.get('ref')}“ für die Position existiert nicht")
         clean["position"] = {"type": pos["type"], **({"ref": pos["ref"]} if pos.get("ref") else {})}
     elif entity in entities.RULE_ENTITIES and action == "add":

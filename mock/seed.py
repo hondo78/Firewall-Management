@@ -126,3 +126,23 @@ FIREWALLS = [
         ],
     },
 ]
+
+
+# WAF-Regel im XML-Format (Webserver-Schutz) – passend zur REST-Demo „shop.example.com“
+WAF_RULE = {
+    "Name": "shop.example.com", "Description": "Webserver-Schutz", "IPFamily": "IPv4", "Status": "Enable",
+    "PolicyType": "HTTPBased",
+    "HTTPBasedPolicy": {
+        "HostedAddress": "#Port2", "HTTPS": "Enable", "ListenPort": "443", "Domains": {"Domain": ["shop.example.com"]},
+        "AccessPaths": {"AccessPath": [{"allowed_networks": "Any IPv4", "auth_profile": "", "backend": "shop-web", "be_path": "",
+                                        "block_unknown_country": "1", "hot_standby": "0", "path": "/",
+                                        "stickysession_status": "0", "websocket_passthrough": "0"}]},
+        "Exceptions": {"Exception": [{"op": "and", "path": ["/api/*"], "skip_threats_filter_categories": ["sql_injection_attacks"],
+                                      "skipav": "0", "skipbadclients": "0", "skipcookie": "1", "skipform": "1",
+                                      "skipform_missingtoken": "0", "skiphtmlrewrite": "0", "skipurl": "1", "source": "Any IPv4"}]},
+        "ProtocolSecurity": "shop", "CompressionSupport": "Disable", "RewriteHTML": "0", "PassHostHeader": "Enable",
+        "RewriteCookies": "Enable", "IntrusionPrevention": "generalpolicy", "TrafficShapingPolicy": "None",
+        "Certificate": "shop.example.com", "RedirectHTTP": "Enable", "InterfaceUnavailable": "0", "BackendsUnavailable": "0",
+        "ResponseFieldSize": "8192",
+    },
+}

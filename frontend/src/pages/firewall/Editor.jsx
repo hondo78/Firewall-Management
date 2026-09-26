@@ -9,6 +9,7 @@ import Icon, { ENTITY_ICON } from '../../components/icons'
 import { RestObjectEditor } from '../../components/RestEditors'
 import { ObjectView } from '../../components/SophosPolicies'
 import { FeatureBadges, RuleDetails, SophosNatEditor, SophosRuleEditor, natView } from '../../components/SophosRules'
+import { WafRuleEditor } from '../../components/SophosWaf'
 import { DiffTable, Empty, ErrorBox, Modal, Seg, useLoad } from '../../components/ui'
 import { OperationCard } from '../FirewallView'
 import { Analysis, ColumnPicker, IconButton, PendingBadges, Pager, store, useDismiss, usePaging } from './tableParts'
@@ -16,7 +17,8 @@ import RuleTable from './RuleTable'
 
 /** Konfigurations-Editor im Stil des Sophos Firewall Config Studio. */
 
-const SECTION_ICON = { 'Regeln & Richtlinien': 'rule', 'Hosts & Dienste': 'host', Netzwerk: 'zone', System: 'clock' }
+const SECTION_ICON = { 'Regeln & Richtlinien': 'rule', 'Hosts & Dienste': 'host', Netzwerk: 'zone', System: 'clock', Richtlinien: 'shield',
+  'Benutzer & Schnittstellen': 'user', 'Webserver-Schutz': 'globe' }
 
 
 // --- Hilfen --------------------------------------------------------------------------------------------------
@@ -81,7 +83,7 @@ function ObjectDetail({ fw, entity, obj, onClose }) {
 
 // --- Seitenleiste --------------------------------------------------------------------------------------------
 
-function Sidebar({ cfg, entity, onSelect, pendingEntities }) {
+function Sidebar({ cfg, entity, onSelect, pendingEntities, hidden }) {
   const [q, setQ] = useState('')
   const [closed, setClosed] = useState(() => store.get('fwm.editor.closed', {}))
   const toggle = (s) => { const next = { ...closed, [s]: !closed[s] }; setClosed(next); store.set('fwm.editor.closed', next) }
@@ -92,7 +94,7 @@ function Sidebar({ cfg, entity, onSelect, pendingEntities }) {
       <div className="cs-menu-search"><Icon name="search" size={14} />
         <input placeholder="Menü durchsuchen …" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       {sections.map((s) => {
-        const items = cfg.entities.filter((e) => e.section === s && (!f || e.label.toLowerCase().includes(f)))
+        const items = cfg.entities.filter((e) => e.section === s && !hidden.has(e.entity) && (!f || e.label.toLowerCase().includes(f)))
         if (!items.length) return null
         return (
           <div key={s}>
@@ -426,7 +428,17 @@ export default function Editor({ fw, cfg, draft, reload }) {
   }
   const addFor = (e) => { if (e !== entity) select(e); setEditing({ obj: null }) }
   // Firewall-/NAT-Regeln (REST) werden wie in SFOS als ganze Seite bearbeitet
-  const pageEdit = editing && rest && (entity.startsWith('firewallRules') || entity === 'natRulesIpv4')
+  // Bearbeitet wird ggf. eine andere Entität als die angezeigte (WAF-Regel aus der Firewall-Regelliste)
+  const editEntity = editing?.entity || entity
+  const pageEdit = editing && rest && (editEntity.startsWith('firewallRules') || editEntity === 'natRulesIpv4' || editEntity === 'wafRules')
+  const editRule = (obj) => {
+    // WAF-Regel mit XML-API-Zugang → vollständiges WAF-Formular (Daten aus der XML-API)
+    if (obj.ruleType === 'waf' && fw.waf_xml) {
+      const waf = (cfg.preview.wafRules || []).find((w) => w.Name === obj.name)
+      if (waf) { setEditing({ obj: waf, entity: 'wafRules' }); return }
+    }
+    setEditing({ obj })
+  }
   const ruleList = RULE_TABLE_ENTITIES.has(entity) || entity === 'natRulesIpv4'
   const startImport = async (file) => {
     if (!file) return
@@ -450,7 +462,8 @@ export default function Editor({ fw, cfg, draft, reload }) {
 
   return (
     <div className="cs-editor">
-      <Sidebar cfg={cfg} entity={entity} onSelect={select} pendingEntities={pendingEntities} />
+      <Sidebar cfg={cfg} entity={entity} onSelect={select} pendingEntities={pendingEntities}
+        hidden={new Set(fw.waf_xml ? [] : ['wafRules'])} />
       <div className="cs-main">
         <div className="cs-head">
           <h2 className="cs-title"><Icon name="shield" size={20} className="text-accent" /> Konfigurations-Editor <span className="muted">({total} Objekte)</span>
@@ -499,19 +512,23 @@ export default function Editor({ fw, cfg, draft, reload }) {
         {!fw.last_sync_at && <div className="alert warn">Noch keine Konfiguration geladen – bitte „Jetzt synchronisieren“.</div>}
         {draftOps.length > 0 && <label className="check small" style={{ margin: '0 0 8px' }}><input type="checkbox" checked={showDraft} onChange={(e) => setShowDraft(e.target.checked)} />Tabelle mit meinem Entwurf anzeigen</label>}
         {READ_ONLY_ENTITIES.has(entity) && <div className="alert info small">{meta.label} werden direkt auf der Firewall gepflegt und hier nur angezeigt.</div>}
-        {pageEdit ? (entity === 'natRulesIpv4'
+        {pageEdit ? (editEntity === 'wafRules'
+          ? <WafRuleEditor key={`waf:${editing.obj ? oname(editing.obj) : 'neu'}`} page config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
+          : entity === 'natRulesIpv4'
           ? <SophosNatEditor key={`${entity}:${editing.obj ? oname(editing.obj) : 'neu'}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
-          : <SophosRuleEditor key={`${entity}:${editing.obj ? oname(editing.obj) : 'neu'}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />)
+          : <SophosRuleEditor key={`${entity}:${editing.obj ? oname(editing.obj) : 'neu'}`} page entity={entity} config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp}
+            wafXml={fw.waf_xml} mayConfigure={!!fw.may_edit_connection} />)
         : ruleList
           ? <RuleTable key={entity} entity={entity} entities={cfg.entities} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
-            findings={findings} onSelect={select} onEdit={(obj) => setEditing({ obj })} onAddFor={addFor} onOp={quickOp}
+            findings={findings} onSelect={select} onEdit={editRule} onAddFor={addFor}
+            onAddWaf={fw.waf_xml ? () => setEditing({ obj: null, entity: 'wafRules' }) : null} onOp={quickOp}
             onShow={(obj) => setDetail({ entity, obj })} onBulkDelete={bulkDelete} onBulkToggle={bulkToggle} />
           : <EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
             findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
             onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} />}
       </div>
 
-      {editing && rest && !pageEdit && <RestObjectEditor entity={entity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />}
+      {editing && rest && !pageEdit && <RestObjectEditor entity={editEntity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />}
       {editing && !rest && (entity === 'FirewallRule'
         ? <RuleEditor config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
         : <ObjectEditor entity={entity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />)}

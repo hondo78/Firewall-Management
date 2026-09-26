@@ -33,6 +33,36 @@ def xml_client(fw: Firewall) -> XmlApiClient:
     return XmlApiClient(fw.api_url, fw.api_username, password, fw.verify_tls)
 
 
+def has_waf_xml(fw: Firewall) -> bool:
+    return fw.connector == "rest" and bool(fw.xml_username and fw.xml_password_enc)
+
+
+def waf_xml_client(fw: Firewall) -> XmlApiClient:
+    """Zusätzlicher XML-API-Zugang einer REST-Firewall (gleiche Adresse, eigener API-Admin)."""
+    password = crypto.decrypt(fw.xml_password_enc, f"firewall-xml:{fw.id}") if fw.xml_password_enc else ""
+    return XmlApiClient(fw.api_url, fw.xml_username, password, fw.verify_tls)
+
+
+def _fetch_waf(db: DbSession, fw: Firewall, log: Log | None) -> list[dict]:
+    """WAF-Regeln per XML-API. Bei Fehlern den letzten Stand behalten (sonst sähe es aus, als wären sie gelöscht)."""
+    if not has_waf_xml(fw):
+        fw.xml_status = ""
+        return []
+    try:
+        rules = waf_xml_client(fw).get("FirewallRule")
+    except XmlApiError as e:
+        fw.xml_status = f"Fehler: {e}"[:500]
+        if log:
+            log(f"WAF-Regeln (XML-API): {e} – letzter Stand bleibt erhalten")
+        from sqlalchemy import select
+        from ..models import ConfigObject
+        return list(db.execute(select(ConfigObject.data).where(ConfigObject.firewall_id == fw.id, ConfigObject.entity == "wafRules")
+                               .order_by(ConfigObject.position)).scalars())
+    fw.xml_status = "ok"
+    drop = ("Position", "After", "Before", "transactionid")
+    return [{k: v for k, v in r.items() if k not in drop} for r in rules if r.get("PolicyType") == "HTTPBased"]
+
+
 def rest_client(fw: Firewall) -> RestApiClient:
     key = crypto.decrypt(fw.api_password_enc, f"firewall:{fw.id}") if fw.api_password_enc else ""
     return RestApiClient(fw.api_url, key, fw.verify_tls)
@@ -80,6 +110,7 @@ def fetch_config(db: DbSession, fw: Firewall, log: Log | None = None) -> tuple[d
                     continue
                 raise
             out[entity] = [strip_read_only(o) for o in items]
+        out["wafRules"] = _fetch_waf(db, fw, log)
         return out, "REST v1"
     client = xml_client(fw)
     data = client.get_many(entities.NAMES)
@@ -96,7 +127,11 @@ def test_connection(db: DbSession, fw: Firewall) -> str:
     if fw.connector == "rest":
         client = rest_client(fw)
         client.test()
-        return f"Anmeldung per API-Key erfolgreich ({client.base_url}{client.prefix})"
+        msg = f"Anmeldung per API-Key erfolgreich ({client.base_url}{client.prefix})"
+        if has_waf_xml(fw):
+            version = waf_xml_client(fw).test()
+            msg += f" · XML-API für WAF-Regeln: Anmeldung erfolgreich (API-Version {version or 'unbekannt'})"
+        return msg
     version = xml_client(fw).test()
     return f"Anmeldung erfolgreich (API-Version {version or 'unbekannt'})"
 
@@ -119,7 +154,12 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
         log("Import erfolgreich abgeschlossen")
         return
     if fw.connector == "rest":
-        _rest_apply(rest_client(fw), ordered, log)
+        xml = None
+        if any(o["entity"] in entities.REST_XML_ENTITIES for o in ordered):
+            if not has_waf_xml(fw):
+                raise DeployError("WAF-Regeln brauchen den XML-API-Zugang dieser Firewall (Einstellungen › Anbindung)")
+            xml = waf_xml_client(fw)
+        _rest_apply(rest_client(fw), ordered, log, xml)
         return
     client = xml_client(fw)
     done: list[dict] = []
@@ -225,20 +265,43 @@ def _rest_undo(client: RestApiClient, o: dict) -> None:
         client.create(path, body)
 
 
-def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log) -> None:
+def _xml_entity_one(xml: XmlApiClient, o: dict) -> str:
+    tag = entities.REST_XML_ENTITIES[o["entity"]][0]
+    if o["action"] == "remove":
+        return xml.remove(tag, o["name"])
+    return xml.set(tag, o["data"], "add" if o["action"] == "add" else "update", o.get("position"))
+
+
+def _xml_entity_undo(xml: XmlApiClient, o: dict) -> None:
+    tag = entities.REST_XML_ENTITIES[o["entity"]][0]
+    if o["action"] == "add":
+        xml.remove(tag, o["name"])
+    elif o["action"] == "update":
+        xml.set(tag, o["before"], "update", o.get("before_position") if o.get("position") else None)
+    else:
+        xml.set(tag, o["before"], "add", o.get("before_position"))
+
+
+def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log, xml: XmlApiClient | None = None) -> None:
+    """REST-Operationen (und WAF-Regeln per XML-API) nacheinander; bei Fehler alles bereits Angewendete zurück."""
+    def one(o):
+        return _xml_entity_one(xml, o) if o["entity"] in entities.REST_XML_ENTITIES else _rest_one(client, o)
+
+    def undo(o):
+        return _xml_entity_undo(xml, o) if o["entity"] in entities.REST_XML_ENTITIES else _rest_undo(client, o)
     done: list[dict] = []
     for o in ordered:
         try:
-            msg = _rest_one(client, o)
-        except RestApiError as e:
+            msg = one(o)
+        except (RestApiError, XmlApiError) as e:
             log(f"FEHLER bei {_label(o)}: {e}")
             if done:
                 log(f"Rolle {len(done)} bereits angewendete Operation(en) zurück …")
             for d in reversed(done):
                 try:
-                    _rest_undo(client, d)
+                    undo(d)
                     log(f"  zurückgerollt: {_label(d)}")
-                except RestApiError as ue:
+                except (RestApiError, XmlApiError) as ue:
                     log(f"  Rücknahme fehlgeschlagen für {_label(d)}: {ue} – bitte manuell prüfen!")
             raise DeployError(f"{_label(o)}: {e}") from e
         done.append(o)

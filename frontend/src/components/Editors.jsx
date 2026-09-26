@@ -14,7 +14,7 @@ export function EditorShell({ title, entity, data, setData, isNew, form, onClose
     if (!json) return (await api('/xml/parse', { method: 'POST', body: { entity, xml } })).data
     let obj
     try { obj = JSON.parse(xml) } catch (e) { throw new Error(`JSON ungültig: ${e.message}`) }
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj) || !obj.name) throw new Error('Objekt benötigt ein Feld „name“')
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj) || !(obj.name || obj.Name)) throw new Error('Objekt benötigt ein Feld „name“ (bzw. „Name“)')
     return obj
   }
   const [error, setError] = useState('')

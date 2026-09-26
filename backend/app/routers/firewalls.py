@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
-from .. import changes, diagnose, diff, permissions, sync
+from .. import changes, crypto, diagnose, diff, permissions, sync
 from ..audit import audit
 from ..db import get_db
 from ..models import (CentralAccount, ChangeRequest, ConfigObject, ConfigSnapshot, Firewall, FirewallGroup, User,
@@ -88,10 +88,13 @@ class FirewallIn(BaseModel):
     verify_tls: bool = True
     central_account_id: str | None = None
     central_id: str = ""
+    # REST: optionaler XML-API-Zugang für WAF-Regeln (None = unverändert, "" = entfernen)
+    xml_username: str | None = None
+    xml_password: str | None = None
 
 
 CONNECTION_FIELDS = frozenset(("connector", "api_url", "api_username", "api_password", "api_key_expires_at", "verify_tls",
-                     "central_account_id", "central_id"))
+                     "central_account_id", "central_id", "xml_username", "xml_password"))
 
 
 def _require_superadmin(user: User) -> None:
@@ -103,10 +106,15 @@ def _keep_connection(fw: Firewall, body: FirewallIn) -> FirewallIn:
     """Für Nicht-Superadmins: Verbindungsfelder unverändert übernehmen; ein Änderungsversuch wird abgelehnt."""
     current = {"connector": fw.connector, "api_url": fw.api_url, "api_username": fw.api_username, "api_password": None,
                "api_key_expires_at": fw.api_key_expires_at.date() if fw.api_key_expires_at else None,
-               "verify_tls": fw.verify_tls, "central_account_id": None, "central_id": fw.central_id}
+               "verify_tls": fw.verify_tls, "central_account_id": None, "central_id": fw.central_id,
+               "xml_username": None, "xml_password": None}
     for k in CONNECTION_FIELDS & body.model_fields_set:
         v = getattr(body, k)
-        if k in ("api_password", "central_account_id") and not v:
+        if k in ("api_password", "central_account_id", "xml_password", "xml_username") and v is None:
+            continue
+        if k in ("api_password", "central_account_id", "xml_password") and not v:
+            continue
+        if k == "xml_username" and v.strip() == (fw.xml_username or ""):
             continue
         if isinstance(v, str):
             v = v.strip()
@@ -163,6 +171,16 @@ def _apply_fw(db: DbSession, fw: Firewall, body: FirewallIn) -> None:
     fw.api_url, fw.api_username, fw.verify_tls = body.api_url.strip(), body.api_username.strip(), body.verify_tls
     if body.api_password is not None and body.api_password != "":
         sync.encrypt_firewall_password(fw, body.api_password.strip())
+    if body.connector == "rest" and body.xml_username is not None:
+        fw.xml_username = body.xml_username.strip()
+        if not fw.xml_username:
+            fw.xml_password_enc, fw.xml_status = "", ""
+    if body.connector == "rest" and body.xml_password:
+        fw.xml_password_enc = crypto.encrypt(body.xml_password, f"firewall-xml:{fw.id}")
+    if body.connector != "rest":
+        fw.xml_username, fw.xml_password_enc, fw.xml_status = "", "", ""
+    if body.connector == "rest" and fw.xml_username and not fw.xml_password_enc:
+        raise HTTPException(400, "Für den XML-API-Zugang (WAF-Regeln) fehlt das Passwort")
     if body.connector == "rest":
         fw.api_key_expires_at = (datetime.combine(body.api_key_expires_at, time(23, 59), tzinfo=timezone.utc)
                                  if body.api_key_expires_at else None)
@@ -223,7 +241,8 @@ def update_firewall(firewall_id: str, body: FirewallIn, request: Request, user: 
           details={"before": before, "after": {"name": fw.name, "group_id": fw.group_id, "connector": fw.connector,
                                                "api_url": fw.api_url, "api_username": fw.api_username,
                                                "verify_tls": fw.verify_tls},
-                   "secret_changed": bool(body.api_password)})
+                   "secret_changed": bool(body.api_password), "xml_access": bool(fw.xml_username),
+                   "xml_secret_changed": bool(body.xml_password)})
     return firewall_out(db, fw, user)
 
 
@@ -238,6 +257,7 @@ def delete_firewall(firewall_id: str, request: Request, user: User = Depends(get
     # Archivieren statt löschen: Anträge, Verlauf und Versionsstände bleiben nachvollziehbar.
     fw.archived = True
     fw.api_password_enc = ""
+    fw.xml_password_enc = ""
     db.execute(delete(ConfigObject).where(ConfigObject.firewall_id == fw.id))
     draft = db.execute(select(ChangeRequest).where(ChangeRequest.firewall_id == fw.id,
                                                    ChangeRequest.status == "draft")).scalars().all()

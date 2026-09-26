@@ -89,3 +89,18 @@ Endpunkte lassen sich nur gegen ein echtes Konto ermitteln. Der **Probelauf** (A
 - naheliegende, nicht dokumentierte GET-Endpunkte: `GET /firewalls/{id}`, `GET /firewall-groups/{id}`,
   `GET /firewall-config/firewalls/{id}/transactions`, `GET /firewall-config/firewalls/{id}`.
   Das Ergebnis (200 = vorhanden, 405 = Route existiert ohne GET, 404 = nicht vorhanden) landet im Audit-Log.
+
+## WAF-Regeln (Webserver-Schutz) über die REST-API – Stand SFOS 22 (XGS108w, 2026-09)
+
+- `GET /firewall/rules/ipv4` liefert WAF-Regeln nur als `ruleType: "waf"` mit `wafRule: {"name": …}` und `wafService`.
+  Auf der getesteten Firewall verweisen **alle** WAF-Regeln auf denselben Platzhalter `{"name": "testRule"}` mit
+  `wafService: 80` – unabhängig von Port/Domäne. Einzelabruf (`/firewall/rules/ipv4/{name}`) und `?expand=all` liefern
+  nichts zusätzlich.
+- Gehosteter Server (Adresse, Lausch-Port, HTTPS, Zertifikat, Domänen), Traffic Routing (Pfade → Webserver,
+  Authentifizierung, Sticky Sessions, Hot Standby), Ausnahmen und Schutzrichtlinie der Regel gibt es **nur** in der
+  XML-API (`FirewallRule` mit `PolicyType=HTTPBased` → `HTTPBasedPolicy`). Nicht vorhanden (404): `/waf/rules`,
+  `/waf/hosted-servers`, `/waf/policies`, `/waf/exceptions`, `/waf/paths`, `/firewall/rules/waf`.
+- Vorhanden und vollständig: `/waf/servers` (Webserver), `/waf/protection/policies` (Schutzrichtlinien),
+  `/waf/authentication/policies`, `/waf/authentication/templates`.
+- Das Tool nutzt deshalb bei REST-Firewalls optional einen zweiten Zugang zur XML-API nur für WAF-Regeln
+  (Entität `wafRules`, siehe CLAUDE.md).

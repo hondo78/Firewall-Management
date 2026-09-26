@@ -46,6 +46,7 @@ export const ENTITY_ICON = {
   Zone: 'zone', zones: 'zone', Schedule: 'clock', schedules: 'clock',
   webPolicies: 'globe', applicationPolicies: 'services', ipsPolicies: 'shield', trafficShapingPolicies: 'sync',
   userGroups: 'group', users: 'user', interfaces: 'plug', backupSettings: 'download',
+  wafRules: 'globe', wafServers: 'host', wafProtectionPolicies: 'shield', wafAuthPolicies: 'user',
 }
 
 export default function Icon({ name, size = 16, className, title }) {

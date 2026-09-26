@@ -96,7 +96,8 @@ export function toXml(tag, value, indent = '') {
 export const REST_ENTITIES = new Set(['firewallRulesIpv4', 'firewallRulesIpv6', 'natRulesIpv4', 'addressesIpv4',
   'addressGroupsIpv4', 'addressesIpv6', 'addressGroupsIpv6', 'addressesFqdn', 'addressGroupsFqdn', 'addressesMac',
   'countryGroups', 'services', 'serviceGroups', 'zones', 'schedules', 'webPolicies', 'applicationPolicies', 'ipsPolicies',
-  'trafficShapingPolicies', 'userGroups', 'users', 'interfaces', 'backupSettings'])
+  'trafficShapingPolicies', 'userGroups', 'users', 'interfaces', 'backupSettings', 'wafServers', 'wafProtectionPolicies',
+  'wafAuthPolicies', 'wafRules'])
 /** Nur lesend (werden auf der Firewall gepflegt) */
 export const READ_ONLY_ENTITIES = new Set(['users', 'interfaces'])
 // Einstellungsobjekte: genau ein Eintrag, nur ändern (kein Anlegen/Löschen)
@@ -202,5 +203,8 @@ export function restRefOptions(config) {
     fqdn: opt('addressesFqdn', 'FQDN'),
     serviceItems: opt('services', 'Dienst'),
     rules: (config.firewallRulesIpv4 || []).map((o) => o.name),
+    wafServers: opt('wafServers', 'Webserver'),
+    wafProtection: (config.wafProtectionPolicies || []).map((o) => o.name),
+    wafAuth: (config.wafAuthPolicies || []).map((o) => o.name),
   }
 }

@@ -82,6 +82,9 @@ def reset() -> None:
             objs: dict[str, list[ET.Element]] = {}
             for tag, data in f["objects"]:
                 objs.setdefault(tag, []).append(to_el(tag, data))
+            if f["serial"] == "X21002ZENTRALE1":
+                # WAF-Regel (nur über die XML-API vollständig sichtbar; REST kennt sie nur als ruleType „waf“)
+                objs.setdefault("FirewallRule", []).append(to_el("FirewallRule", seed.WAF_RULE))
             gid = next((g for g, v in state["groups"].items() if v["name"] == f.get("group")), None)
             if f["serial"] == "X11600MUENCHEN1":
                 gid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "group-Filialen-Sued"))

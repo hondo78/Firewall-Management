@@ -34,6 +34,10 @@ def firewall_out(db: DbSession, fw: Firewall, user: User) -> dict:
         "central_account_id": fw.central_account_id if conn else None, "central_id": fw.central_id,
         "central_status": fw.central_status or {}, "external_ips": fw.external_ips or [],
         "api_url": fw.api_url if conn else None, "api_username": fw.api_username if conn else None,
+        "xml_username": fw.xml_username if conn else None, "has_xml_password": bool(fw.xml_password_enc) if conn else None,
+        "xml_status": fw.xml_status if conn else None,
+        # WAF-Regeln vollständig bearbeitbar (XML-API-Zugang hinterlegt) – ohne Zugangsdaten preiszugeben
+        "waf_xml": connector.has_waf_xml(fw),
         "has_api_password": bool(fw.api_password_enc) if conn else None,
         "api_key_expires_at": fw.api_key_expires_at if conn else None,
         "verify_tls": fw.verify_tls if conn else None, "api_version": fw.api_version, "may_edit_connection": conn,
@@ -48,7 +52,10 @@ def op_out(fw: Firewall, o: dict) -> dict:
         **o,
         "label": entities.LABELS.get(o["entity"], o["entity"]),
         "diff": diff.diff_objects(o.get("before"), o.get("data")) if o["action"] != "remove" else [],
-        "xml": (restapi.request_preview(entities.REST_RESOURCES[o["entity"]][0], o["action"], o.get("data"), o["name"],
+        "xml": (xmlapi.request_preview(entities.REST_XML_ENTITIES[o["entity"]][0], o["action"], o.get("data"), o["name"],
+                                       o.get("position"))
+                if o["entity"] in entities.REST_XML_ENTITIES else
+                restapi.request_preview(entities.REST_RESOURCES[o["entity"]][0], o["action"], o.get("data"), o["name"],
                                         o.get("position"), o.get("before"), o["entity"] in entities.RULE_ENTITIES,
                                         o["entity"] in entities.REST_SINGLETONS)
                 if o["entity"] in entities.REST_RESOURCES else

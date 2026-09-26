@@ -178,3 +178,102 @@ def test_read_only_entities_rejected(client, admin, monkeypatch):
     r = client.post(f"/api/firewalls/{fw['id']}/draft/operations", headers=admin, json={
         "entity": "users", "action": "add", "name": "u", "data": {"name": "u"}})
     assert r.status_code == 400 and "auf der Firewall gepflegt" in r.json()["detail"]
+
+
+# --- WAF-Regeln über den zusätzlichen XML-API-Zugang ------------------------------------------------------
+
+class FakeXml:
+    def __init__(self, rules=None, fail_on=None):
+        self.rules = rules or []
+        self.calls = []
+        self.fail_on = fail_on
+
+    def get(self, entity):
+        if self.fail_on == "get":
+            from app.sophos.xmlapi import XmlApiError
+            raise XmlApiError("534: Api operations are not allowed from the requester IP address")
+        return self.rules
+
+    def set(self, entity, data, op, position=None):
+        self.calls.append(("set", entity, op, data.get("Name"), position))
+        if self.fail_on == op:
+            from app.sophos.xmlapi import XmlApiError
+            raise XmlApiError("500: Operation failed")
+        return "ok"
+
+    def remove(self, entity, name):
+        self.calls.append(("remove", entity, name))
+        return "ok"
+
+    def test(self):
+        return "2200.1"
+
+
+WAF = {"Name": "n8n", "PolicyType": "HTTPBased", "Status": "Enable", "Position": "Bottom",
+       "HTTPBasedPolicy": {"HostedAddress": "#Port2", "ListenPort": "443", "Domains": {"Domain": ["n8n.example.com"]},
+                           "AccessPaths": {"AccessPath": [{"path": "/", "backend": "n8n", "auth_profile": ""}]},
+                           "ProtocolSecurity": "n8n", "IntrusionPrevention": "None"}}
+
+
+def test_rest_fetch_reads_waf_rules_via_xml(monkeypatch):
+    from app.models import Firewall
+
+    def handler(req):
+        return httpx.Response(200, json={"items": [], "pages": {"current": 1, "total": 1, "size": 100}})
+    monkeypatch.setattr(connector, "rest_client", lambda fw: client_for(handler))
+    xml = FakeXml([WAF, {"Name": "LAN", "PolicyType": "Network"}])
+    monkeypatch.setattr(connector, "waf_xml_client", lambda fw: xml)
+    fw = Firewall(id="f1", connector="rest", xml_username="apiadmin", xml_password_enc="x")
+    out, _ = connector.fetch_config(None, fw)
+    assert [r["Name"] for r in out["wafRules"]] == ["n8n"] and "Position" not in out["wafRules"][0]
+    assert fw.xml_status == "ok"
+    assert ("wafserver", "n8n") in entities.references("wafRules", out["wafRules"][0])
+    assert ("wafprotection", "n8n") in entities.references("wafRules", out["wafRules"][0])
+    # Ohne XML-Zugang: leer, kein Fehler
+    fw2 = Firewall(id="f2", connector="rest")
+    assert connector.fetch_config(None, fw2)[0]["wafRules"] == []
+
+
+def test_rest_apply_waf_rule_and_rollback(monkeypatch):
+    calls = []
+
+    def handler(req):
+        calls.append((req.method, req.url.path))
+        if req.method == "PATCH" and "fail" in req.url.path:
+            return httpx.Response(400, json={"error": "badRequest", "message": "kaputt"})
+        return httpx.Response(200, json={})
+    c = client_for(handler)
+    xml = FakeXml()
+    ops = [{"entity": "wafRules", "action": "add", "name": "n8n", "data": WAF, "position": {"type": "after", "ref": "LAN"}},
+           {"entity": "firewallRulesIpv4", "action": "update", "name": "fail", "data": {"name": "fail", "enabled": False},
+            "before": {"name": "fail", "enabled": True}}]
+    logs = []
+    with pytest.raises(connector.DeployError):
+        connector._rest_apply(c, ops, logs.append, xml)
+    # WAF-Regel per XML angelegt (mit Position) und nach dem REST-Fehler wieder entfernt
+    assert xml.calls == [("set", "FirewallRule", "add", "n8n", {"type": "after", "ref": "LAN"}), ("remove", "FirewallRule", "n8n")]
+
+
+def test_waf_access_superadmin_only_and_position_scope(client, admin, fake):
+    from .test_workflow import make_user
+    r = client.post("/api/firewalls", headers=admin, json={"name": "R", "connector": "rest", "api_url": "x.test",
+                                                          "api_password": "sfos_k", "xml_username": "apiadmin", "xml_password": "geheim"})
+    assert r.status_code == 200, r.text
+    fw = r.json()
+    assert fw["waf_xml"] is True and fw["xml_username"] == "apiadmin" and fw["has_xml_password"] is True
+    fwa = make_user(client, admin, "fwadmin", [("Firewall-Administrator", None)])
+    seen = client.get(f"/api/firewalls/{fw['id']}", headers=fwa).json()
+    assert seen["xml_username"] is None and seen["waf_xml"] is True
+    assert client.put(f"/api/firewalls/{fw['id']}", headers=fwa, json={"name": "R", "xml_username": "anderer"}).status_code == 403
+    assert client.put(f"/api/firewalls/{fw['id']}", headers=fwa, json={"name": "R2"}).status_code == 200
+    # Zugang entfernen (Superadmin)
+    r = client.put(f"/api/firewalls/{fw['id']}", headers=admin, json={"name": "R2", "connector": "rest", "api_url": "x.test",
+                                                                      "xml_username": ""})
+    assert r.status_code == 200 and r.json()["waf_xml"] is False
+
+    from app import changes
+    from app.models import Firewall
+    cfg = {"firewallRulesIpv4": [{"name": "LAN"}], "wafRules": []}
+    op = changes.validate_operation(Firewall(connector="rest"), {"entity": "wafRules", "action": "add", "name": "n8n",
+                                                                 "data": WAF, "position": {"type": "after", "ref": "LAN"}}, cfg)
+    assert op["position"] == {"type": "after", "ref": "LAN"}

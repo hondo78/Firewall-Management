@@ -131,6 +131,10 @@ class Firewall(Base):
     api_url: Mapped[str] = mapped_column(String(300), default="")
     api_username: Mapped[str] = mapped_column(String(200), default="")
     api_password_enc: Mapped[str] = mapped_column(Text, default="")
+    # REST-Firewall: optionaler Zugang zur XML-API für WAF-Regeln (die REST-API liefert sie nicht vollständig)
+    xml_username: Mapped[str] = mapped_column(String(200), default="")
+    xml_password_enc: Mapped[str] = mapped_column(Text, default="")
+    xml_status: Mapped[str] = mapped_column(String(500), default="")
     verify_tls: Mapped[bool] = mapped_column(Boolean, default=True)
     # REST-API: Ablaufdatum des API-Keys (in SFOS beim Erzeugen angezeigt) – für rechtzeitige Warnung
     api_key_expires_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)

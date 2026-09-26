@@ -49,6 +49,10 @@ REST_RESOURCES: dict[str, tuple[str, str, str]] = {
     "userGroups": ("/authentication/user-groups", "Benutzergruppen", "Benutzer & Schnittstellen"),
     "users": ("/authentication/users", "Benutzer", "Benutzer & Schnittstellen"),
     "interfaces": ("/network/interfaces/network-interfaces", "Schnittstellen", "Benutzer & Schnittstellen"),
+    # Webserver-Schutz (WAF): Webserver und Richtlinien – in WAF-Regeln auswählbar
+    "wafServers": ("/waf/servers", "Webserver", "Webserver-Schutz"),
+    "wafProtectionPolicies": ("/waf/protection/policies", "Schutzrichtlinien", "Webserver-Schutz"),
+    "wafAuthPolicies": ("/waf/authentication/policies", "Authentifizierungsrichtlinien", "Webserver-Schutz"),
     # Einzelne Einstellungsobjekte (GET/PATCH ohne Namen im Pfad)
     "backupSettings": ("/system/backup/settings", "Sicherungs-Zeitplan", "System"),
 }
@@ -56,7 +60,13 @@ REST_RESOURCES: dict[str, tuple[str, str, str]] = {
 REST_SINGLETONS = {"backupSettings": "Sicherungs-Zeitplan"}
 # Nur lesend – werden synchronisiert, aber nicht über Anträge geändert
 REST_READ_ONLY_ENTITIES = {"users", "interfaces"}
-REST_MANAGED = [(e, label, section) for e, (_, label, section) in REST_RESOURCES.items()]
+# Entitäten einer REST-Firewall, die über die (optionale) XML-API gelesen/geschrieben werden, weil die REST-API
+# sie nicht vollständig liefert: WAF-Regeln (FirewallRule mit PolicyType HTTPBased). Daten im XML-Format (Name).
+REST_XML_ENTITIES: dict[str, tuple[str, str, str]] = {
+    "wafRules": ("FirewallRule", "WAF-Regeln", "Webserver-Schutz"),
+}
+REST_MANAGED = ([(e, label, section) for e, (_, label, section) in REST_RESOURCES.items()]
+                + [(e, label, section) for e, (_, label, section) in REST_XML_ENTITIES.items()])
 # Nur lesend von der API geliefert – nie mitsenden und nicht speichern (sonst Diff-Rauschen).
 # ruleId liefert die echte Firewall zusätzlich (nicht in der Spezifikation). isInternal (eingebautes Objekt)
 # bleibt gespeichert, damit die Oberfläche Löschen ausblenden kann; per PATCH wird es nie gesendet (unverändert).
@@ -92,7 +102,9 @@ def name_key(entity: str) -> str:
 
 
 # Regeln mit Reihenfolge (Positionsangaben beim Anlegen/Verschieben)
-RULE_ENTITIES = {"FirewallRule", "firewallRulesIpv4", "firewallRulesIpv6", "natRulesIpv4"}
+RULE_ENTITIES = {"FirewallRule", "firewallRulesIpv4", "firewallRulesIpv6", "natRulesIpv4", "wafRules"}
+# WAF-Regeln stehen in derselben Regelliste wie die Firewall-Regeln (Bezugsregeln für Positionen)
+POSITION_SCOPE = {"wafRules": ("firewallRulesIpv4", "wafRules")}
 PRIMARY_RULES = {"xml": "FirewallRule", "rest": "firewallRulesIpv4"}
 
 # Schreibreihenfolge: Abhängigkeiten zuerst anlegen, beim Löschen umgekehrt
@@ -101,12 +113,13 @@ WRITE_ORDER = ["Zone", "Schedule", "IPHost", "FQDNHost", "MACHost", "IPHostGroup
                "zones", "schedules", "addressesIpv4", "addressesIpv6", "addressesFqdn", "addressesMac",
                "addressGroupsIpv4", "addressGroupsIpv6", "addressGroupsFqdn", "countryGroups",
                "services", "serviceGroups", "webPolicies", "applicationPolicies", "ipsPolicies",
-               "trafficShapingPolicies", "userGroups", "natRulesIpv4", "firewallRulesIpv4", "firewallRulesIpv6"]
+               "trafficShapingPolicies", "userGroups", "wafServers", "wafProtectionPolicies", "wafAuthPolicies",
+               "natRulesIpv4", "firewallRulesIpv4", "wafRules", "firewallRulesIpv6"]
 _RULE_LEVEL = {"NATRule", "FirewallRule", "FirewallRuleGroup", "natRulesIpv4", "firewallRulesIpv4",
-               "firewallRulesIpv6"}
+               "firewallRulesIpv6", "wafRules"}
 
 # Vordefinierte Objekte, die in Regeln ohne eigenes Objekt verwendet werden dürfen
-BUILTIN_REFS = {"Any", "All The Time"}
+BUILTIN_REFS = {"Any", "All The Time", "Any IPv4", "Any IPv6", "None"}
 
 # Art eines Verweises → Entitäten, in denen das Ziel liegen kann
 REF_ENTITIES = {
@@ -123,6 +136,9 @@ REF_ENTITIES = {
     "user": ("users", "userGroups"),
     "interface": ("interfaces",),
     "rule": ("firewallRulesIpv4", "firewallRulesIpv6"),
+    "wafserver": ("wafServers",),
+    "wafprotection": ("wafProtectionPolicies",),
+    "wafauth": ("wafAuthPolicies",),
 }
 
 
@@ -199,6 +215,25 @@ def rest_rule_references(rule: dict) -> list[tuple[str, str]]:
     return refs
 
 
+def waf_references(rule: dict) -> list[tuple[str, str]]:
+    """Verweise einer WAF-Regel (XML-Format): Webserver, Schutz-/Authentifizierungsrichtlinie, IPS, Traffic Shaping."""
+    p = rule.get("HTTPBasedPolicy") or {}
+    refs = []
+    for ap in _as_list((p.get("AccessPaths") or {}).get("AccessPath")):
+        refs += [("wafserver", b) for b in _as_list(ap.get("backend")) if b]
+        refs += [("wafauth", a) for a in _as_list(ap.get("auth_profile")) if a]
+        refs += [("network", n) for n in _as_list(ap.get("allowed_networks")) if n]
+    for ex in _as_list((p.get("Exceptions") or {}).get("Exception")):
+        refs += [("network", n) for n in _as_list(ex.get("source")) if n]
+    if p.get("ProtocolSecurity"):
+        refs.append(("wafprotection", p["ProtocolSecurity"]))
+    if p.get("IntrusionPrevention") and p["IntrusionPrevention"] != "None":
+        refs.append(("ipspolicy", p["IntrusionPrevention"]))
+    if p.get("TrafficShapingPolicy") and p["TrafficShapingPolicy"] != "None":
+        refs.append(("tspolicy", p["TrafficShapingPolicy"]))
+    return refs
+
+
 def rest_nat_references(nat: dict) -> list[tuple[str, str]]:
     refs: list[tuple[str, str]] = []
     for key in ("originalSourceNetworks", "originalDestinationNetworks"):
@@ -243,9 +278,14 @@ def references(entity: str, obj: dict) -> list[tuple[str, str]]:
         return [("network", n) for n in _names(obj.get("fqdns"))]
     if entity == "serviceGroups":
         return [("service", n) for n in _names(obj.get("services"))]
+    if entity == "wafRules":
+        return waf_references(obj)
+    if entity == "wafServers":
+        srv = obj.get("server") or {}
+        return [("network", v["name"]) for v in (srv.get("ipv4Address"), srv.get("fqdn")) if isinstance(v, dict) and v.get("name")]
     return []
 
 
 REFERRING_ENTITIES = ("FirewallRule", "IPHostGroup", "ServiceGroup", "FQDNHostGroup", "firewallRulesIpv4",
                       "firewallRulesIpv6", "addressGroupsIpv4", "addressGroupsIpv6", "addressGroupsFqdn",
-                      "serviceGroups", "natRulesIpv4")
+                      "serviceGroups", "natRulesIpv4", "wafRules", "wafServers")

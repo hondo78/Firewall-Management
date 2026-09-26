@@ -502,3 +502,12 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--border); borde
 .sf-list-pop { scroll-margin-bottom: 150px; z-index: 50; }
 .sf-pager-nav button { font-size: 16px; min-width: 32px; }
 .sf-list-pop.up { top: auto; bottom: 100%; margin: 0 0 4px; }
+
+/* WAF-Regel: freie Listen, Inline-Editor für Pfade/Ausnahmen */
+.sf-free-add { display: flex; border-top: 1px solid var(--border); }
+.sf-free-add input { flex: 1; border: 0; border-radius: 0 0 0 4px; }
+.sf-free-add button { border: 0; border-left: 1px solid var(--border); border-radius: 0 0 4px 0; background: var(--panel-2); color: var(--accent); font-size: 20px; width: 44px; }
+.sf-inline-edit { border: 1px solid var(--accent); border-radius: var(--radius); padding: 14px; background: var(--accent-soft); display: flex; flex-direction: column; gap: 14px; }
+.sf-inline-edit .sf-list, .sf-inline-edit input, .sf-inline-edit select { background: var(--panel); }
+.sf-x { color: var(--muted); }
+.sf-yes { color: var(--ok); font-weight: 700; }

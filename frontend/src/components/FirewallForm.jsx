@@ -16,6 +16,7 @@ export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
     api_url: fw?.api_url || '', api_username: fw?.api_username || '', api_password: '',
     api_key_expires_at: fw?.api_key_expires_at ? fw.api_key_expires_at.slice(0, 10) : '',
     verify_tls: fw?.verify_tls ?? true,
+    xml_username: fw?.xml_username || '', xml_password: '',
   })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -31,7 +32,8 @@ export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
     try {
       const body = connection
         ? { ...form, group_id: form.group_id || null, api_password: form.api_password || null,
-          api_key_expires_at: rest && form.api_key_expires_at ? form.api_key_expires_at : null }
+          api_key_expires_at: rest && form.api_key_expires_at ? form.api_key_expires_at : null,
+          xml_username: rest ? form.xml_username : null, xml_password: rest && form.xml_password ? form.xml_password : null }
         : { name: form.name, group_id: form.group_id || null }
       const saved = await api(fw ? `/firewalls/${fw.id}` : '/firewalls', { method: fw ? 'PUT' : 'POST', body })
       onSaved(saved)
@@ -76,6 +78,20 @@ export default function FirewallForm({ fw, groups, onSaved, onCancel }) {
             <Field label="Key gültig bis" hint="wird beim Erzeugen angezeigt – für rechtzeitige Warnung">
               <input type="date" value={form.api_key_expires_at} onChange={set('api_key_expires_at')} />
             </Field>
+          </div>
+          <div className="stack" style={{ gap: 8, marginTop: 4 }}>
+            <b>Zusätzlich: XML-API für WAF-Regeln <span className="muted small" style={{ fontWeight: 400 }}>(optional)</span></b>
+            <div className="muted small">Die REST-API liefert WAF-Regeln (Webserver-Schutz) nur unvollständig. Mit einem XML-API-Zugang liest und
+              schreibt das Tool sie vollständig (gehosteter Server, Domänen, Pfade, Ausnahmen). Auf der Firewall unter
+              <b> Sicherung & Firmware › API</b> die API aktivieren, die IP dieses Servers erlauben und einen eigenen API-Administrator verwenden.</div>
+            <div className="form-grid">
+              <Field label="API-Benutzer (XML)" hint="leer = kein XML-Zugang"><input value={form.xml_username} onChange={set('xml_username')} autoComplete="off" /></Field>
+              <Field label="Passwort (XML)" hint={fw?.has_xml_password ? 'leer lassen = unverändert' : 'wird verschlüsselt gespeichert'}>
+                <input type="password" value={form.xml_password} onChange={set('xml_password')} autoComplete="new-password" />
+              </Field>
+            </div>
+            {fw?.xml_status && fw.xml_status !== 'ok' && <div className="alert error small">XML-API: {fw.xml_status}</div>}
+            {fw?.xml_status === 'ok' && <div className="alert ok small">XML-API: WAF-Regeln werden gelesen.</div>}
           </div>
         </>}
         {form.connector === 'xmlapi' && <>
