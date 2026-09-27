@@ -101,7 +101,7 @@ export function Picker({ value, options, onChange, placeholder = t("Hinzufügen 
         {value.length === 0 && <span className="chip any">{emptyLabel}</span>}
         {value.map((v) => (
           <span key={v} className="chip">{v}<button type="button" aria-label={`${v} entfernen`}
-            onClick={() => onChange(value.filter((x) => x !== v))}>×</button></span>
+            onClick={(e) => { e.preventDefault(); onChange(value.filter((x) => x !== v)) }}>×</button></span>
         ))}
       </div>
       <input value={q} placeholder={placeholder} onFocus={() => setOpen(true)}
@@ -115,7 +115,10 @@ export function Picker({ value, options, onChange, placeholder = t("Hinzufügen 
       {open && shown.length > 0 && (
         <div className="options">
           {shown.map((o) => (
-            <button type="button" key={`${o.kind}:${o.value}`} onClick={() => add(o.value)}>
+            // preventDefault: Picker steckt in <label> (Field) – sonst leitet der Browser den Klick nach dem Neuzeichnen
+            // an das erste Bedienelement im Label weiter (das × des neuen Chips) und entfernt den Eintrag sofort wieder
+            <button type="button" key={`${o.kind}:${o.value}`} onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => { e.preventDefault(); add(o.value) }}>
               {o.value}{o.kind && <span className="kind">{o.kind}</span>}
             </button>
           ))}
