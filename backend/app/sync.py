@@ -156,11 +156,18 @@ def sync_central_inventory(db: DbSession, acc: CentralAccount, actor: User | Non
         grp.name = full_name(g)
     existing = {f.central_id: f for f in db.execute(
         select(Firewall).where(Firewall.central_account_id == acc.id)).scalars()}
-    created = []
+    created, linked = [], []
+    # Direkt angebundene Firewalls (REST/XML) ohne Central-Zuordnung über die Seriennummer verknüpfen statt doppelt anlegen
+    unlinked = {f.serial: f for f in db.execute(select(Firewall).where(
+        Firewall.central_account_id.is_(None), Firewall.archived.is_(False), Firewall.serial != "")).scalars()}
     for f in fws:
         fw = existing.get(f["id"])
         if fw is not None and fw.archived:
             continue  # bewusst aus der Verwaltung entfernt – nicht automatisch wieder aufnehmen
+        if not fw and f.get("serialNumber") in unlinked:
+            fw = unlinked.pop(f["serialNumber"])
+            fw.central_account_id, fw.central_id = acc.id, f["id"]
+            linked.append(fw)
         if not fw:
             fw = Firewall(name=f.get("name") or f.get("hostname") or f.get("serialNumber"), connector="central",
                           central_account_id=acc.id, central_id=f["id"])
@@ -181,8 +188,8 @@ def sync_central_inventory(db: DbSession, acc: CentralAccount, actor: User | Non
     db.flush()
     audit(db, "central.inventory_synced", actor=actor, target_type="central_account", target_id=acc.id,
           details={"account": acc.name, "firewalls": len(fws), "groups": len(groups),
-                   "new_firewalls": [f.name for f in created]})
-    return {"firewalls": len(fws), "groups": len(groups), "created": len(created)}
+                   "new_firewalls": [f.name for f in created], "linked_firewalls": [f.name for f in linked]})
+    return {"firewalls": len(fws), "groups": len(groups), "created": len(created), "linked": len(linked)}
 
 
 def encrypt_firewall_password(fw: Firewall, password: str) -> None:

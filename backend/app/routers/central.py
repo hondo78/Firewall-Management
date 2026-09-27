@@ -200,8 +200,12 @@ def inventory(account_id: str, _: User = Depends(admin_only), db: DbSession = De
     for f in fws:
         lf = local.get(f["id"])
         out_fws.append({**f, "status": normalize_status(f.get("status")),
-                        "local": {"id": lf.id, "name": lf.name, "archived": lf.archived} if lf else None})
-    return {"firewalls": out_fws, "groups": groups}
+                        "local": {"id": lf.id, "name": lf.name, "archived": lf.archived, "connector": lf.connector} if lf else None})
+    # Kandidaten zum Verknüpfen: direkt angebundene Firewalls ohne Central-Zuordnung
+    candidates = [{"id": f.id, "name": f.name, "serial": f.serial} for f in db.execute(
+        select(Firewall).where(Firewall.central_account_id.is_(None), Firewall.archived.is_(False),
+                               Firewall.connector != "central").order_by(Firewall.name)).scalars()]
+    return {"firewalls": out_fws, "groups": groups, "link_candidates": candidates}
 
 
 @router.get("/{account_id}/groups/{group_id}/sync-status")
@@ -260,6 +264,37 @@ def delete_central_firewall(account_id: str, central_id: str, body: ConfirmIn, r
           ip=client_ip(request), details={"account": acc.name, "central_id": central_id, "name": fw.get("name"),
                                           "serial": fw.get("serialNumber"), "local": local.name if local else None})
     return {"ok": True, "note": note}
+
+
+class LinkIn(BaseModel):
+    firewall_id: str | None = None
+
+
+@router.put("/{account_id}/firewalls/{central_id}/link")
+def link_central_firewall(account_id: str, central_id: str, body: LinkIn, request: Request,
+                          actor: User = Depends(admin_only), db: DbSession = Depends(get_db)):
+    """Central-Firewall mit einer direkt angebundenen Firewall im Tool verknüpfen (MDR, Firmware, Lizenzen) – oder lösen."""
+    acc, client = _account(db, account_id)
+    if not any(f["id"] == central_id for f in _central(client.firewalls)):
+        raise HTTPException(404, tr('Firewall nicht in Sophos Central gefunden'))
+    current = db.execute(select(Firewall).where(Firewall.central_account_id == acc.id,
+                                                Firewall.central_id == central_id)).scalar()
+    target = db.get(Firewall, body.firewall_id) if body.firewall_id else None
+    if body.firewall_id and (not target or target.archived):
+        raise HTTPException(404, tr('Firewall nicht gefunden'))
+    if target and target.connector == "central" and target is not current:
+        raise HTTPException(400, tr('Über Sophos Central angebundene Firewalls sind bereits verknüpft'))
+    if current and current is not target:
+        if current.connector == "central":
+            raise HTTPException(400, tr('Die Verknüpfung einer über Sophos Central angebundenen Firewall lässt sich nicht lösen'))
+        current.central_account_id, current.central_id, current.mdr_status = None, "", ""
+    if target:
+        target.central_account_id, target.central_id = acc.id, central_id
+    audit(db, "central.firewall_linked", actor=actor, target_type="central_account", target_id=acc.id,
+          ip=client_ip(request), details={"account": acc.name, "central_id": central_id,
+                                          "firewall": target.name if target else None,
+                                          "unlinked": current.name if current and current is not target else None})
+    return {"ok": True}
 
 
 @router.post("/{account_id}/groups")

@@ -358,3 +358,34 @@ def test_inventory_endpoints_superadmin_only(client, admin, fake, monkeypatch):
     assert fw["central_linked"] is False
     actions = [e["action"] for e in client.get("/api/audit", headers=admin).json()["items"]]
     assert "central.firewall_deleted" in actions and "central.group_created" in actions
+
+
+def test_inventory_sync_links_direct_firewall_by_serial(client, admin, fake, monkeypatch):
+    """Eine direkt angebundene Firewall wird über die Seriennummer verknüpft statt doppelt angelegt."""
+    from app import sync
+    fw_id = setup_firewall(client, admin)
+    with SessionLocal() as db:
+        db.get(Firewall, fw_id).serial = "S1"
+        acc = CentralAccount(name="Tenant", client_id="cid", id_url="https://id.test", api_url="https://api.test",
+                             data_region=REGION, id_type="tenant", tenant_id="t1", client_secret_enc="")
+        db.add(acc)
+        db.commit()
+        acc_id = acc.id
+    inv = FakeInventory()
+    inv.fws = [{"id": "c-fw1", "name": "Central-Name", "serialNumber": "S1"},
+               {"id": "c-fw2", "name": "Nur-Central", "serialNumber": "S2"}]
+    monkeypatch.setattr(connector, "central_client", lambda acc: inv)
+    monkeypatch.setattr(sync, "resolve_account", lambda acc: [])
+    r = client.post(f"/api/central-accounts/{acc_id}/sync", headers=admin)
+    assert r.status_code == 200, r.text
+    assert r.json()["linked"] == 1 and r.json()["created"] == 1
+    fws = {f["name"]: f for f in client.get("/api/firewalls", headers=admin).json()}
+    assert fws["FW-Test"]["central_linked"] and fws["FW-Test"]["connector"] == "xmlapi"
+    assert fws["Nur-Central"]["connector"] == "central"
+    # Manuell lösen und wieder verknüpfen
+    assert client.put(f"/api/central-accounts/{acc_id}/firewalls/c-fw1/link", headers=admin, json={"firewall_id": None}).status_code == 200
+    assert not client.get(f"/api/firewalls/{fw_id}", headers=admin).json()["central_linked"]
+    assert client.put(f"/api/central-accounts/{acc_id}/firewalls/c-fw1/link", headers=admin, json={"firewall_id": fw_id}).status_code == 200
+    assert client.get(f"/api/firewalls/{fw_id}", headers=admin).json()["central_linked"]
+    # Eine über Central angebundene Firewall lässt sich nicht lösen
+    assert client.put(f"/api/central-accounts/{acc_id}/firewalls/c-fw2/link", headers=admin, json={"firewall_id": None}).status_code == 400

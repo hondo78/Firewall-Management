@@ -66,7 +66,7 @@ export default function CentralAccounts() {
     setBusy(a.id)
     try {
       const r = await api(`/central-accounts/${a.id}/sync`, { method: 'POST' })
-      setMsg({ ...msg, [a.id]: { kind: 'ok', text: t("{0} Firewalls, {1} Gruppen – {2} neu übernommen.", r.firewalls, r.groups, r.created) } })
+      setMsg({ ...msg, [a.id]: { kind: 'ok', text: t("{0} Firewalls, {1} Gruppen – {2} neu übernommen.", r.firewalls, r.groups, r.created) + (r.linked ? ` ${t("{0} direkt angebundene Firewalls über die Seriennummer verknüpft.", r.linked)}` : '') } })
     } catch (e) { setMsg({ ...msg, [a.id]: { kind: 'error', text: e.message } }) }
     setBusy(null)
     reload()
@@ -97,6 +97,7 @@ export default function CentralAccounts() {
             {a.last_error && <div className="alert error">{a.last_error}</div>}
             {msg[a.id] && <div className={`alert ${msg[a.id].kind}`}>{msg[a.id].text}</div>}
             <div className="muted">{t("Neu übernommene Firewalls nutzen zum Schreiben den Central-Import. Unter Firewall › Einstellungen kann stattdessen die lokale XML-API gewählt werden (nötig zum Löschen von Objekten).")}</div>
+            <div className="muted">{t("Bereits direkt (REST/XML) angebundene Firewalls werden über die Seriennummer verknüpft statt doppelt angelegt – sie behalten ihre Anbindung und erhalten zusätzlich MDR-Threat-Feed, Firmware und Lizenzen über Central.")}</div>
             <details style={{ marginTop: 8 }}>
               <summary>{t("Probelauf & Endpunkt-Prüfung")}</summary>
               <div style={{ marginTop: 8 }}>

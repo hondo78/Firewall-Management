@@ -153,6 +153,12 @@ export default function CentralInventory() {
   const approve = async (f) => {
     try { await api(`/central-accounts/${id}/firewalls/${f.id}/approve`, { method: 'POST' }); done(t('Verwaltung von „{0}“ freigegeben.', fwLabel(f))) } catch (e) { setMsg({ kind: 'error', text: e.message }) }
   }
+  const link = async (f, firewallId) => {
+    try {
+      await api(`/central-accounts/${id}/firewalls/${f.id}/link`, { method: 'PUT', body: { firewall_id: firewallId } })
+      done(firewallId ? t('„{0}“ mit der Firewall im Tool verknüpft – MDR-Threat-Feed, Firmware und Lizenzen stehen dort jetzt bereit.', fwLabel(f)) : t('Central-Zuordnung von „{0}“ gelöst.', fwLabel(f)))
+    } catch (e) { setMsg({ kind: 'error', text: e.message }) }
+  }
   const removeGroup = async (g) => {
     try { await api(`/central-accounts/${id}/groups/${g.id}`, { method: 'DELETE' }); done(t('Gruppe „{0}“ gelöscht – die Firewalls bleiben erhalten.', g.name)) } catch (e) { setMsg({ kind: 'error', text: e.message }) }
     setOpen(null)
@@ -186,7 +192,13 @@ export default function CentralInventory() {
                     {f.status?.connected === false && <span className="badge b-danger">{t("getrennt")}</span>}
                     {f.status?.suspended && <span className="badge b-warn">{t("ausgesetzt")}</span>}</td>
                   <td className="small">{f.geoLocation ? `${f.geoLocation.latitude}, ${f.geoLocation.longitude}` : '–'}</td>
-                  <td className="small">{f.local ? (f.local.archived ? <span className="muted">{t("archiviert")}</span> : <Link to={`/firewalls/${f.local.id}`}>{f.local.name}</Link>) : '–'}</td>
+                  <td className="small">{f.local ? (f.local.archived ? <span className="muted">{t("archiviert")}</span> : <>
+                    <Link to={`/firewalls/${f.local.id}`}>{f.local.name}</Link>
+                    {f.local.connector !== 'central' && <button className="link small" style={{ marginLeft: 6 }} title={t("Central-Zuordnung lösen")} onClick={() => link(f, null)}>{t("lösen")}</button>}</>)
+                    : inv.link_candidates?.length ? <select className="sm" value="" onChange={(e) => e.target.value && link(f, e.target.value)} aria-label={t("Mit Firewall im Tool verknüpfen")}>
+                      <option value="">{t("verknüpfen mit …")}</option>
+                      {inv.link_candidates.map((c) => <option key={c.id} value={c.id}>{c.name}{c.serial === f.serialNumber ? ` ✓ ${t("gleiche Seriennummer")}` : ''}</option>)}
+                    </select> : '–'}</td>
                   <td className="actions nowrap">
                     {['approvalPending', 'pendingApproval'].includes(f.status?.managing) && <button className="sm primary" onClick={() => approve(f)}>{t("Verwaltung freigeben")}</button>}{' '}
                     <button className="sm" onClick={() => setModal({ kind: 'fw', fw: f })}>{t("Bearbeiten")}</button>{' '}

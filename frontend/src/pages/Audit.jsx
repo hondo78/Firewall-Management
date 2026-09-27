@@ -14,6 +14,7 @@ export const AUDIT_LABEL = {
   'central.firewall_updated': t("Firewall in Central geändert"), 'central.firewall_approved': t("Central-Verwaltung freigegeben"),
   'central.firewall_deleted': t("Firewall aus Central entfernt"), 'central.group_created': t("Central-Gruppe angelegt"),
   'central.group_updated': t("Central-Gruppe geändert"), 'central.group_deleted': t("Central-Gruppe gelöscht"),
+  'central.firewall_linked': t("Central-Zuordnung geändert"),
   'group.created': t("Gruppe angelegt"), 'group.updated': t("Gruppe geändert"), 'group.deleted': t("Gruppe gelöscht"),
   'firewall.created': t("Firewall hinzugefügt"), 'firewall.updated': t("Firewall-Anbindung geändert"),
   'firewall.removed': t("Firewall entfernt"), 'firewall.synced': t("Firewall synchronisiert"),

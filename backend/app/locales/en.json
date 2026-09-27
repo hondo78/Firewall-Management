@@ -434,5 +434,7 @@
  "{0} Indikatoren": "{0} indicators",
  "MDR-Threat-Feed": "MDR threat feed",
  "Sophos Central": "Sophos Central",
- "MDR-Indikatoren (IoC)": "MDR indicators (IoC)"
+ "MDR-Indikatoren (IoC)": "MDR indicators (IoC)",
+ "Über Sophos Central angebundene Firewalls sind bereits verknüpft": "Firewalls connected through Sophos Central are already linked",
+ "Die Verknüpfung einer über Sophos Central angebundenen Firewall lässt sich nicht lösen": "The link of a firewall connected through Sophos Central cannot be removed"
 }
