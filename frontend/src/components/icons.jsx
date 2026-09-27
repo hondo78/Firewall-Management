@@ -47,6 +47,7 @@ export const ENTITY_ICON = {
   webPolicies: 'globe', applicationPolicies: 'services', ipsPolicies: 'shield', trafficShapingPolicies: 'sync',
   userGroups: 'group', users: 'user', interfaces: 'plug', backupSettings: 'download',
   wafRules: 'globe', wafServers: 'host', wafProtectionPolicies: 'shield', wafAuthPolicies: 'user',
+  mdrThreatFeed: 'shield', mdrIndicators: 'alert',
 }
 
 export default function Icon({ name, size = 16, className, title }) {

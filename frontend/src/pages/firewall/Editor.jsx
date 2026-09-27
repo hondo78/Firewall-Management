@@ -5,9 +5,10 @@ import { ACTION_LABEL, api, can, download, upload } from '../../api'
 import { BULK, BULK_KIND, parseBulk } from '../../components/bulk'
 import { COLUMNS, searchText } from '../../components/columns'
 import { ObjectEditor, RuleEditor } from '../../components/Editors'
-import { READ_ONLY_ENTITIES, RULE_TABLE_ENTITIES, SINGLETON_ENTITIES, PRIMARY_RULES, asList, canonical, isRestEntity, oname } from '../../components/entities'
+import { CENTRAL_ENTITIES, READ_ONLY_ENTITIES, RULE_TABLE_ENTITIES, SINGLETON_ENTITIES, PRIMARY_RULES, asList, canonical, isRestEntity, oname } from '../../components/entities'
 import Icon, { ENTITY_ICON } from '../../components/icons'
 import { RestObjectEditor } from '../../components/RestEditors'
+import { CentralExportModal, MdrBar } from '../../components/CentralMdr'
 import { ObjectView } from '../../components/SophosPolicies'
 import { FeatureBadges, RuleDetails, SophosNatEditor, SophosRuleEditor, natView } from '../../components/SophosRules'
 import { WafRuleEditor } from '../../components/SophosWaf'
@@ -142,7 +143,7 @@ function BulkAddModal({ entity, label, fmt, config, onClose, onAdd }) {
   return (
     <Modal title={t("Mehrfach hinzufügen: {0}", label)} onClose={onClose} wide>
       {!result ? <div className="stack">
-        <div className="small"><b>{def.label}</b> {t("– ein Eintrag je Zeile, optional „,Name“.")}</div>
+        <div className="small"><b>{def.label}</b> {def.ownName === false ? t("– ein Eintrag je Zeile.") : t("– ein Eintrag je Zeile, optional „,Name“.")}</div>
         <textarea className="code" style={{ minHeight: 180 }} value={text} placeholder={def.placeholder} onChange={(e) => setText(e.target.value)} autoFocus />
         <div className="alert info small"><b>{t("Unterstützte Formate")}</b>
           <table className="bulk-help"><tbody>{def.help.map(([ex, d]) => <tr key={ex}><td className="mono">{ex}</td><td>→ {d}</td></tr>)}</tbody></table>
@@ -278,7 +279,7 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
         <h3>{meta.label} <span className="muted" style={{ fontWeight: 400 }}>({rows.filter((r) => r.state !== 'remove').length})</span></h3>
         {mayEdit && !single && <div className="right row">
           <button className="sm" disabled={!sel.size} onClick={() => setSel(new Set())}>{t("Auswahl aufheben")}</button>
-          {fw.capabilities.remove && <button className="sm danger" disabled={!sel.size}
+          {(fw.capabilities.remove || CENTRAL_ENTITIES.has(entity)) && <button className="sm danger" disabled={!sel.size}
             onClick={async () => { await onBulkDelete([...sel]); setSel(new Set()) }}><Icon name="trash" size={13} /> {t("Löschen")}{sel.size ? ` (${sel.size})` : ''}</button>}
           {BULK_KIND[entity] && <button className="sm primary" onClick={onBulkAdd}><Icon name="bulk" size={13} /> {t("Mehrfach hinzufügen")}</button>}
           <button className="sm primary" onClick={onAdd}><Icon name="plus" size={13} /> {t("Hinzufügen")}</button>
@@ -319,7 +320,7 @@ function EntityTable({ entity, meta, rows, fw, mayEdit, pendingBy, draftBy, find
                     <td className="actions">
                       {mayEdit && state !== 'remove' && <>
                         <IconButton icon="edit" title={t("Bearbeiten")} onClick={() => onEdit(obj)} />
-                        {fw.capabilities.remove && !obj.isInternal && !single && <IconButton icon="trash" title={t("Löschen")} danger onClick={() => onOp({ entity, action: 'remove', name })} />}
+                        {(fw.capabilities.remove || CENTRAL_ENTITIES.has(entity)) && !obj.isInternal && !single && <IconButton icon="trash" title={t("Löschen")} danger onClick={() => onOp({ entity, action: 'remove', name })} />}
                       </>}
                       <IconButton icon="code" title={rest ? t("Details / JSON") : t("Details / XML")} onClick={() => onShow(obj)} />
                     </td>
@@ -431,6 +432,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
   const addFor = (e) => { if (e !== entity) select(e); setEditing({ obj: null }) }
   // Firewall-/NAT-Regeln (REST) werden wie in SFOS als ganze Seite bearbeitet
   // Bearbeitet wird ggf. eine andere Entität als die angezeigte (WAF-Regel aus der Firewall-Regelliste)
+  const [centralExport, setCentralExport] = useState(false)
   const editEntity = editing?.entity || entity
   const pageEdit = editing && rest && (editEntity.startsWith('firewallRules') || editEntity === 'natRulesIpv4' || editEntity === 'wafRules')
   const editRule = (obj) => {
@@ -499,6 +501,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
                 {dl && <div className="dropdown-menu">
                   <button onClick={() => { setDl(false); download(`/firewalls/${fw.id}/export.json`, `Konfiguration-${fw.name}.json`) }}>{t("Konfiguration (JSON)")}</button>
                   {!rest && <button onClick={() => { setDl(false); download(`/firewalls/${fw.id}/export.xml`, `Entities-${fw.name}.xml`) }}>{t("Entities.xml (Config Studio)")}</button>}
+                  {fw.central_linked && <button onClick={() => { setDl(false); setCentralExport(true) }}>{t("Export aus Sophos Central …")}</button>}
                   {draftOps.length > 0 && <button onClick={() => {
                     setDl(false)
                     const blob = new Blob([JSON.stringify(draftOps.map(({ entity: e, action, name, data, position }) => ({ entity: e, action, name, data, position })), null, 2)], { type: 'application/json' })
@@ -525,13 +528,13 @@ export default function Editor({ fw, cfg, draft, reload }) {
             findings={findings} onSelect={select} onEdit={editRule} onAddFor={addFor}
             onAddWaf={rest ? (fw.waf_xml ? () => setEditing({ obj: null, entity: 'wafRules' }) : () => setWafInfo(true)) : null} onOp={quickOp}
             onShow={(obj) => setDetail({ entity, obj })} onBulkDelete={bulkDelete} onBulkToggle={bulkToggle} />
-          : <EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
+          : <>{CENTRAL_ENTITIES.has(entity) && <MdrBar fw={fw} entity={entity} />}<EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
             findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
-            onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} />}
+            onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} /></>}
       </div>
 
-      {editing && rest && !pageEdit && <RestObjectEditor entity={editEntity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />}
-      {editing && !rest && (entity === 'FirewallRule'
+      {editing && (rest || CENTRAL_ENTITIES.has(editEntity)) && !pageEdit && <RestObjectEditor entity={editEntity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />}
+      {editing && !rest && !CENTRAL_ENTITIES.has(editEntity) && (entity === 'FirewallRule'
         ? <RuleEditor config={cfg.preview} rule={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />
         : <ObjectEditor entity={entity} label={meta.label} config={cfg.preview} object={editing.obj} onClose={() => setEditing(null)} onSubmit={addOp} />)}
       {detail?.obj && <ObjectDetail fw={fw} entity={detail.entity} obj={detail.obj} onClose={() => setDetail(null)} />}
@@ -539,6 +542,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
         onClose={() => { setBulk(false); reload() }} />}
       {review && <ImportModal fw={fw} review={review} onClose={() => setReview(null)}
         onApplied={(r) => { setReview(null); reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t("{0} Objekte in den Entwurf übernommen{1}", r.added, r.skipped.length ? t(" · übersprungen: {0}{1}", r.skipped.slice(0, 5).join('; '), r.skipped.length > 5 ? ' …' : '') : '') }) }} />}
+      {centralExport && <CentralExportModal fw={fw} onClose={() => setCentralExport(false)} />}
       {wafInfo && (
         <Modal title={t("Neue WAF-Regel (Webserver-Schutz)")} onClose={() => setWafInfo(false)}>
           <div className="stack small">

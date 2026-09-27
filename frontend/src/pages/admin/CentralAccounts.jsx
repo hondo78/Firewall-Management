@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { api, ago } from '../../api'
 import Diagnose from '../../components/Diagnose'
@@ -88,6 +89,7 @@ export default function CentralAccounts() {
             <span className="muted small">{t("Client-ID")} {a.client_id} {t("· Region")} {a.data_region || '–'} {t("· Inventar")} {ago(a.last_sync_at)}</span>
             <div className="right row">
               <button className="sm" onClick={() => setEdit(a)}>{t("Bearbeiten")}</button>
+              <Link className="button sm" to={`/admin/central/${a.id}`}>{t("Inventar verwalten")}</Link>
               <button className="primary sm" disabled={busy === a.id} onClick={() => syncInv(a)}>{busy === a.id ? t("Lade …") : t("Firewalls übernehmen")}</button>
             </div>
           </div>

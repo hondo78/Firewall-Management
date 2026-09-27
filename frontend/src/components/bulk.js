@@ -98,21 +98,37 @@ export const BULK = {
         { SourcePort: '1:65535', DestinationPort: dp, Protocol: proto.toUpperCase() })) } }
     },
   },
+  ioc: {
+    label: t("MDR-Indikatoren (IPv4-Adressen, Domänen, URLs)"),
+    placeholder: '203.0.113.7\n198.51.100.0/24\nmalware.example.com\nhttps://phish.example.net/login',
+    help: [['203.0.113.7', t("IPv4-Adresse")], ['198.51.100.0/24', t("IPv4-Netz")], ['malware.example.com', t("Domäne")],
+      ['https://phish.example.net/login', t("URL (mit Pfad oder Schema)")]],
+    parse(value) {
+      const v = value.trim()
+      if (IPV4.test(v.split('/')[0]) && (!v.includes('/') || /^\d{1,2}$/.test(v.split('/')[1]))) return { type: 'ipv4-addr', value: v }
+      if (/^[a-z]+:\/\//i.test(v) || v.includes('/')) return { type: 'url', value: v }
+      if (FQDN.test(v)) return { type: 'domain-name', value: v }
+      throw new Error(t('weder IPv4-Adresse noch Domäne noch URL'))
+    },
+    // Der Wert ist zugleich der Name – ein eigener Name ist nicht möglich
+    build: (p) => ({ name: p.value, type: p.type }),
+    ownName: false,
+  },
 }
 
 /** Entität → Bulk-Art */
 export const BULK_KIND = {
   addressesIpv4: 'address', IPHost: 'address', addressesFqdn: 'fqdn', FQDNHost: 'fqdn',
-  addressesMac: 'mac', MACHost: 'mac', services: 'service', Services: 'service',
+  addressesMac: 'mac', MACHost: 'mac', services: 'service', Services: 'service', mdrIndicators: 'ioc',
 }
 
 export function parseBulk(kind, text, fmt, portsAsText) {
   const def = BULK[kind]
   return text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((line) => {
-    const [value, custom] = splitName(line)
+    const [value, custom] = def.ownName === false ? [line, ''] : splitName(line)
     try {
       const p = def.parse(value)
-      const name = (custom || value).slice(0, 60)
+      const name = def.ownName === false ? p.value : (custom || value).slice(0, 60)
       if (fmt === 'rest' && (name.startsWith('#') || name.includes(','))) throw new Error('Name darf nicht mit # beginnen')
       return { line, name, data: def.build(p, name, fmt, portsAsText) }
     } catch (e) {

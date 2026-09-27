@@ -13,6 +13,9 @@ const REST_ADDR = [
   col('internal', t("System"), (o) => (o.isInternal ? t("ja") : ''), { hidden: true }),
 ]
 
+export const MDR_ACTION = { logOnly: t("Nur protokollieren"), logAndDrop: t("Protokollieren und verwerfen") }
+export const MDR_TYPE = { 'ipv4-addr': t("IPv4-Adresse"), 'domain-name': t("Domäne"), url: 'URL' }
+
 export const COLUMNS = {
   // REST
   addressesIpv4: REST_ADDR,
@@ -48,6 +51,9 @@ export const COLUMNS = {
   backupSettings: [col('storage', t("Ziel"), (o) => ({ local: t("Lokal"), ftp: 'FTP', email: 'E-Mail' }[o.backupStorage] || o.backupStorage)),
     col('freq', t("Zeitplan"), (o) => ({ never: t("nie"), daily: t("täglich"), weekly: t("wöchentlich"), monthly: t("monatlich") }[o.schedule?.frequency] || '–')),
     col('time', t("Uhrzeit"), (o) => (o.schedule?.hour != null ? `${String(o.schedule.hour).padStart(2, '0')}:${String(o.schedule.minute ?? 0).padStart(2, '0')}` : ''))],
+  mdrThreatFeed: [col('enabled', t("Status"), (o) => (o.enabled ? t("aktiv") : t("inaktiv"))),
+    col('action', t("Aktion"), (o) => MDR_ACTION[o.action] || o.action)],
+  mdrIndicators: [col('type', t("Typ"), (o) => MDR_TYPE[o.type] || o.type)],
   wafRules: [col('status', t("Status"), (o) => (o.Status === 'Disable' ? t("inaktiv") : t("aktiv"))),
     col('domains', t("Domänen"), (o) => asList(o.HTTPBasedPolicy?.Domains?.Domain).join(', ')),
     col('listen', t("Adresse"), (o) => `${o.HTTPBasedPolicy?.HostedAddress || ''}:${o.HTTPBasedPolicy?.ListenPort || ''}${o.HTTPBasedPolicy?.HTTPS === 'Enable' ? ' (HTTPS)' : ''}`),

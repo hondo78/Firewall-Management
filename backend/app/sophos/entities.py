@@ -72,7 +72,17 @@ REST_MANAGED = ([(e, label, section) for e, (_, label, section) in REST_RESOURCE
 # bleibt gespeichert, damit die Oberfläche Löschen ausblenden kann; per PATCH wird es nie gesendet (unverändert).
 REST_READ_ONLY = ("id", "createdAt", "updatedAt", "ruleId")
 
-LABELS = {e: label for e, label, _ in XML_MANAGED + REST_MANAGED}
+# Sophos Central (MDR-Threat-Feed): für jede Firewall mit Central-Zuordnung, unabhängig von ihrer Anbindung und
+# damit in beiden Formaten. Schlüssel „name“, gelesen/geschrieben über sophos/mdr.py.
+CENTRAL_MANAGED: list[tuple[str, str, str]] = [
+    ("mdrThreatFeed", "MDR-Threat-Feed", "Sophos Central"),
+    ("mdrIndicators", "MDR-Indikatoren (IoC)", "Sophos Central"),
+]
+CENTRAL_ENTITIES = {e for e, _, _ in CENTRAL_MANAGED}
+# Einstellungsobjekt des Feeds: wie die REST-Einstellungen genau ein Objekt unter festem Namen, nur „update“
+REST_SINGLETONS["mdrThreatFeed"] = "MDR-Threat-Feed"
+
+LABELS = {e: label for e, label, _ in XML_MANAGED + REST_MANAGED + CENTRAL_MANAGED}
 
 # Kompatibilität: bisherige Aufrufer meinen das XML-Format
 MANAGED = XML_MANAGED
@@ -85,7 +95,7 @@ def fmt_for(connector: str) -> str:
 
 
 def managed(fmt: str) -> list[tuple[str, str, str]]:
-    return REST_MANAGED if fmt == "rest" else XML_MANAGED
+    return (REST_MANAGED if fmt == "rest" else XML_MANAGED) + CENTRAL_MANAGED
 
 
 def names(fmt: str) -> list[str]:
@@ -98,7 +108,7 @@ def oname(obj: dict) -> str:
 
 
 def name_key(entity: str) -> str:
-    return "name" if entity in REST_RESOURCES else "Name"
+    return "name" if entity in REST_RESOURCES or entity in CENTRAL_ENTITIES else "Name"
 
 
 # Regeln mit Reihenfolge (Positionsangaben beim Anlegen/Verschieben)
@@ -114,7 +124,8 @@ WRITE_ORDER = ["Zone", "Schedule", "IPHost", "FQDNHost", "MACHost", "IPHostGroup
                "addressGroupsIpv4", "addressGroupsIpv6", "addressGroupsFqdn", "countryGroups",
                "services", "serviceGroups", "webPolicies", "applicationPolicies", "ipsPolicies",
                "trafficShapingPolicies", "userGroups", "wafServers", "wafProtectionPolicies", "wafAuthPolicies",
-               "natRulesIpv4", "firewallRulesIpv4", "wafRules", "firewallRulesIpv6"]
+               "natRulesIpv4", "firewallRulesIpv4", "wafRules", "firewallRulesIpv6",
+               "mdrThreatFeed", "mdrIndicators"]
 _RULE_LEVEL = {"NATRule", "FirewallRule", "FirewallRuleGroup", "natRulesIpv4", "firewallRulesIpv4",
                "firewallRulesIpv6", "wafRules"}
 

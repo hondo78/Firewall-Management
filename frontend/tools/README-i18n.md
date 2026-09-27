@@ -41,12 +41,16 @@ import ast, pathlib, json
 out = set()
 for f in pathlib.Path('app').rglob('*.py'):
     for n in ast.walk(ast.parse(f.read_text())):
-        if isinstance(n, ast.Call) and getattr(n.func, 'id', None) == 'HTTPException' and len(n.args) >= 2 \
-                and isinstance(n.args[1], ast.Constant) and isinstance(n.args[1].value, str):
-            out.add(n.args[1].value)
+        if isinstance(n, ast.Call) and getattr(n.func, 'id', None) == 'HTTPException' and len(n.args) >= 2:
+            msg = n.args[1]
+            # Meldungen stehen inzwischen meist in tr('…', …) – den deutschen Schlüssel nehmen
+            if isinstance(msg, ast.Call) and getattr(msg.func, 'id', None) == 'tr' and msg.args:
+                msg = msg.args[0]
+            if isinstance(msg, ast.Constant) and isinstance(msg.value, str):
+                out.add(msg.value)
 from app.sophos import entities
 from app import permissions
-for e, label, sec in entities.XML_MANAGED + entities.REST_MANAGED:
+for e, label, sec in entities.XML_MANAGED + entities.REST_MANAGED + entities.CENTRAL_MANAGED:
     out |= {label, sec}
 out |= set(permissions.PERMISSIONS.values()) | {d for _, d, _ in permissions.BUILTIN_ROLES}
 print(json.dumps(sorted(out), ensure_ascii=False, indent=1))

@@ -164,11 +164,51 @@ class CentralClient:
     def group_sync_status(self, group_id: str) -> list[dict]:
         return self._fw("GET", f"/firewall-groups/{group_id}/firewalls/sync-status").get("items", [])
 
-    def update_firewall(self, firewall_id: str, name: str) -> dict:
-        return self._fw("PATCH", f"/firewalls/{firewall_id}", json={"name": name})
+    def update_firewall(self, firewall_id: str, name: str | None = None, geo: dict | None = None) -> dict:
+        """PATCH /firewalls/{id}: Name (3–40 Zeichen) und/oder geoLocation {latitude, longitude} (als Strings)."""
+        body: dict = {}
+        if name is not None:
+            body["name"] = name
+        if geo is not None:
+            body["geoLocation"] = {"latitude": str(geo["latitude"]), "longitude": str(geo["longitude"])}
+        return self._fw("PATCH", f"/firewalls/{firewall_id}", json=body)
+
+    def delete_firewall(self, firewall_id: str) -> dict:
+        """DELETE /firewalls/{id}: Firewall aus Sophos Central entfernen (nicht die Firewall selbst)."""
+        return self._fw("DELETE", f"/firewalls/{firewall_id}")
+
+    def run_action(self, firewall_id: str, action: str) -> dict:
+        """POST /firewalls/{id}/action – laut Spezifikation 1.5.0 nur „approveManagement“."""
+        return self._fw("POST", f"/firewalls/{firewall_id}/action", json={"action": action})
 
     def approve_management(self, firewall_id: str) -> dict:
-        return self._fw("POST", f"/firewalls/{firewall_id}/action", json={"action": "approveManagement"})
+        return self.run_action(firewall_id, "approveManagement")
+
+    # --- Firewall-Gruppen --------------------------------------------------------------------------------
+
+    def create_group(self, name: str, assign: list[str], parent_id: str | None = None,
+                     import_from: str | None = None) -> dict:
+        """POST /firewall-groups. import_from: Firewall, deren Konfiguration die Gruppe übernimmt."""
+        body: dict = {"name": name, "assignFirewalls": assign}
+        if parent_id:
+            body["parentGroupId"] = parent_id
+        if import_from:
+            body["configImportSourceFirewallId"] = import_from
+        return self._fw("POST", "/firewall-groups", json=body)
+
+    def update_group(self, group_id: str, name: str | None = None, assign: list[str] | None = None,
+                     unassign: list[str] | None = None) -> dict:
+        body: dict = {}
+        if name is not None:
+            body["name"] = name
+        if assign:
+            body["assignFirewalls"] = assign
+        if unassign:
+            body["unassignFirewalls"] = unassign
+        return self._fw("PATCH", f"/firewall-groups/{group_id}", json=body)
+
+    def delete_group(self, group_id: str) -> dict:
+        return self._fw("DELETE", f"/firewall-groups/{group_id}")
 
     # --- Firmware ----------------------------------------------------------------------------------------
 
@@ -219,9 +259,11 @@ class CentralClient:
                 raise CentralError(tr('Zeitüberschreitung beim Warten auf Transaktion {0}', transaction_id))
             time.sleep(config.CENTRAL_POLL_SECONDS)
 
-    def export_config(self, firewall_id: str, entities: list[str] | None, log=None) -> bytes:
+    def export_config(self, firewall_id: str, entities: list[str] | None, log=None,
+                      include_dependency: bool = False) -> bytes:
+        # fullExport=true verbietet exportEntities und includeDependency
         body = {"fullExport": True} if not entities else {
-            "fullExport": False, "includeDependency": False, "exportEntities": entities}
+            "fullExport": False, "includeDependency": include_dependency, "exportEntities": entities}
         ref = self._cfg("POST", f"/firewalls/{firewall_id}/export", json=body)
         tx = self.wait_transaction(ref["transactionId"], log)
         if tx.get("result") != "success":
@@ -261,6 +303,59 @@ class CentralClient:
             "performPartialImport": False,
         })
         return self.wait_transaction(tx_id, log)
+
+
+    # --- MDR-Threat-Feed (asynchron: jede Anfrage liefert eine Transaktion je Firewall) ---------------------
+
+    def wait_fw_transaction(self, firewall_id: str, transaction_id: str, log=None, timeout: int | None = None) -> dict:
+        """GET /firewall-config/firewalls/{id}/transactions/{tx} bis status=finished."""
+        deadline = time.time() + (timeout or config.CENTRAL_TRANSACTION_TIMEOUT)
+        while True:
+            tx = self._cfg("GET", f"/firewalls/{firewall_id}/transactions/{transaction_id}",
+                           params={"fields": "request,response,expiryAt,finishedAt"})
+            if tx.get("status") == "finished":
+                if log:
+                    log(tr('Transaktion {0}: {1}', transaction_id, tx.get("result")))
+                return tx
+            if time.time() > deadline:
+                raise CentralError(tr('Zeitüberschreitung beim Warten auf Transaktion {0}', transaction_id))
+            time.sleep(config.CENTRAL_POLL_SECONDS)
+
+    def _mdr(self, method: str, firewall_id: str, suffix: str = "", log=None, timeout: int | None = None, **kw) -> dict:
+        ref = self._cfg(method, f"/firewalls/{firewall_id}/mdr-threat-feed{suffix}", **kw)
+        tx = self.wait_fw_transaction(firewall_id, ref["transactionId"], log, timeout)
+        if tx.get("result") not in ("success", "partialSuccess"):
+            raise CentralError(tr('MDR-Threat-Feed: {0}', _tx_error(tx)))
+        return tx
+
+    def mdr_feed(self, firewall_id: str, log=None) -> dict:
+        """Einstellungen des Feeds: {enabled, action: logOnly|logAndDrop, lastUpdatedAt}."""
+        return self._mdr("GET", firewall_id, log=log, timeout=config.MDR_READ_TIMEOUT).get("response") or {}
+
+    def mdr_settings(self, firewall_id: str, enabled: bool | None = None, action: str | None = None, log=None) -> dict:
+        body = {k: v for k, v in (("enabled", enabled), ("action", action)) if v is not None}
+        return self._mdr("PATCH", firewall_id, "/settings", log=log, json=body)
+
+    def mdr_add(self, firewall_id: str, indicators: list[dict], log=None) -> dict:
+        """Höchstens 100 Indikatoren {type: ipv4-addr|domain-name|url, value} pro Aufruf."""
+        return self._mdr("POST", firewall_id, "/indicators", log=log, json={"indicators": indicators})
+
+    def mdr_delete(self, firewall_id: str, indicators: list[dict], log=None) -> dict:
+        return self._mdr("POST", firewall_id, "/indicators/delete", log=log, json={"indicators": indicators})
+
+    def mdr_delete_all(self, firewall_id: str, log=None) -> dict:
+        return self._mdr("DELETE", firewall_id, "/indicators", log=log)
+
+    def mdr_search(self, firewall_id: str, values: list[str], log=None) -> dict:
+        """Welche der (höchstens 100) Werte sind im Feed vorhanden? Antwort in tx.response."""
+        return self._mdr("POST", firewall_id, "/indicators/search", log=log, timeout=config.MDR_READ_TIMEOUT,
+                         json={"indicatorValues": values})
+
+
+def _tx_error(tx: dict) -> str:
+    resp = tx.get("response") or {}
+    detail = resp.get("message") or resp.get("error") or resp.get("errors") or ""
+    return f"{tx.get('result')} {detail}".strip()
 
 
 def normalize_status(status: dict | None) -> dict:

@@ -9,10 +9,13 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   - **SFOS REST-API** (empfohlen, `https://<fw>:4444/api/firewall-config/v1`, API-Key per Bearer-Token):
     direktes Anlegen/Ändern/Verschieben/Löschen von Regeln und Objekten, Rechte über das Admin-Profil des Keys,
     Warnung vor Ablauf des Keys.
-  - **Sophos Central – Firewall Management API** (`/firewall/v1`): Inventar (Firewalls, Gruppen, Status),
-    Firmware-Updates, Konfiguration lesen/schreiben über **Export/Import** (Archiv mit `Entities.xml`).
-    Löschen ist über den Import nicht möglich.
-    Zusätzlich Lizenzen (Licensing API) und offene Alerts (Common API) je Firewall.
+  - **Sophos Central / Fusion – Firewall Management API** (`/firewall/v1`), alle Operationen der Spezifikation 1.5.0:
+    Konfiguration lesen/schreiben über **Export/Import** (Archiv mit `Entities.xml`; Löschen ist über den Import
+    nicht möglich), Firmware-Updates, **Inventar verwalten** (Firewalls umbenennen, Standort, Verwaltung freigeben,
+    aus Central entfernen; Gruppen anlegen/ändern/löschen, Sync-Status), **MDR-Threat-Feed** (Einstellungen und
+    Indikatoren über Anträge mit Vier-Augen-Prinzip, Suche) und Export ausgewählter Objekttypen.
+    Zusätzlich Lizenzen (Licensing API) und offene Alerts (Common API) je Firewall. Die Central-Funktionen
+    stehen auch für direkt (REST/XML) angebundene Firewalls bereit, sobald sie einem Central-Konto zugeordnet sind.
   - **Alte XML-API der Firewall** (`/webconsole/APIController`, Benutzer/Passwort): nur noch für Firmware ohne
     REST-API.
 - **Konfigurationsansicht im Stil des Sophos Config Studio**: Navigator nach Bereichen (Regeln, Hosts & Dienste,

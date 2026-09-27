@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session as DbSession
 from . import diff, notify, permissions, settings, sync
 from .audit import audit
 from .models import ChangeEvent, ChangeRequest, Firewall, User, new_id, utcnow
-from .sophos import connector, entities
+from .sophos import connector, entities, mdr
 from .i18n import tr
 
 log = logging.getLogger("fwm.changes")
@@ -73,6 +73,10 @@ def effective_config(config: dict[str, list[dict]], ops: list[dict]) -> dict[str
             if idx is not None:
                 lst.pop(idx)
             continue
+        if o["entity"] == "mdrThreatFeed" and (o.get("data") or {}).get("clearIndicators"):
+            # beim Ausrollen läuft „alle löschen“ vor den Neuanlagen desselben Antrags → diese bleiben
+            added = {x["name"] for x in ops if x["entity"] == "mdrIndicators" and x["action"] == "add"}
+            out["mdrIndicators"] = [x for x in out.get("mdrIndicators", []) if entities.oname(x) in added]
         if idx is not None:
             lst.pop(idx)
         pos = o.get("position")
@@ -163,6 +167,28 @@ def _check_backup_settings(d: dict) -> None:
         raise HTTPException(400, tr('Monatliche Sicherung braucht einen Tag im Monat'))
 
 
+def _check_mdr(entity: str, name: str, data: dict) -> dict:
+    """MDR-Threat-Feed: nur die Felder, die die Central-API kennt."""
+    if entity == "mdrIndicators":
+        unknown = set(data) - {"name", "type"}
+        if unknown:
+            raise HTTPException(400, tr('Unbekannte Felder: {0}', ", ".join(sorted(unknown))))
+        err = mdr.validate_indicator(name, data.get("type"))
+        if err:
+            raise HTTPException(400, err)
+        return data
+    unknown = set(data) - {"name", "enabled", "action", "clearIndicators"}
+    if unknown:
+        raise HTTPException(400, tr('Unbekannte Felder: {0}', ", ".join(sorted(unknown))))
+    if not isinstance(data.get("enabled"), bool):
+        raise HTTPException(400, tr('„enabled“ muss true oder false sein'))
+    if data.get("action") not in mdr.ACTIONS:
+        raise HTTPException(400, tr('Aktion muss logOnly oder logAndDrop sein'))
+    if "clearIndicators" in data and not data["clearIndicators"]:
+        data = {k: v for k, v in data.items() if k != "clearIndicators"}
+    return data
+
+
 def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) -> dict:
     entity, action, name = op.get("entity"), op.get("action"), (op.get("name") or "").strip()
     if entity not in entities.names(entities.fmt_for(fw.connector)):
@@ -175,7 +201,11 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
         raise HTTPException(400, tr('{0} kann nur geändert, nicht angelegt oder gelöscht werden', tr(entities.LABELS[entity])))
     if not name:
         raise HTTPException(400, tr('Name fehlt'))
-    if action == "remove" and not connector.capabilities(fw)["remove"]:
+    if entity in entities.CENTRAL_ENTITIES and not connector.has_central(fw):
+        raise HTTPException(400, tr('Der MDR-Threat-Feed braucht eine Zuordnung der Firewall zu Sophos Central'))
+    if entity == "mdrIndicators" and action == "update":
+        raise HTTPException(400, tr('Indikatoren lassen sich nicht ändern – löschen und neu anlegen'))
+    if action == "remove" and entity not in entities.CENTRAL_ENTITIES and not connector.capabilities(fw)["remove"]:
         raise HTTPException(400, tr('Löschen ist über Sophos Central nicht möglich – Objekt stattdessen deaktivieren oder die Firewall über die REST-API anbinden'))
     existing = _index(config).get(entity, {})
     if action == "remove" and (existing.get(name) or {}).get("isInternal"):
@@ -196,6 +226,8 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
         clean["data"] = data
         if entity == "backupSettings":
             _check_backup_settings(data)
+        if entity in entities.CENTRAL_ENTITIES:
+            data = _check_mdr(entity, name, data)
         _check_rest_fields(entity, action, data, existing.get(name))
         if action == "update" and diff.canonical(data) == diff.canonical(existing[name]) and not op.get("position"):
             raise HTTPException(400, tr('Keine Änderung gegenüber dem aktuellen Stand'))
@@ -514,12 +546,20 @@ def _create_revert(db: DbSession, cr: ChangeRequest, actor: User | None, *, just
     config = sync.cached_config(db, fw)
     working, clean_ops = config, []
     for o in revert_operations(cr):
+        # „Alle MDR-Indikatoren löschen“ ist nicht umkehrbar; unveränderte Feed-Einstellungen nicht zurücksetzen
+        current = _index(working).get(o["entity"], {}).get(o["name"])
+        if o["entity"] == "mdrThreatFeed" and current:
+            state = lambda d: diff.canonical({k: v for k, v in d.items() if k != "clearIndicators"})  # noqa: E731
+            if state(current) == state(o["data"]):
+                continue
         try:
             c = validate_operation(fw, o, working)
         except HTTPException as e:
             raise HTTPException(409, tr('Rücknahme nicht möglich – die Konfiguration hat sich seitdem geändert: {0}', e.detail))
         clean_ops.append(c)
         working = effective_config(working, [c])
+    if not clean_ops:
+        raise HTTPException(409, tr('Nichts zurückzunehmen – das Löschen aller MDR-Indikatoren lässt sich nicht umkehren'))
     title = tr('Rücknahme von CR-{0:04d}: {1}', cr.number, cr.title)[:300]
     rev = ChangeRequest(number=next_number(db), firewall_id=fw.id, created_by=actor.id if actor else None,
                         status="approved" if preapproved else "pending", title=title,

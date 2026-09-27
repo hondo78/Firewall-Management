@@ -1,5 +1,6 @@
 """Firewalls, Firewall-Gruppen, Konfigurationsansicht, Versionsstände/Vergleich und Firmware."""
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+import tarfile
 from datetime import date, datetime, time, timezone
 
 from pydantic import BaseModel, Field
@@ -14,7 +15,7 @@ from ..models import (CentralAccount, ChangeRequest, ConfigObject, ConfigSnapsho
 from ..permissions import firewall_or_404
 from ..security import client_ip, get_current_user
 from ..serializers import change_summary, firewall_out, group_out
-from ..sophos import connector, entities, restapi, xmlapi, xmlconv
+from ..sophos import connector, entities, mdr, restapi, xmlapi, xmlconv
 from ..sophos.central import CentralError
 from ..i18n import tr
 
@@ -321,7 +322,9 @@ def get_config(firewall_id: str, user: User = Depends(get_current_user), db: DbS
     return {
         "format": fmt,
         "entities": [{"entity": e, "label": label, "section": section, "count": len(config.get(e, []))}
-                     for e, label, section in entities.managed(fmt)],
+                     for e, label, section in entities.managed(fmt)
+                     # MDR-Threat-Feed nur bei Zuordnung zu Sophos Central
+                     if e not in entities.CENTRAL_ENTITIES or connector.has_central(fw)],
         "objects": config,
         # Konfiguration inkl. eigenem Entwurf (Vorschau wie im Config-Studio-Editor)
         "preview": preview,
@@ -438,7 +441,7 @@ class FirmwareIn(BaseModel):
 def _central_fw(db: DbSession, fw: Firewall):
     acc = db.get(CentralAccount, fw.central_account_id) if fw.central_account_id else None
     if not acc or not fw.central_id:
-        raise HTTPException(400, tr('Firmware-Verwaltung nur für Firewalls aus Sophos Central'))
+        raise HTTPException(400, tr('Nur für Firewalls mit Zuordnung zu Sophos Central'))
     return connector.central_client(acc)
 
 
@@ -529,6 +532,71 @@ def central_info(firewall_id: str, user: User = Depends(get_current_user), db: D
     except CentralError as e:
         out["errors"].append(f"Alerts: {e}")
     return out
+
+
+# --- Sophos Central: MDR-Suche und gezielter Export ------------------------------------------------------------
+
+class MdrSearchIn(BaseModel):
+    values: list[str] = Field(min_length=1, max_length=100)
+
+
+@router.post("/firewalls/{firewall_id}/mdr/search")
+def mdr_search(firewall_id: str, body: MdrSearchIn, user: User = Depends(get_current_user),
+               db: DbSession = Depends(get_db)):
+    """Welche Indikatoren sind im MDR-Threat-Feed der Firewall vorhanden – auch außerhalb des Tools angelegte."""
+    fw = firewall_or_404(db, user, firewall_id)
+    client = _central_fw(db, fw)
+    values = list(dict.fromkeys(v.strip() for v in body.values if v.strip()))
+    try:
+        tx = client.mdr_search(fw.central_id, values)
+    except CentralError as e:
+        raise HTTPException(502, str(e))
+    found = mdr._found(tx.get("response") or {})
+    return {"found": sorted(found & set(values)) if found is not None else None,
+            "missing": sorted(set(values) - found) if found is not None else None,
+            "response": tx.get("response")}
+
+
+_EXPORTABLE: list[str] = []
+
+
+def exportable_entities() -> list[str]:
+    if not _EXPORTABLE:
+        import json
+        from pathlib import Path
+        _EXPORTABLE.extend(json.loads((Path(entities.__file__).parent / "central_export_entities.json").read_text()))
+    return _EXPORTABLE
+
+
+@router.get("/central/exportable-entities")
+def list_exportable(_: User = Depends(get_current_user)):
+    return exportable_entities()
+
+
+class CentralExportIn(BaseModel):
+    entities: list[str] = Field(default_factory=list, max_length=300)
+    include_dependency: bool = False
+
+
+@router.post("/firewalls/{firewall_id}/central-export")
+def central_export(firewall_id: str, body: CentralExportIn, request: Request, user: User = Depends(get_current_user),
+                   db: DbSession = Depends(get_db)):
+    """Live-Export über Sophos Central: vollständig oder ausgewählte Entitäten (optional mit Abhängigkeiten)."""
+    from fastapi.responses import Response
+    fw = firewall_or_404(db, user, firewall_id)
+    unknown = set(body.entities) - set(exportable_entities())
+    if unknown:
+        raise HTTPException(400, tr('Nicht exportierbar: {0}', ", ".join(sorted(unknown))))
+    client = _central_fw(db, fw)
+    try:
+        archive = client.export_config(fw.central_id, body.entities or None, include_dependency=body.include_dependency)
+        xml = xmlconv.read_tar_entities(archive)
+    except (CentralError, ValueError, tarfile.TarError) as e:
+        raise HTTPException(502, str(e))
+    audit(db, "config.exported", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
+          details={"firewall": fw.name, "source": "central", "entities": body.entities or "all",
+                   "include_dependency": body.include_dependency})
+    return Response(xml, media_type="application/xml", headers={"Content-Disposition": 'attachment; filename="Entities.xml"'})
 
 
 @router.get("/firewalls/{firewall_id}/export.json")

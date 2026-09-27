@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from . import diff, permissions
 from .models import ChangeRequest, Firewall, FirewallGroup, User
-from .sophos import connector, entities, restapi, xmlapi
+from .sophos import connector, entities, mdr, restapi, xmlapi
 
 
 def user_out(u: User) -> dict:
@@ -38,6 +38,8 @@ def firewall_out(db: DbSession, fw: Firewall, user: User) -> dict:
         "xml_status": fw.xml_status if conn else None,
         # WAF-Regeln vollständig bearbeitbar (XML-API-Zugang hinterlegt) – ohne Zugangsdaten preiszugeben
         "waf_xml": connector.has_waf_xml(fw),
+        # Sophos-Central-Zuordnung: MDR-Threat-Feed, Firmware, Lizenzen – unabhängig von der Anbindung
+        "central_linked": connector.has_central(fw), "mdr_status": fw.mdr_status,
         "has_api_password": bool(fw.api_password_enc) if conn else None,
         "api_key_expires_at": fw.api_key_expires_at if conn else None,
         "verify_tls": fw.verify_tls if conn else None, "api_version": fw.api_version, "may_edit_connection": conn,
@@ -52,7 +54,7 @@ def op_out(fw: Firewall, o: dict) -> dict:
         **o,
         "label": entities.LABELS.get(o["entity"], o["entity"]),
         "diff": diff.diff_objects(o.get("before"), o.get("data")) if o["action"] != "remove" else [],
-        "xml": (xmlapi.request_preview(entities.REST_XML_ENTITIES[o["entity"]][0], o["action"], o.get("data"), o["name"],
+        "xml": mdr.request_preview(fw.central_id or "{firewallId}", o) if o["entity"] in entities.CENTRAL_ENTITIES else (xmlapi.request_preview(entities.REST_XML_ENTITIES[o["entity"]][0], o["action"], o.get("data"), o["name"],
                                        o.get("position"))
                 if o["entity"] in entities.REST_XML_ENTITIES else
                 restapi.request_preview(entities.REST_RESOURCES[o["entity"]][0], o["action"], o.get("data"), o["name"],

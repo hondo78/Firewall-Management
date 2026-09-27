@@ -32,6 +32,8 @@ HTTP_TIMEOUT_SECONDS = float(_env("HTTP_TIMEOUT_SECONDS", "30"))
 # Maximale Wartezeit auf asynchrone Central-Transaktionen (Export/Import)
 CENTRAL_TRANSACTION_TIMEOUT = int(_env("CENTRAL_TRANSACTION_TIMEOUT", "600"))
 CENTRAL_POLL_SECONDS = float(_env("CENTRAL_POLL_SECONDS", "3"))
+# Lesende MDR-Abfragen beim Synchronisieren: kürzer, damit eine nicht erreichbare Firewall den Sync nicht blockiert
+MDR_READ_TIMEOUT = int(_env("MDR_READ_TIMEOUT", "90"))
 
 # Standard-Endpunkte von Sophos Central (pro Central-Konto überschreibbar, z. B. für die Attrappe)
 SOPHOS_ID_URL = _env("SOPHOS_ID_URL", "https://id.sophos.com").rstrip("/")

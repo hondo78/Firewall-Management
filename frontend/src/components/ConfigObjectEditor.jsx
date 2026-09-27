@@ -1,5 +1,6 @@
 import { ObjectEditor, RuleEditor } from './Editors'
 import { RestObjectEditor } from './RestEditors'
+import { CENTRAL_ENTITIES } from './entities'
 import { SophosNatEditor, SophosRuleEditor } from './SophosRules'
 import { WafRuleEditor } from './SophosWaf'
 
@@ -9,7 +10,7 @@ import { WafRuleEditor } from './SophosWaf'
  */
 export default function ConfigObjectEditor({ format, entity, label, config, obj, onClose, onSubmit }) {
   const props = { config, onClose, onSubmit }
-  if (format === 'xml') {
+  if (format === 'xml' && !CENTRAL_ENTITIES.has(entity)) {
     return entity === 'FirewallRule' ? <RuleEditor {...props} rule={obj} /> : <ObjectEditor {...props} entity={entity} label={label} object={obj} />
   }
   if (entity.startsWith('firewallRules')) return <SophosRuleEditor {...props} entity={entity} rule={obj} />

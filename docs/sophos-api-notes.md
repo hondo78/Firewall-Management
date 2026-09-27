@@ -40,6 +40,41 @@ Stand: 25.09.2026. Verglichen wurden der Leitfaden <https://developer.sophos.com
 OpenAPI-Spezifikation `https://developer.sophos.com/assets/specs/firewall-v1.yaml` (Version 1.5.0), die hinter
 der API-Referenz (`/reference/firewall-v1/`) liegt. Weitere Spezifikationen unter `assets/specs/<name>.yaml`
 (z. B. `licensing-v1`, `common-v1`, `audit-events-v1`, `partner-v1`, `organization-v1`, `whoami-v1`).
+Die Spezifikation liegt als `docs/sophos-central-firewall-v1.yaml` im Repo (Stand 28.09.2026 unverändert 1.5.0);
+daraus erzeugt: `backend/app/sophos/central_export_entities.json` (ExportableEntity-Enum, 237 Typen).
+
+### Umsetzung im Tool (alle Operationen der Spezifikation)
+
+| Operation | Wo im Tool | Freigabe |
+|---|---|---|
+| `GET /firewalls`, `GET /firewall-groups` | Inventar übernehmen, *Central › Inventar verwalten* | – (lesend) |
+| `PATCH /firewalls/{id}` (Name 3–40 Zeichen, `geoLocation` als Strings) | *Inventar verwalten › Bearbeiten* | Superadmin, Audit |
+| `DELETE /firewalls/{id}` | *Inventar verwalten › Entfernen …* (Bestätigung mit Namen) | Superadmin, Audit |
+| `POST /firewalls/{id}/action` (nur `approveManagement`) | *Inventar verwalten › Verwaltung freigeben* | Superadmin, Audit |
+| Firmware-Check/-Update/-Abbruch | Tab *Firmware* | `firmware.manage`, Audit |
+| `POST/PATCH/DELETE /firewall-groups`, `…/sync-status` | *Inventar verwalten › Gruppen* | Superadmin, Audit |
+| MDR-Threat-Feed (alle 7 Endpunkte) | Objekttypen *MDR-Threat-Feed* / *MDR-Indikatoren* im Konfig-Editor, Suche | **Antrag, Vier-Augen-Prinzip** |
+| Export (voll oder `exportEntities` + `includeDependency`) | Sync (Central-Anbindung), *Download › Export aus Sophos Central* | lesend, Audit |
+| Import + `upload-complete` + Transaktion | Ausrollen von Anträgen (Central-Anbindung, auch Sammelanträge) | Antrag |
+
+Verwaltungsaktionen am Tenant (Inventar, Gruppen) wirken nicht auf die Firewall-Konfiguration und laufen deshalb
+direkt, nur für Superadmins. Ausnahme mit Konfig-Wirkung: `configImportSourceFirewallId` beim Anlegen einer Gruppe –
+Central verteilt die Konfiguration dann selbst; die Oberfläche warnt davor.
+
+### MDR-Threat-Feed
+
+- Jede Anfrage liefert nur `{transactionId}` (HTTP 202); Ergebnis über `GET …/firewall-config/firewalls/{id}/transactions/{tx}`
+  (`fields=request,response,expiryAt,finishedAt`). Die Firewall muss über Central erreichbar sein.
+- `GET …/mdr-threat-feed` liefert **nur die Einstellungen** (`enabled` – im Beispiel als String `"true"` –, `action`
+  `logOnly|logAndDrop`, `lastUpdatedAt`), **keine Indikatorliste**. Indikatoren lassen sich nur per
+  `…/indicators/search` (max. 100 Werte) prüfen. Das Tool kennt deshalb nur die über das Tool angelegten Indikatoren und
+  prüft sie beim Synchronisieren per Suche. Das Antwortformat der Suche ist nicht dokumentiert; erwartet wird
+  `response.items[{type, value}]` wie bei `create` – bei unbekanntem Format bleibt der Cache unverändert.
+- `create`: max. 100 je Aufruf, Typen `ipv4-addr`, `domain-name`, `url` (STIX). Ergebnis `partialSuccess` mit
+  `errors.duplicateMDRIndicators` (unkritisch) bzw. `errors.invalidMDRIndicators` (→ Fehler, Rücknahme).
+- `DELETE …/indicators` löscht **alle** Indikatoren, auch fremde – im Tool nur als ausdrückliche Option
+  („Beim Ausrollen alle Indikatoren löschen“) und nicht rücknehmbar.
+- Nicht mit einem echten Tenant geprüft (keine MDR-Lizenz im Testaufbau) – nur gegen `sophos-mock`.
 
 ## Leitfaden ≠ Spezifikation
 
@@ -49,7 +84,7 @@ der API-Referenz (`/reference/firewall-v1/`) liegt. Weitere Spezifikationen unte
 | Import starten | `POST /firewalls/import` | `POST …/firewall-config/firewalls/import` | dito |
 | Upload abschließen | `POST /firewalls/import/{tx}/upload-complete` | `POST …/firewall-config/firewalls/import/{tx}/upload-complete` | dito |
 | Transaktion (Import/Export) | `GET /firewalls/transactions/{tx}` | `GET …/firewall-config/firewalls/transactions/{tx}` | dito |
-| MDR-Threat-Feed / Transaktion je Firewall | `/firewalls/{id}/mdr-threat-feed…` | `/firewall-config/firewalls/{id}/mdr-threat-feed…` | nicht genutzt |
+| MDR-Threat-Feed / Transaktion je Firewall | `/firewalls/{id}/mdr-threat-feed…` | `/firewall-config/firewalls/{id}/mdr-threat-feed…` | Spezifikation (Präfix wie beim Export) |
 | Firewall-Status | `status.managing`, `status.reporting` | `status.managingStatus` (`approvedByCustomer`, `approvalPending`, …), `status.reportingStatus` | beide Varianten werden gelesen |
 | Zeitstempel Statuswechsel | `statusChangedAt` | `stateChangedAt` | nur Anzeige |
 | HTTP-Status Export/Import | 200/201 | 202 (Accepted), upload-complete 200 | jeder 2xx wird akzeptiert |

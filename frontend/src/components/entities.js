@@ -102,8 +102,10 @@ export const REST_ENTITIES = new Set(['firewallRulesIpv4', 'firewallRulesIpv6', 
 /** Nur lesend (werden auf der Firewall gepflegt) */
 export const READ_ONLY_ENTITIES = new Set(['users', 'interfaces'])
 // Einstellungsobjekte: genau ein Eintrag, nur ändern (kein Anlegen/Löschen)
-export const SINGLETON_ENTITIES = new Set(['backupSettings'])
-export const isRestEntity = (entity) => REST_ENTITIES.has(entity)
+export const SINGLETON_ENTITIES = new Set(['backupSettings', 'mdrThreatFeed'])
+/** MDR-Threat-Feed über Sophos Central – bei jeder Anbindung im REST-Stil (Schlüssel „name“). */
+export const CENTRAL_ENTITIES = new Set(['mdrThreatFeed', 'mdrIndicators'])
+export const isRestEntity = (entity) => REST_ENTITIES.has(entity) || CENTRAL_ENTITIES.has(entity)
 /** Regeln mit Reihenfolge und Regeltabelle (NAT läuft als Objektliste). */
 export const RULE_TABLE_ENTITIES = new Set(['FirewallRule', 'firewallRulesIpv4', 'firewallRulesIpv6'])
 export const PRIMARY_RULES = { xml: 'FirewallRule', rest: 'firewallRulesIpv4' }

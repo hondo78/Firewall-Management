@@ -13,6 +13,7 @@ import Firewalls from './pages/Firewalls'
 import Login from './pages/Login'
 import Profile from './pages/Profile'
 import CentralAccounts from './pages/admin/CentralAccounts'
+import CentralInventory from './pages/admin/CentralInventory'
 import Notifications from './pages/admin/Notifications'
 import Sso from './pages/admin/Sso'
 import Roles from './pages/admin/Roles'
@@ -159,6 +160,7 @@ export default function App() {
           <Route path="/admin/users" element={<Users />} />
           <Route path="/admin/roles" element={<Roles />} />
           <Route path="/admin/central" element={<CentralAccounts />} />
+          <Route path="/admin/central/:id" element={<CentralInventory />} />
           <Route path="/admin/settings" element={<SettingsPage />} />
           <Route path="/admin/notifications" element={<Notifications />} />
           <Route path="/admin/sso" element={<Sso />} />

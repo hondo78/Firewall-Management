@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from .. import crypto
 from ..models import CentralAccount, Firewall
-from . import entities, xmlconv
+from . import entities, mdr, xmlconv
 from .central import CentralClient, CentralError
 from .restapi import RestApiClient, RestApiError, patch_body
 from .xmlapi import XmlApiClient, XmlApiError
@@ -55,10 +55,7 @@ def _fetch_waf(db: DbSession, fw: Firewall, log: Log | None) -> list[dict]:
         fw.xml_status = f"Fehler: {e}"[:500]
         if log:
             log(tr('WAF-Regeln (XML-API): {0} – letzter Stand bleibt erhalten', e))
-        from sqlalchemy import select
-        from ..models import ConfigObject
-        return list(db.execute(select(ConfigObject.data).where(ConfigObject.firewall_id == fw.id, ConfigObject.entity == "wafRules")
-                               .order_by(ConfigObject.position)).scalars())
+        return _cached(db, fw, "wafRules")
     fw.xml_status = "ok"
     drop = ("Position", "After", "Before", "transactionid")
     return [{k: v for k, v in r.items() if k not in drop} for r in rules if r.get("PolicyType") == "HTTPBased"]
@@ -76,6 +73,58 @@ def _central_for(db: DbSession, fw: Firewall) -> tuple[CentralClient, str]:
     return central_client(acc), fw.central_id
 
 
+def has_central(fw: Firewall) -> bool:
+    """Firewall ist einem Central-Konto zugeordnet (MDR-Threat-Feed, Firmware, Lizenzen) – unabhängig von der Anbindung."""
+    return bool(fw.central_account_id and fw.central_id)
+
+
+def _cached(db: DbSession, fw: Firewall, entity: str) -> list[dict]:
+    from sqlalchemy import select
+    from ..models import ConfigObject
+    return list(db.execute(select(ConfigObject.data).where(ConfigObject.firewall_id == fw.id, ConfigObject.entity == entity)
+                           .order_by(ConfigObject.position)).scalars())
+
+
+def _fetch_mdr(db: DbSession, fw: Firewall, log: Log | None) -> dict[str, list[dict]]:
+    """MDR-Threat-Feed über Central. Bei Fehlern den letzten Stand behalten und den Fehler an der Firewall vermerken."""
+    if not has_central(fw):
+        fw.mdr_status = ""
+        return {"mdrThreatFeed": [], "mdrIndicators": []}
+    try:
+        client, cid = _central_for(db, fw)
+        out = mdr.fetch(client, cid, _cached(db, fw, "mdrIndicators"), log)
+    except CentralError as e:
+        fw.mdr_status = f"Fehler: {e}"[:500]
+        if log:
+            log(tr('MDR-Threat-Feed (Sophos Central): {0} – letzter Stand bleibt erhalten', e))
+        return {e2: _cached(db, fw, e2) for e2 in entities.CENTRAL_ENTITIES}
+    fw.mdr_status = "ok"
+    return out
+
+
+def _remember_mdr(db: DbSession, fw: Firewall, ops: list[dict]) -> None:
+    """Angelegte Indikatoren sofort in den Cache übernehmen (gelöschte entfernen): Die API kann den Feed nicht
+    auflisten, der Abgleich nach dem Ausrollen sucht nur nach bekannten Werten – ohne diesen Schritt fehlten die neuen."""
+    if db is None:
+        return
+    from sqlalchemy import delete, func, insert, select
+    from ..models import ConfigObject
+    where = (ConfigObject.firewall_id == fw.id, ConfigObject.entity == "mdrIndicators")
+    # „Alle löschen“ läuft beim Ausrollen vor den Neuanlagen desselben Antrags
+    if any(o["entity"] == "mdrThreatFeed" and (o.get("data") or {}).get("clearIndicators") for o in ops):
+        db.execute(delete(ConfigObject).where(*where))
+    known = set(db.execute(select(ConfigObject.name).where(*where)).scalars())
+    pos = db.execute(select(func.max(ConfigObject.position)).where(*where)).scalar() or 0
+    for o in (o for o in ops if o["entity"] == "mdrIndicators"):
+        if o["action"] == "remove":
+            db.execute(delete(ConfigObject).where(*where, ConfigObject.name == o["name"]))
+        elif o["name"] not in known:
+            pos += 1
+            db.execute(insert(ConfigObject).values(firewall_id=fw.id, entity="mdrIndicators", name=o["name"],
+                                                   position=pos, data=o["data"]))
+    db.flush()
+
+
 def capabilities(fw: Firewall) -> dict:
     if fw.connector == "central":
         return {"remove": False, "label": "Sophos Central (Import/Export)", "format": "xml"}
@@ -86,6 +135,11 @@ def capabilities(fw: Firewall) -> dict:
 
 def fetch_config(db: DbSession, fw: Firewall, log: Log | None = None) -> tuple[dict[str, list[dict]], str]:
     """Aktuelle Konfiguration aller verwalteten Entitäten: ({entity: [obj, …]}, api_version)."""
+    data, version = _fetch_firewall(db, fw, log)
+    return {**data, **_fetch_mdr(db, fw, log)}, version
+
+
+def _fetch_firewall(db: DbSession, fw: Firewall, log: Log | None) -> tuple[dict[str, list[dict]], str]:
     if fw.connector == "central":
         client, cid = _central_for(db, fw)
         archive = client.export_config(cid, entities.NAMES, log)
@@ -138,6 +192,31 @@ def test_connection(db: DbSession, fw: Firewall) -> str:
 
 
 def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
+    """MDR-Teil (Sophos Central) zuerst, dann die Firewall-Konfiguration. Scheitert die Konfiguration, wird der
+    MDR-Teil zurückgenommen – es bleibt nie nur die Hälfte eines Antrags stehen."""
+    central_ops = [o for o in ops if o["entity"] in entities.CENTRAL_ENTITIES]
+    rest = [o for o in ops if o["entity"] not in entities.CENTRAL_ENTITIES]
+    undo = None
+    if central_ops:
+        try:
+            client, cid = _central_for(db, fw)
+            undo = mdr.apply(client, cid, central_ops, log)
+            _remember_mdr(db, fw, central_ops)
+        except CentralError as e:
+            log(tr('FEHLER im MDR-Threat-Feed: {0}', e))
+            raise DeployError(tr('MDR-Threat-Feed: {0}', e)) from e
+    if not rest:
+        return
+    try:
+        _apply_firewall(db, fw, rest, log)
+    except Exception:
+        if undo:
+            log(tr('Nehme MDR-Änderungen zurück …'))
+            undo()
+        raise
+
+
+def _apply_firewall(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
     ordered = entities.order_operations(ops)
     if fw.connector == "central":
         if any(o["action"] == "remove" for o in ordered):

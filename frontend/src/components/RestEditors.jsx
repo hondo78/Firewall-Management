@@ -4,6 +4,7 @@ import { SINGLETON_ENTITIES, asList, restRefOptions } from './entities'
 import { Field, Picker, Seg } from './ui'
 import { NEW_POLICY, policyForm } from './SophosPolicies'
 import { NEW_WAF, WafProtectionForm, WafServerForm } from './SophosWaf'
+import { MdrFeedForm, MdrIndicatorForm, NEW_MDR } from './CentralMdr'
 import { t } from '../i18n'
 
 /** Editoren für das Format der SFOS REST-API (Objekte 1:1 wie von der API geliefert). */
@@ -248,7 +249,7 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
   // Liefert die Firewall Ports als Text, neue Dienste ebenso anlegen
   const portsAsText = useMemo(() => (config.services || []).some((s) => asList(s.services).some((d) => typeof d.destinationPort === 'string')), [config])
   const [data, setData] = useState(() => {
-    const base = structuredClone(object || NEW_REST[entity] || { name: '' })
+    const base = structuredClone(object || NEW_REST[entity] || NEW_MDR[entity] || { name: '' })
     if (!object && entity === 'services' && portsAsText) base.services = [{ protocol: 'tcp', sourcePort: '1:65535', destinationPort: '443' }]
     return base
   })
@@ -270,6 +271,8 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
     backupSettings: <BackupSettingsForm {...props} />,
     wafServers: <WafServerForm {...props} config={config} />,
     wafProtectionPolicies: <WafProtectionForm {...props} />,
+    mdrThreatFeed: <MdrFeedForm {...props} />,
+    mdrIndicators: <MdrIndicatorForm {...props} />,
   }
   return (
     <EditorShell title={isNew ? `${label}: neu` : SINGLETON_ENTITIES.has(entity) ? `${label} bearbeiten` : t("{0} „{1}“ bearbeiten", label, object.name)} entity={entity}

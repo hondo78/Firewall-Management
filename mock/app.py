@@ -92,6 +92,10 @@ def reset() -> None:
                 "id": fid, "serial": f["serial"], "name": f["name"], "hostname": f["hostname"],
                 "model": f["model"], "firmware": f["firmware"], "ips": f["ips"], "group_id": gid,
                 "central": f.get("central", True), "objects": objs,
+                "geo": {"latitude": "53.55", "longitude": "9.99"},
+                # eine Firewall wartet auf die Freigabe der Verwaltung durch Central (approveManagement)
+                "managing": "approvalPending" if f["serial"] == "X11600MUENCHEN1" else "approvedByCustomer",
+                "mdr": {"enabled": False, "action": "logOnly", "lastUpdatedAt": now(), "indicators": {}},
             }
 
 
@@ -140,9 +144,9 @@ def fw_out(f: dict) -> dict:
         **({"group": {"id": g["id"], "name": g["name"]}} if g else {}),
         "hostname": f["hostname"], "name": f["name"], "externalIpv4Addresses": f["ips"],
         "firmwareVersion": f["firmware"], "model": f["model"],
-        "status": {"managingStatus": "approvedByCustomer", "reportingStatus": "approvedByCustomer",
+        "status": {"managingStatus": f["managing"], "reportingStatus": f["managing"],
                    "connected": True, "suspended": False},
-        "stateChangedAt": now(), "capabilities": ["sdwanGroup"], "geoLocation": {"latitude": "53.55", "longitude": "9.99"},
+        "stateChangedAt": now(), "capabilities": ["sdwanGroup"], "geoLocation": f["geo"],
     }
 
 
@@ -166,16 +170,90 @@ async def patch_firewall(fid: str, request: Request):
     auth(request)
     fw = by_id(fid)
     body = await request.json()
+    if "name" in body and not 3 <= len(body["name"] or "") <= 40:
+        raise HTTPException(400, {"error": "badRequest", "message": "name must be 3-40 characters"})
     if body.get("name"):
         fw["name"] = body["name"]
+    if body.get("geoLocation"):
+        fw["geo"] = {"latitude": str(body["geoLocation"]["latitude"]), "longitude": str(body["geoLocation"]["longitude"])}
     return fw_out(fw)
+
+
+@app.delete("/firewall/v1/firewalls/{fid}")
+def delete_firewall(fid: str, request: Request):
+    auth(request)
+    by_id(fid)["central"] = False
+    return {"deleted": True}
 
 
 @app.post("/firewall/v1/firewalls/{fid}/action")
 async def fw_action(fid: str, request: Request):
     auth(request)
-    by_id(fid)
-    return {"status": "succeeded", "action": (await request.json()).get("action")}
+    fw = by_id(fid)
+    action = (await request.json()).get("action")
+    if action != "approveManagement":
+        raise HTTPException(400, {"error": "badRequest", "message": "Unsupported action"})
+    fw["managing"] = "approvedByCustomer"
+    return {"status": "succeeded", "action": action}
+
+
+def _group(gid: str) -> dict:
+    g = state["groups"].get(gid)
+    if not g:
+        raise HTTPException(404, {"error": "notFound", "message": "Group not found"})
+    return g
+
+
+@app.post("/firewall/v1/firewall-groups")
+async def create_group(request: Request):
+    auth(request)
+    body = await request.json()
+    if not 3 <= len(body.get("name") or "") <= 40 or "assignFirewalls" not in body:
+        raise HTTPException(400, {"error": "badRequest", "message": "name (3-40) and assignFirewalls required"})
+    if body.get("parentGroupId"):
+        _group(body["parentGroupId"])
+    gid = str(uuid.uuid4())
+    state["groups"][gid] = {"id": gid, "name": body["name"], "parent": body.get("parentGroupId")}
+    for fid in body["assignFirewalls"]:
+        by_id(fid)["group_id"] = gid
+    src = body.get("configImportSourceFirewallId")
+    if src:
+        source = by_id(src)
+        for fid in body["assignFirewalls"]:
+            if fid != src:
+                by_id(fid)["objects"] = copy.deepcopy(source["objects"])
+    return JSONResponse({"id": gid, "name": body["name"], "configImport": {
+        "status": "success" if src else "notApplicable", "percentComplete": 100, "errors": []}}, status_code=201)
+
+
+@app.patch("/firewall/v1/firewall-groups/{gid}")
+async def update_group(gid: str, request: Request):
+    auth(request)
+    g = _group(gid)
+    body = await request.json()
+    if body.get("name"):
+        g["name"] = body["name"]
+    for fid in body.get("assignFirewalls") or []:
+        by_id(fid)["group_id"] = gid
+    for fid in body.get("unassignFirewalls") or []:
+        fw = by_id(fid)
+        if fw["group_id"] == gid:
+            fw["group_id"] = None
+    return {"id": gid, "name": g["name"]}
+
+
+@app.delete("/firewall/v1/firewall-groups/{gid}")
+def delete_group(gid: str, request: Request):
+    auth(request)
+    _group(gid)
+    for f in state["firewalls"].values():
+        if f["group_id"] == gid:
+            f["group_id"] = None
+    for g in state["groups"].values():
+        if g["parent"] == gid:
+            g["parent"] = None
+    del state["groups"][gid]
+    return {"deleted": True}
 
 
 @app.get("/firewall/v1/firewall-groups")
@@ -419,6 +497,103 @@ def get_tx(tid: str, request: Request):
         for i in (tx.get("response") or {}).get("items", []):
             i["status"], i["result"] = "finished", i.get("_final", "success")
     return public_tx(tx)
+
+
+# --- MDR-Threat-Feed (asynchron über Transaktionen je Firewall) -------------------------------------------------
+
+MDR = "/firewall/v1/firewall-config/firewalls/{fid}/mdr-threat-feed"
+
+
+def mdr_tx(fid: str, path: str, method: str, response: dict, result: str = "success") -> JSONResponse:
+    tx = new_tx(path, method)
+    tx["_firewall"] = fid
+    tx["_on_finish"] = {"result": result, "response": response}
+    return JSONResponse({"transactionId": tx["id"]}, status_code=202)
+
+
+def _valid(ind: dict) -> bool:
+    t, v = ind.get("type"), ind.get("value") or ""
+    if t == "ipv4-addr":
+        return all(p.isdigit() and 0 <= int(p) <= 255 for p in v.split("/")[0].split(".")) and v.count(".") == 3
+    return t in ("domain-name", "url") and "." in v and " " not in v
+
+
+@app.get(MDR)
+def mdr_get(fid: str, request: Request):
+    auth(request)
+    m = by_id(fid)["mdr"]
+    return mdr_tx(fid, "mdr-threat-feed", "GET", {"enabled": str(m["enabled"]).lower(), "action": m["action"],
+                                                  "lastUpdatedAt": m["lastUpdatedAt"]})
+
+
+@app.patch(MDR + "/settings")
+async def mdr_settings(fid: str, request: Request):
+    auth(request)
+    m = by_id(fid)["mdr"]
+    body = await request.json()
+    if "action" in body and body["action"] not in ("logOnly", "logAndDrop"):
+        raise HTTPException(400, {"error": "badRequest", "message": "Invalid action"})
+    m.update({k: body[k] for k in ("enabled", "action") if k in body}, lastUpdatedAt=now())
+    return mdr_tx(fid, "mdr-threat-feed/settings", "PATCH", {"enabled": m["enabled"], "action": m["action"]})
+
+
+@app.post(MDR + "/indicators")
+async def mdr_add(fid: str, request: Request):
+    auth(request)
+    m = by_id(fid)["mdr"]
+    items = (await request.json()).get("indicators") or []
+    if not 1 <= len(items) <= 100:
+        raise HTTPException(400, {"error": "badRequest", "message": "1-100 indicators"})
+    ok, dup, bad = [], [], []
+    for i in items:
+        if not _valid(i):
+            bad.append(i)
+        elif i["value"] in m["indicators"]:
+            dup.append(i)
+        else:
+            m["indicators"][i["value"]] = i["type"]
+            ok.append(i)
+    m["lastUpdatedAt"] = now()
+    resp = {"items": ok}
+    if dup or bad:
+        resp["errors"] = {"duplicateMDRIndicators": {"items": dup}, "invalidMDRIndicators": {"items": bad}}
+    return mdr_tx(fid, "mdr-threat-feed/indicators", "POST", resp, "partialSuccess" if dup or bad else "success")
+
+
+@app.delete(MDR + "/indicators")
+def mdr_delete_all(fid: str, request: Request):
+    auth(request)
+    m = by_id(fid)["mdr"]
+    n = len(m["indicators"])
+    m["indicators"].clear()
+    return mdr_tx(fid, "mdr-threat-feed/indicators", "DELETE", {"deleted": n})
+
+
+@app.post(MDR + "/indicators/delete")
+async def mdr_delete(fid: str, request: Request):
+    auth(request)
+    m = by_id(fid)["mdr"]
+    items = (await request.json()).get("indicators") or []
+    gone = [i for i in items if m["indicators"].pop(i.get("value"), None)]
+    return mdr_tx(fid, "mdr-threat-feed/indicators/delete", "POST", {"items": gone})
+
+
+@app.post(MDR + "/indicators/search")
+async def mdr_search(fid: str, request: Request):
+    auth(request)
+    m = by_id(fid)["mdr"]
+    values = (await request.json()).get("indicatorValues") or []
+    return mdr_tx(fid, "mdr-threat-feed/indicators/search", "POST",
+                  {"items": [{"type": m["indicators"][v], "value": v} for v in values if v in m["indicators"]]})
+
+
+@app.get("/firewall/v1/firewall-config/firewalls/{fid}/transactions/{tid}")
+def get_fw_tx(fid: str, tid: str, request: Request):
+    auth(request)
+    tx = state["transactions"].get(tid)
+    if not tx or tx.get("_firewall") != fid:
+        raise HTTPException(404, {"error": "notFound", "message": "Transaction not found"})
+    return get_tx(tid, request)
 
 
 # --- Lokale XML-API ------------------------------------------------------------------------------------------

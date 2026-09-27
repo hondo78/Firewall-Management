@@ -47,8 +47,8 @@ export async function api(path, { method = 'GET', body, raw = false } = {}) {
 }
 
 /** Datei-Download mit Bearer-Token (ein <a href> kann keinen Header senden). */
-export async function download(path, filename) {
-  const res = await api(path, { raw: true })
+export async function download(path, filename, opts = {}) {
+  const res = await api(path, { ...opts, raw: true })
   const url = URL.createObjectURL(await res.blob())
   const a = document.createElement('a')
   a.href = url
