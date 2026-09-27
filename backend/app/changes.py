@@ -619,7 +619,7 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
         def logline(msg: str) -> None:
             lines.append({"ts": utcnow().isoformat(), "msg": msg})
 
-        logline(tr('Ausrollen gestartet ({0}) über {1}', 'manuell durch ' + actor.username if actor else 'automatisch', connector.capabilities(fw)['label']))
+        logline(tr('Ausrollen gestartet ({0}) über {1}', tr('manuell durch {0}', actor.username) if actor else tr('automatisch'), connector.capabilities(fw)['label']))
         event(db, cr, "deploy_started", "", actor)
         db.commit()
         try:
@@ -650,7 +650,7 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
                 # Änderung ist bereits angewendet – nur die Kontrolle ist gescheitert
                 logline(tr('WARNUNG: Kontroll-Synchronisation fehlgeschlagen: {0}', e))
                 cr = db.get(ChangeRequest, change_id)
-            logline("Fertig.")
+            logline(tr('Fertig.'))
             cr.status, cr.error, cr.deployed_at, cr.deploy_log = "deployed", "", utcnow(), lines
             event(db, cr, "deployed", "", actor)
             audit(db, "change.deployed", actor=actor, target_type="change", target_id=cr.id, details={

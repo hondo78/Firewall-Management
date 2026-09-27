@@ -230,7 +230,7 @@ def _rest_one(client: RestApiClient, o: dict) -> str:
             from .restapi import position_body
             body.update(position_body(o.get("position")))
         client.create(path, body)
-        return "angelegt"
+        return tr('angelegt')
     body = patch_body(o.get("before"), o["data"])
     done = []
     if body:
@@ -238,8 +238,8 @@ def _rest_one(client: RestApiClient, o: dict) -> str:
         done.append(tr('geändert ({0})', ', '.join(body)))
     if is_rule and o.get("position"):
         client.move(path, o["name"], o["position"])
-        done.append("verschoben")
-    return " und ".join(done) or tr('keine Änderung')
+        done.append(tr('verschoben'))
+    return f" {tr('und')} ".join(done) or tr('keine Änderung')
 
 
 def _rest_undo(client: RestApiClient, o: dict) -> None:

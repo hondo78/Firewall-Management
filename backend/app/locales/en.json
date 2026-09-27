@@ -395,5 +395,11 @@
  "„{0}“ nutzt ein anderes Format (REST/XML) – nicht im selben Antrag möglich": "“{0}” uses a different format (REST/XML) – not possible in the same request",
  "„{0}“ wurde noch nie synchronisiert": "“{0}” has never been synced",
  "„{0}“: {1}": "“{0}”: {1}",
- "✅ Genehmigen": "✅ Approve"
+ "✅ Genehmigen": "✅ Approve",
+ "angelegt": "created",
+ "verschoben": "moved",
+ "und": "and",
+ "manuell durch {0}": "manually by {0}",
+ "automatisch": "automatically",
+ "Fertig.": "Done."
 }
