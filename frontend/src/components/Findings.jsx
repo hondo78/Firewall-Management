@@ -12,19 +12,23 @@ const HINT = {
   shadowed: t("Namensbasierte Prüfung: Eine frühere aktive Regel deckt Zonen, Netze, Dienste und Zeitplan vollständig ab."),
 }
 
-export function FindingRow({ f }) {
+export const FINDING_CODE = CODE
+export const SEVERITY = SEV
+
+export function FindingRow({ f, onOpen }) {
   return (
     <tr>
       <td><span className={`badge ${SEV[f.severity][0]}`}>{SEV[f.severity][1]}</span></td>
       <td className="small">{CODE[f.code] || f.code}</td>
-      <td><b>{f.name}</b><div className="small muted">{t(f.label)}</div></td>
+      <td>{onOpen ? <button className="link" onClick={onOpen} title={t('Bearbeiten und neu bewerten')}><b>{f.name}</b></button> : <b>{f.name}</b>}
+        <div className="small muted">{t(f.label)}</div></td>
       <td className="small">{f.message}</td>
     </tr>
   )
 }
 
 /** Befunde der Regel-Analyse; Info-Befunde je Art zusammengeklappt. */
-export default function Findings({ findings, empty = t("Keine Auffälligkeiten."), compact }) {
+export default function Findings({ findings, empty = t("Keine Auffälligkeiten."), compact, openFor }) {
   const [open, setOpen] = useState({})
   if (!findings?.length) return <div className="muted small" style={{ padding: compact ? 0 : 12 }}>{empty}</div>
   const important = findings.filter((f) => f.severity !== 'info')
@@ -34,7 +38,7 @@ export default function Findings({ findings, empty = t("Keine Auffälligkeiten."
     <div className="stack">
       {important.length > 0 && (
         <div className="table-wrap"><table>
-          <tbody>{important.map((f, i) => <FindingRow key={i} f={f} />)}</tbody>
+          <tbody>{important.map((f, i) => <FindingRow key={i} f={f} onOpen={openFor?.(f) || undefined} />)}</tbody>
         </table></div>
       )}
       {Object.entries(byCode).map(([code, list]) => (
@@ -45,7 +49,7 @@ export default function Findings({ findings, empty = t("Keine Auffälligkeiten."
           {HINT[code] && <div className="muted small">{HINT[code]}</div>}
           {open[code] && (
             <div className="table-wrap" style={{ maxHeight: 360, overflowY: 'auto' }}><table>
-              <tbody>{list.map((f, i) => <FindingRow key={i} f={f} />)}</tbody>
+              <tbody>{list.map((f, i) => <FindingRow key={i} f={f} onOpen={openFor?.(f) || undefined} />)}</tbody>
             </table></div>
           )}
         </div>

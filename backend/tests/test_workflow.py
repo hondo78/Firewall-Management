@@ -366,3 +366,20 @@ def test_delete_users(client, admin, fake):
     assert client.delete(f"/api/users/{ids['operator']}", headers=admin).status_code == 404
     actions = [e["details"].get("mode") for e in client.get("/api/audit", headers=admin).json()["items"] if e["action"] == "user.deleted"]
     assert sorted(actions) == ["anonymized", "removed"]
+
+
+def test_analysis_with_draft(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    base = client.get(f"/api/firewalls/{fw_id}/analysis", headers=admin).json()
+    assert base["draft"] is None and base["with_draft"] is False
+    # Regel-B deaktivieren → Befund „disabled“ entsteht im Entwurf, nicht auf der Firewall
+    from .conftest import rule
+    r = client.post(f"/api/firewalls/{fw_id}/draft/operations", headers=admin, json={
+        "entity": "FirewallRule", "action": "update", "name": "Regel-B", "data": rule("Regel-B", status="Disable")})
+    assert r.status_code == 200, r.text
+    now = client.get(f"/api/firewalls/{fw_id}/analysis", headers=admin).json()
+    new = client.get(f"/api/firewalls/{fw_id}/analysis", headers=admin, params={"with_draft": True}).json()
+    assert now["draft"]["operations"] == 1 and new["with_draft"] is True
+    assert any(f["code"] == "disabled" and f["name"] == "Regel-B" for f in new["findings"])
+    assert not any(f["code"] == "disabled" and f["name"] == "Regel-B" for f in now["findings"])
+    assert new["baseline_counts"] == now["counts"]

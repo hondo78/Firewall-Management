@@ -4,6 +4,9 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import ErrorBoundary from './components/ErrorBoundary'
 import './styles.css'
+import { installColumnResizer } from './components/columnResizer'
+
+installColumnResizer()
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

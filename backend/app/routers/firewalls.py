@@ -548,13 +548,23 @@ def export_json(firewall_id: str, request: Request, user: User = Depends(get_cur
 
 
 @router.get("/firewalls/{firewall_id}/analysis")
-def analysis(firewall_id: str, user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
-    """Regel-Analyse der aktuellen (zwischengespeicherten) Konfiguration."""
+def analysis(firewall_id: str, with_draft: bool = False, user: User = Depends(get_current_user),
+             db: DbSession = Depends(get_db)):
+    """Regel-Analyse der zwischengespeicherten Konfiguration – mit with_draft inkl. der Änderungen im eigenen Entwurf
+    (neue Bewertung nach dem Bearbeiten, bevor der Antrag eingereicht wird)."""
     from .. import lint
     fw = firewall_or_404(db, user, firewall_id)
-    findings = lint.analyze(sync.cached_config(db, fw))
-    return {"findings": findings, "counts": {s: sum(1 for f in findings if f["severity"] == s)
-                                             for s in ("high", "medium", "info")}}
+    config = sync.cached_config(db, fw)
+    draft = changes.get_draft(db, user, fw)
+    ops = draft.operations if draft else []
+    counts = lambda fs: {s: sum(1 for f in fs if f["severity"] == s) for s in ("high", "medium", "info")}  # noqa: E731
+    findings = lint.analyze(changes.effective_config(config, ops) if with_draft and ops else config)
+    out = {"findings": findings, "counts": counts(findings), "with_draft": bool(with_draft and ops),
+           "draft": {"id": draft.id, "number": draft.number, "operations": len(ops)} if draft and ops else None}
+    if with_draft and ops:
+        # Vergleich zur synchronisierten Konfiguration: Zähler vorher
+        out["baseline_counts"] = counts(lint.analyze(config))
+    return out
 
 
 # --- Import (wie „Review import“ im Config Studio) ---------------------------------------------------------

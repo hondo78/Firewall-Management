@@ -229,7 +229,9 @@ def draft_add(db: DbSession, user: User, fw: Firewall, op: dict) -> tuple[Change
             raise HTTPException(409, tr('Wird noch verwendet von: {0}', ', '.join(users)))
     ops = merge_operation(list(cr.operations or []), clean)
     cr.operations = with_before(ops, config)
-    warnings = check_references(effective_config(config, cr.operations))
+    # Nur Verweis-Warnungen, die der Entwurf neu verursacht – bestehende Altlasten der Firewall nicht wiederholen
+    existing = set(check_references(config))
+    warnings = list(dict.fromkeys(w for w in check_references(effective_config(config, cr.operations)) if w not in existing))
     event(db, cr, "draft_changed", f"{clean['action']} {clean['entity']} „{clean['name']}“", user)
     db.commit()
     return cr, warnings

@@ -286,7 +286,7 @@ export default function FirewallView() {
       {syncMsg && <div className={`alert ${syncMsg.kind} small`}>{syncMsg.text}</div>}
       <Tabs tabs={tabs} value={tab} onChange={(t) => nav(`/firewalls/${id}/${t}`)} />
       {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <Editor key={cfg.format} fw={fw} cfg={cfg} draft={draft} reload={reload} />)}
-      {tab === 'analysis' && <AnalysisTab fw={fw} />}
+      {tab === 'analysis' && <AnalysisTab fw={fw} onDraftChanged={reload} />}
       {tab === 'compare' && <CompareTab fw={fw} />}
       {tab === 'changes' && <ChangesTab fw={fw} />}
       {tab === 'firmware' && <FirmwareTab fw={fw} />}

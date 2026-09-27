@@ -39,7 +39,6 @@ const RULE_COLS = (rest) => [
     {v.log && <div className="small muted">{t("protokolliert")}</div>}</>),
   rest && col('security', t("Sicherheit"), (v, obj) => <FeatureBadges rule={obj} />),
   col('schedule', t("Zeitplan"), (v) => (v.schedule && v.schedule !== 'All The Time' ? v.schedule : <span className="sf-any">{t("Jederzeit")}</span>), true),
-  col('analysis', t("Konfig-Analyse"), (v, obj, f) => <Analysis findings={f} />),
 ].filter(Boolean)
 
 const NAT_COLS = [
@@ -52,7 +51,6 @@ const NAT_COLS = [
   col('inIf', t("Eingehende Schnittstelle"), (n) => n.inIf || <span className="sf-any">{t("Beliebig")}</span>, true),
   col('outIf', t("Ausgehende Schnittstelle"), (n) => n.outIf || <span className="sf-any">{t("Beliebig")}</span>),
   col('linked', t("Verknüpfte Firewall-Regel"), (n) => n.linked || <span className="sf-any">–</span>),
-  col('analysis', t("Konfig-Analyse"), (n, obj, f) => <Analysis findings={f} />),
 ]
 
 /** WAF-Regeln haben kein Ziel/keine Dienste – stattdessen WAF-Verweis zeigen */
@@ -88,12 +86,15 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
   const setCols = (v) => { setVisible(v); store.set(`fwm.cols.${entity}`, v) }
   const activeCols = cols.filter((c) => visible.includes(c.key))
   const [q, setQ] = useState('')
+  const [onlyFindings, setOnlyFindings] = useState(false)
   const [sel, setSel] = useState(new Set())
   const [drag, setDrag] = useState(null)
   const [drop, setDrop] = useState(null)
 
   const f = q.toLowerCase()
-  const shown = rows.filter((r) => !f || searchText(r.obj).includes(f))
+  const shown = rows.filter((r) => (!f || searchText(r.obj).includes(f)) && (!onlyFindings || findings[oname(r.obj)]?.length))
+  // Zusammenfassung der Konfig-Analyse für diese Liste (wie in der Objekttabelle)
+  const sev = rows.flatMap((r) => findings[oname(r.obj)] || []).reduce((m, x) => ({ ...m, [x.severity]: (m[x.severity] || 0) + 1 }), {})
   const paging = usePaging(entity, shown.length)
   const names = rows.filter((r) => r.state !== 'remove').map((r) => oname(r.obj))
   const view = (obj) => (isNat ? natView(obj) : anyRuleView(entity, obj))
@@ -159,6 +160,13 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
           <ColumnPicker cols={cols} visible={visible} onChange={setCols} label="" icon="settings" />
         </div>
       </div>
+      {(sev.high || sev.medium || sev.info) > 0 && <div className="sf-analysis-bar small">
+        <Icon name="alert" size={13} /> {t("Konfig-Analyse")}:
+        {sev.high > 0 && <span className="badge b-danger">{sev.high} {t("hoch")}</span>}
+        {sev.medium > 0 && <span className="badge b-warn">{sev.medium} {t("mittel")}</span>}
+        {sev.info > 0 && <span className="badge">{sev.info} {t("Hinweise")}</span>}
+        <button className={`link ${onlyFindings ? 'on' : ''}`} onClick={() => setOnlyFindings(!onlyFindings)}>{onlyFindings ? t("Alle anzeigen") : t("Nur Regeln mit Hinweisen")}</button>
+      </div>}
 
       {!rows.length ? <Empty>{t("Noch keine Regeln vorhanden.")}</Empty> : (
         <div className="table-wrap">
@@ -168,6 +176,8 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
               {mayEdit && <th style={{ width: 30 }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label={t("Alle auswählen")} /></th>}
               <th style={{ width: 36 }}>#</th><th>{t("Name")}</th>
               {activeCols.map((c) => <th key={c.key}>{c.label}</th>)}
+              <th><button className={`th-filter ${onlyFindings ? 'on' : ''}`} onClick={() => setOnlyFindings(!onlyFindings)} title={t("Nur Objekte mit Hinweisen")}>
+                {t("Konfig-Analyse")} <Icon name="alert" size={12} /></button></th>
               <th className="actions" style={{ width: 44 }} />
             </tr></thead>
             <tbody>
@@ -206,6 +216,7 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
                       {(pendingBy[name] || draftBy[name]) && <div style={{ marginTop: 3 }}><PendingBadges pending={pendingBy[name]} draftAction={draftBy[name]} /></div>}
                     </td>
                     {activeCols.map((c) => <td key={c.key}>{wafCell(isNat ? null : v, obj, c.key) ?? c.render(v, obj, findings[name])}</td>)}
+                    <td><Analysis findings={findings[name]} /></td>
                     <td className="actions">
                       <RowMenu label={name} items={[
                         mayEdit && live && { label: t("Bearbeiten"), icon: 'edit', onClick: () => onEdit(obj) },

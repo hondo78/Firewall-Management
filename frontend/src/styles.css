@@ -525,3 +525,20 @@ a.button:hover { border-color: var(--accent); }
 a.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 a.button.sm { padding: 3px 8px; font-size: 12.5px; }
 .text-warn { color: var(--warn); }
+
+/* Neue Bewertung nach dem Bearbeiten in der Analyse */
+.eval { border-left: 4px solid var(--info); }
+.eval-ok { border-left-color: var(--ok); }
+.eval-bad { border-left-color: var(--danger); }
+.eval-mixed { border-left-color: var(--warn); }
+.sf-analysis-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 16px 10px; color: var(--muted); }
+
+/* Veränderbare Spaltenbreiten (components/columnResizer.js) */
+.col-resizer { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 3; user-select: none; }
+.col-resizer::after { content: ''; position: absolute; top: 20%; bottom: 20%; right: 1px; width: 2px; border-radius: 1px; background: transparent; }
+th:hover > .col-resizer::after { background: var(--border); }
+.col-resizer:hover::after, .col-resizer.active::after { background: var(--accent); top: 0; bottom: 0; }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none !important; }
+table.cols-fixed { min-width: 100%; }
+table.cols-fixed th, table.cols-fixed td { overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
+table.cols-fixed td.actions, table.cols-fixed th.actions { overflow: visible; }
