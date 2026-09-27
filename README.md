@@ -46,8 +46,12 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 - **Befristete Änderungen**: Antrag mit „gültig bis“ – danach legt das System automatisch die Rücknahme an
   (wahlweise vorab genehmigt, weil die Befristung Teil der Freigabe war). Rücknahme ausgerollter Anträge auch durch
   Approver/Superadmins, stets mit Vier-Augen-Freigabe.
-- **Sammelanträge & Vorlagen**: dieselbe Änderung auf mehreren Firewalls (einmal genehmigen, je Firewall ausrollen),
-  wiederverwendbare Vorlagen, Abgleich einer Gruppe gegen eine Referenz-Firewall.
+- **Sammelanträge**: dieselbe Änderung auf mehreren Firewalls (einmal genehmigen, je Firewall ausrollen), Abgleich einer
+  Gruppe gegen eine Referenz-Firewall.
+- **Vorlagen** (Menü „Vorlagen“): Regeln, Objekte und Einstellungen als Soll-Zustand pflegen – mit den SFOS-Formularen,
+  „Aus Firewall übernehmen“ inkl. Abhängigkeiten, „Entfernen auf Ziel“, Versionierung. Ausrollen auf beliebig viele
+  Firewalls mit Vorschau je Firewall (anlegen / angleichen / bereits konform); eingereicht wird ein Sammelantrag, der das
+  Vier-Augen-Prinzip durchläuft. Anträge verweisen auf Vorlage und Version.
 - **Regel-Prüfung**: Any-Any, offen aus dem Internet, verdeckte/redundante Regeln, fehlende Protokollierung,
   ungenutzte/doppelte Objekte – beim Einreichen, für den Approver und als Tab „Analyse“.
 - **Benachrichtigungen**: E-Mail, Microsoft Teams, Slack (Incoming Webhook, optional @here bei neuen Anträgen), Telegram (mit Genehmigen-Knopf) für neue Anträge, Entscheidungen,

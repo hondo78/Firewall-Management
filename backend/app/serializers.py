@@ -77,7 +77,18 @@ def change_summary(cr: ChangeRequest) -> dict:
         "required_approvals": cr.required_approvals,
         "entities": sorted({o["entity"] for o in cr.operations or []}),
         "batch_id": cr.batch_id,
+        "template_id": cr.template_id, "template_version": cr.template_version,
+        "template": _template_name(cr),
     }
+
+
+def _template_name(cr: ChangeRequest) -> str | None:
+    if not cr.template_id:
+        return None
+    from sqlalchemy.orm import object_session
+    from .models import ChangeTemplate
+    t = object_session(cr).get(ChangeTemplate, cr.template_id)
+    return t.name if t else None
 
 
 def _analysis(db: DbSession, cr: ChangeRequest) -> list[dict]:

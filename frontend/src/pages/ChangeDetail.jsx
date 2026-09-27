@@ -154,6 +154,9 @@ export default function ChangeDetail() {
           </tbody></table></div>
         </div>
       )}
+      {cr.template_id && <div className="alert info small">{cr.template
+        ? <>{t("Aus Vorlage")} <Link to={`/templates/${cr.template_id}`}>„{cr.template}“</Link> ({t("Version {0}", cr.template_version)})</>
+        : t("Aus einer inzwischen gelöschten Vorlage (Version {0})", cr.template_version)}</div>}
       {cr.reverts && <div className="alert info small">{t("Dieser Antrag nimmt")} <Link to={`/changes/${cr.reverts.id}`}>{crNo(cr.reverts.number)}</Link> {t("zurück.")}</div>}
       {cr.reverted_by && <div className="alert warn small">{t("Rücknahme beantragt bzw. erfolgt:")} <Link to={`/changes/${cr.reverted_by.id}`}>{crNo(cr.reverted_by.number)}</Link> ({STATUS_LABEL[cr.reverted_by.status] || cr.reverted_by.status})</div>}
       {reverting && <RevertModal cr={cr} onClose={() => setReverting(false)}

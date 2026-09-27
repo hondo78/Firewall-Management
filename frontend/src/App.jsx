@@ -5,6 +5,8 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Audit from './pages/Audit'
 import ChangeDetail from './pages/ChangeDetail'
 import Changes from './pages/Changes'
+import Templates from './pages/Templates'
+import TemplateEdit from './pages/TemplateEdit'
 import Dashboard from './pages/Dashboard'
 import FirewallView from './pages/FirewallView'
 import Firewalls from './pages/Firewalls'
@@ -33,6 +35,7 @@ const I = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   fw: 'M3 5h18v4H3zM3 11h18v4H3zM3 17h18v4H3zM8 5v4M14 11v4M9 17v4',
   changes: 'M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9',
+  templates: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM16.5 13v7M13 16.5h7',
   audit: 'M12 8v4l3 2M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9z',
   users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
   roles: 'M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z',
@@ -77,6 +80,7 @@ function Layout({ children }) {
           {link('/firewalls', 'fw', t("Firewalls"))}
           {link('/changes', 'changes', t("Änderungsanträge"),
             counts.to_approve > 0 && <span className="count" title={t("Warten auf Ihre Genehmigung")}>{counts.to_approve}</span>)}
+          {canAnywhere(me, 'change.create') && link('/templates', 'templates', t("Vorlagen"))}
           {canAnywhere(me, 'audit.view') && link('/audit', 'audit', t("Audit-Log"))}
           {isAdmin && <>
             <div className="nav-section">{t("Administration")}</div>
@@ -148,6 +152,8 @@ export default function App() {
           <Route path="/firewalls/:id/:tab" element={<FirewallView />} />
           <Route path="/changes" element={<Changes />} />
           <Route path="/changes/:id" element={<ChangeDetail />} />
+          <Route path="/templates" element={<Templates />} />
+          <Route path="/templates/:id" element={<TemplateEdit />} />
           <Route path="/audit" element={<Audit />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin/users" element={<Users />} />

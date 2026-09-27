@@ -230,6 +230,9 @@ class ChangeRequest(Base):
     reverts_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     # Sammelantrag: gleiche Änderung auf mehreren Firewalls – gemeinsam genehmigt, je Firewall ausgerollt
     batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # Aus einer Vorlage ausgerollt (Nachvollziehbarkeit: welche Vorlage in welcher Version)
+    template_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str] = mapped_column(Text, default="")
 
     firewall: Mapped[Firewall] = relationship()
@@ -238,7 +241,12 @@ class ChangeRequest(Base):
 
 
 class ChangeTemplate(Base):
-    """Wiederverwendbare Änderung (z. B. Standardregel für Filialen) – wird in einen Entwurf übernommen."""
+    """Vorlage: Soll-Zustand von Objekten, Regeln und Einstellungen (z. B. Standardregeln für Filialen).
+
+    operations = Einträge {entity, name, action: "ensure" | "remove", data, position?}. Beim Ausrollen wird je
+    Firewall verglichen (fehlt → anlegen, abweichend → ändern, gleich → überspringen) und ein Antrag erzeugt.
+    Ältere Vorlagen mit action "add"/"update" gelten als "ensure".
+    """
     __tablename__ = "change_templates"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200), unique=True)
@@ -248,6 +256,9 @@ class ChangeTemplate(Base):
     operations: Mapped[list] = mapped_column(JSON, default=list)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    updated_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class ChangeEvent(Base):

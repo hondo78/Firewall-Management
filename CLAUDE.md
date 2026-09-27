@@ -54,7 +54,13 @@ The SFOS REST API only returns WAF rules as `ruleType: waf` with a placeholder `
 - **Temporary changes:** `expires_at`/`expiry_state`. `worker._expire_due` → `changes.expire` creates a system revert (`created_by=NULL`, shown as "system"). It is pre-approved (`status=approved`, event `preapproved`) when the setting `temp_revert_preapproved` is on; otherwise it waits in `pending`. If the config has changed, `expiry_state="failed"` plus an audit entry and a notification.
 - **Batch requests:** `batch_id` on several `ChangeRequest`s, one per firewall. `submit(..., extra_firewall_ids)` validates every target first (`_prepare_batch`, all or nothing, same format required). `decide`/`withdraw` act on all pending members; `_check_decide` runs for every member before anything changes. Deploys stay per firewall.
 - Position refs (`after`/`before`) must exist in the target config (`validate_operation`).
-- **Templates:** `change_templates` (ops without `before`) applied via `draft_add`. The group diff is `GET /api/groups/{id}/drift?reference=`.
+- **Templates** (`template_plan.py`, `routers/templates.py`, pages `Templates.jsx`/`TemplateEdit.jsx`) describe a **desired state**. `change_templates.operations` holds items `{entity, name, action: ensure|remove, data, position?}`; legacy add/update items count as `ensure` (`normalize_items`).
+  - `plan()` compares per firewall: a missing object is added (rules go at their position, or the bottom if the reference rule is missing); a differing object is updated with `{**current, **template data}`, so firewall-specific fields are kept; `same`/`absent` are skipped.
+  - Every op goes through `validate_operation`. Only reference warnings the template newly introduces are reported.
+  - `push()` creates one pending CR per changed firewall (a batch if there are several) via `_submit_one`, with `template_id`/`template_version`. It is all or nothing, and firewalls that already comply are skipped. **It never deploys directly**: the normal four-eyes flow applies.
+  - Templates are versioned: `PUT` needs the current `version` (409 otherwise). Editing is allowed for the creator or an admin; pushing for anyone with `change.create` on the targets. `POST /templates/dependencies` resolves referenced objects recursively for „Aus Firewall übernehmen“.
+  - The template editor uses a reference firewall's config (plus the template's own objects) for the SFOS forms.
+- The group diff is `GET /api/groups/{id}/drift?reference=`.
 - **Lint:** `lint.py` normalizes rules from both formats into `Rule` (sets, None = any). `for_change` reports only findings the request introduces (compared by `_key`, which ignores positions). `analyze` gives the full report. "unused" only checks rules, groups and NAT, not VPN or web filter, which is why the UI collapses these hints.
 
 ### Notifications (`notify/`)

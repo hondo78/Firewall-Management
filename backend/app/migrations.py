@@ -29,6 +29,12 @@ POSTGRES = [
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS xml_status VARCHAR(500) NOT NULL DEFAULT ''",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) NOT NULL DEFAULT ''",
+    "ALTER TABLE change_templates ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE change_templates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ",
+    "ALTER TABLE change_templates ADD COLUMN IF NOT EXISTS updated_by VARCHAR(36)",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS template_id VARCHAR(36)",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS template_version INTEGER",
+    "CREATE INDEX IF NOT EXISTS ix_change_requests_template_id ON change_requests (template_id)",
 ]
 
 
