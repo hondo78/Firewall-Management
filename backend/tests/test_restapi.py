@@ -277,3 +277,31 @@ def test_waf_access_superadmin_only_and_position_scope(client, admin, fake):
     op = changes.validate_operation(Firewall(connector="rest"), {"entity": "wafRules", "action": "add", "name": "n8n",
                                                                  "data": WAF, "position": {"type": "after", "ref": "LAN"}}, cfg)
     assert op["position"] == {"type": "after", "ref": "LAN"}
+
+
+def test_rest_fields_checked_against_spec(client, admin, fake):
+    from fastapi import HTTPException
+    from app import changes
+    from app.models import Firewall
+    fw = Firewall(connector="rest")
+    cfg = {"firewallRulesIpv4": [{"name": "R1", "skipLocalDestined": False, "action": "accept"}], "wafServers": []}
+    # Beispiel mit XML-Feldern → klare Ablehnung mit Hinweis
+    with pytest.raises(HTTPException) as e:
+        changes.validate_operation(fw, {"entity": "firewallRulesIpv4", "action": "add", "name": "WAF_Intranet", "data": {
+            "name": "WAF_Intranet", "status": "ENABLE", "policyType": "HTTP_BASED", "httpBasedPolicy": {}}}, cfg)
+    assert "httpBasedPolicy" in e.value.detail and "XML-API" in e.value.detail
+    with pytest.raises(HTTPException) as e:
+        changes.validate_operation(fw, {"entity": "wafServers", "action": "add", "name": "WS", "data": {
+            "name": "WS", "host": "H", "type": "PLAINTEXT", "port": 80}}, cfg)
+    assert "host" in e.value.detail and "type" in e.value.detail
+    # gültiger Webserver laut Spezifikation
+    changes.validate_operation(fw, {"entity": "wafServers", "action": "add", "name": "WS", "data": {
+        "name": "WS", "server": {"ipv4Address": {"name": "H"}}, "protocol": "http", "port": 80}}, cfg)
+    # WAF-Regel per REST nur mit wafRule-Verweis
+    with pytest.raises(HTTPException) as e:
+        changes.validate_operation(fw, {"entity": "firewallRulesIpv4", "action": "add", "name": "W", "data": {
+            "name": "W", "ruleType": "waf", "enabled": True}}, cfg)
+    assert "wafRule" in e.value.detail
+    # Undokumentiertes Feld, das die Firewall selbst liefert, bleibt erlaubt
+    changes.validate_operation(fw, {"entity": "firewallRulesIpv4", "action": "update", "name": "R1", "data": {
+        "name": "R1", "skipLocalDestined": True, "action": "accept"}}, cfg)

@@ -142,6 +142,23 @@ REF_ENTITIES = {
 }
 
 
+# Felder je REST-Entität laut Spezifikation (tools/gen_rest_fields.py) – plus von der Firewall gelieferte,
+# aber nicht dokumentierte Felder
+_REST_FIELDS: dict[str, frozenset] | None = None
+REST_UNDOCUMENTED = {"firewallRulesIpv4": {"skipLocalDestined"}, "firewallRulesIpv6": {"skipLocalDestined"}}
+
+
+def rest_fields(entity: str) -> frozenset | None:
+    global _REST_FIELDS
+    if _REST_FIELDS is None:
+        import json
+        from pathlib import Path
+        f = Path(__file__).with_name("rest_fields.json")
+        _REST_FIELDS = {e: frozenset(v) for e, v in json.loads(f.read_text()).items()} if f.exists() else {}
+    base = _REST_FIELDS.get(entity)
+    return base | REST_UNDOCUMENTED.get(entity, set()) | {"isInternal"} if base else None
+
+
 def kind_of(entity: str) -> str | None:
     return next((k for k, ents in REF_ENTITIES.items() if entity in ents), None)
 

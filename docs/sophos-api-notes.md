@@ -104,3 +104,23 @@ Endpunkte lassen sich nur gegen ein echtes Konto ermitteln. Der **Probelauf** (A
   `/waf/authentication/policies`, `/waf/authentication/templates`.
 - Das Tool nutzt deshalb bei REST-Firewalls optional einen zweiten Zugang zur XML-API nur für WAF-Regeln
   (Entität `wafRules`, siehe CLAUDE.md).
+
+### Häufige Fehler beim Anlegen per REST (geprüft gegen Spezifikation und echte Firewall, 2026-09)
+
+Webserver (`POST /waf/servers`) – **nicht** `host`/`type: PLAINTEXT`, sondern:
+
+```json
+{"name": "WS_Intranet", "server": {"ipv4Address": {"name": "H_Intranet_10.0.0.10"}}, "protocol": "http", "port": 80}
+```
+
+(`server` alternativ `{"fqdn": {"name": "…"}}`, `protocol` = `http` | `https`, optional `keepAlive`, `timeout`,
+`disableConnectionPooling`, `description`.)
+
+WAF-Regel (`POST /firewall/rules/ipv4`, Variante `ipv4WafTypeRule`): `status`, `policyType: HTTP_BASED`,
+`httpBasedPolicy` gibt es in der REST-API **nicht** (das ist die Struktur der XML-API: `PolicyType=HTTPBased`,
+`HTTPBasedPolicy`). Per REST nur `{"name", "ruleType": "waf", "enabled", "position", "referenceItem"?, "wafRule":
+{"name"|"id"}, "securityFeatures": {"ipsPolicy", "scanWithNdrActiveThreatIntelligence"}, "qos": {"trafficShapingPolicy"}}`
+– Hosted Server, Domänen, Pfade/Webserver, Zertifikat, Schutzrichtlinie der Regel sind nur über die XML-API
+anlegbar. Das Tool prüft REST-Objekte beim Anlegen/Ändern gegen die Felder der Spezifikation
+(`backend/app/sophos/rest_fields.json`, erzeugt mit `backend/tools/gen_rest_fields.py`); von der Firewall geliefertes,
+undokumentiertes Feld: `skipLocalDestined` (Firewall-Regeln).

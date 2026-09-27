@@ -42,6 +42,9 @@ They use **two data formats**. `rest` keeps REST JSON objects 1:1 (entities like
 - `xmlconv.py`: lossless XML⇄dict. Text-only → str, repeated tags → list. **List containers** (name ends in `s`/`List`, uniform children) are always `{Tag: [...]}`, even with a single child. `Position`/`After`/`Before` are write-only directives: they are stripped from stored objects and passed per operation (`with_position`).
 - `entities.py`: the managed entity list (`MANAGED`, export names = XML tags) and `order_operations` (rule removals first, then adds/updates in dependency order, then object removals).
 
+### REST field check
+`changes._check_rest_fields` validates REST objects on add/update against the spec fields in `sophos/rest_fields.json`, which is generated from `docs/sfos-rest-openapi.json` by `backend/tools/gen_rest_fields.py` and is the union of POST, PATCH and GET. Unknown top-level keys → 400, with an extra hint for XML-API-style fields (`policyType`, `httpBasedPolicy` …). Keys the firewall itself returns for that object are always allowed, as are `entities.REST_UNDOCUMENTED` (e.g. `skipLocalDestined`). A REST WAF rule (`ruleType: waf`) needs a `wafRule` reference; full WAF rules go through `wafRules` (XML). Regenerate the JSON after updating the spec.
+
 ### WAF rules on REST firewalls (hybrid)
 The SFOS REST API only returns WAF rules as `ruleType: waf` with a placeholder `wafRule` (see `docs/sophos-api-notes.md`). A REST firewall can therefore store an **optional second XML-API login** (`xml_username`, `xml_password_enc` with AAD `firewall-xml:<id>`, `xml_status`). This is a connection field, so it is superadmin-only.
 - `entities.REST_XML_ENTITIES = {"wafRules": ("FirewallRule", …)}`: a REST-format entity whose data is **XML dicts** (`Name`, `HTTPBasedPolicy`). It is fetched via `connector._fetch_waf`, which filters `PolicyType=HTTPBased`. On an XML error it keeps the cached rules (no fake removal) and sets `xml_status`.

@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../App'
 import { ACTION_LABEL, api, can, download, upload } from '../../api'
 import { BULK, BULK_KIND, parseBulk } from '../../components/bulk'
@@ -367,6 +368,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
   const [steps, setSteps] = useState(() => store.get('fwm.editor.steps', true))
   const [preview, setPreview] = useState(false)
   const [review, setReview] = useState(null)
+  const [wafInfo, setWafInfo] = useState(false)
   const [gq, setGq] = useState('')
   const [dl, setDl] = useState(false)
   const dlRef = useDismiss(dl, setDl)
@@ -521,7 +523,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
         : ruleList
           ? <RuleTable key={entity} entity={entity} entities={cfg.entities} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
             findings={findings} onSelect={select} onEdit={editRule} onAddFor={addFor}
-            onAddWaf={fw.waf_xml ? () => setEditing({ obj: null, entity: 'wafRules' }) : null} onOp={quickOp}
+            onAddWaf={rest ? (fw.waf_xml ? () => setEditing({ obj: null, entity: 'wafRules' }) : () => setWafInfo(true)) : null} onOp={quickOp}
             onShow={(obj) => setDetail({ entity, obj })} onBulkDelete={bulkDelete} onBulkToggle={bulkToggle} />
           : <EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
             findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
@@ -537,6 +539,19 @@ export default function Editor({ fw, cfg, draft, reload }) {
         onClose={() => { setBulk(false); reload() }} />}
       {review && <ImportModal fw={fw} review={review} onClose={() => setReview(null)}
         onApplied={(r) => { setReview(null); reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t("{0} Objekte in den Entwurf übernommen{1}", r.added, r.skipped.length ? t(" · übersprungen: {0}{1}", r.skipped.slice(0, 5).join('; '), r.skipped.length > 5 ? ' …' : '') : '') }) }} />}
+      {wafInfo && (
+        <Modal title={t("Neue WAF-Regel (Webserver-Schutz)")} onClose={() => setWafInfo(false)}>
+          <div className="stack small">
+            <div>{t("Die SFOS REST-API kann WAF-Regeln nicht vollständig anlegen: gehostete Adresse, Lausch-Port, Zertifikat, Domänen und Pfade gibt es dort nicht – eine WAF-Regel verweist per REST nur auf eine bestehende WAF-Regel (wafRule).")}</div>
+            <div>{t("Vollständig anlegen und bearbeiten lassen sich WAF-Regeln über die XML-API derselben Firewall. Dafür unter Einstellungen › Anbindung einen XML-API-Zugang hinterlegen (nur Superadmin); die übrige Konfiguration läuft weiter über REST.")}</div>
+            <div className="muted">{t("Webserver und Schutzrichtlinien (Webserver-Schutz) lassen sich auch ohne XML-Zugang per REST anlegen.")}</div>
+          </div>
+          <div className="modal-foot">
+            <button onClick={() => setWafInfo(false)}>{t("Schließen")}</button>
+            {fw.may_edit_connection && <Link className="button primary" to={`/firewalls/${fw.id}/settings`}>{t("XML-Zugang einrichten")}</Link>}
+          </div>
+        </Modal>
+      )}
       {preview && (
         <Modal title={t("Vorschau: API-Aufrufe des Entwurfs")} onClose={() => setPreview(false)} wide>
           {!draftOps.length ? <Empty>{t("Ihr Entwurf ist leer.")}</Empty> : <>

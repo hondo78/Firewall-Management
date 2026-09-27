@@ -118,6 +118,32 @@ def used_by(config: dict[str, list[dict]], entity: str, name: str) -> list[str]:
     return out
 
 
+# Felder der XML-API, die man häufig fälschlich an die REST-API schickt (z. B. WAF-Regeln)
+_XML_STYLE = {"status", "policyType", "httpBasedPolicy", "PolicyType", "HTTPBasedPolicy", "Status", "Name"}
+
+
+def _check_rest_fields(entity: str, action: str, data: dict, current: dict | None) -> None:
+    """REST-Objekte gegen die Felder der Spezifikation prüfen – Tippfehler und Felder anderer APIs früh abweisen
+    statt erst beim Ausrollen. Felder, die die Firewall für dieses Objekt selbst liefert, sind immer erlaubt."""
+    allowed = entities.rest_fields(entity)
+    if not allowed:
+        return
+    unknown = [k for k in data if k not in allowed and k not in (current or {})]
+    if entity in ("firewallRulesIpv4", "firewallRulesIpv6") and action == "add" and data.get("ruleType") == "waf" \
+            and not (data.get("wafRule") or {}).get("name") and not (data.get("wafRule") or {}).get("id"):
+        raise HTTPException(400, tr('WAF-Regeln lassen sich über die REST-API nur mit Verweis auf eine bestehende WAF-Regel '
+                                    '(wafRule) anlegen. Neue WAF-Regeln mit gehostetem Server, Domänen und Pfaden bitte unter '
+                                    '„Webserver-Schutz › WAF-Regeln“ anlegen (dafür ist der XML-API-Zugang nötig).'))
+    if not unknown:
+        return
+    hint = ""
+    if set(unknown) & _XML_STYLE:
+        hint = tr(' Das sind Felder der XML-API. WAF-Regeln (HTTPBased) legen Sie unter „Webserver-Schutz › WAF-Regeln“ an '
+                  '(XML-API-Zugang nötig), Webserver unter „Webserver-Schutz › Webserver“.')
+    raise HTTPException(400, tr('{0}: unbekannte Felder {1} – die SFOS REST-API kennt sie nicht.', tr(entities.LABELS[entity]),
+                                ", ".join(sorted(unknown))) + hint)
+
+
 def _check_backup_settings(d: dict) -> None:
     """SFOS lehnt unvollständige Sicherungsziele erst beim Ausrollen ab – schon im Entwurf prüfen."""
     storage = d.get("backupStorage")
@@ -170,6 +196,7 @@ def validate_operation(fw: Firewall, op: dict, config: dict[str, list[dict]]) ->
         clean["data"] = data
         if entity == "backupSettings":
             _check_backup_settings(data)
+        _check_rest_fields(entity, action, data, existing.get(name))
         if action == "update" and diff.canonical(data) == diff.canonical(existing[name]) and not op.get("position"):
             raise HTTPException(400, tr('Keine Änderung gegenüber dem aktuellen Stand'))
     if entity in entities.RULE_ENTITIES and op.get("position") and action != "remove":
