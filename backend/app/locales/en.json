@@ -436,5 +436,9 @@
  "Sophos Central": "Sophos Central",
  "MDR-Indikatoren (IoC)": "MDR indicators (IoC)",
  "Über Sophos Central angebundene Firewalls sind bereits verknüpft": "Firewalls connected through Sophos Central are already linked",
- "Die Verknüpfung einer über Sophos Central angebundenen Firewall lässt sich nicht lösen": "The link of a firewall connected through Sophos Central cannot be removed"
+ "Die Verknüpfung einer über Sophos Central angebundenen Firewall lässt sich nicht lösen": "The link of a firewall connected through Sophos Central cannot be removed",
+ "Für diese Firewall läuft bereits ein Export dieses Tools": "An export of this tool is already running for this firewall",
+ "Für diese Firewall läuft bereits ein Export (z. B. aus Sophos Central) – warte …": "An export is already running for this firewall (e.g. from Sophos Central) – waiting …",
+ "Übersprungen – für „{0}“ läuft gerade ein anderer Export (Synchronisation, Sicherung oder Sophos Central). Kein Fehler; später erneut prüfen. ({1})": "Skipped – another export is running for “{0}” (synchronisation, backup or Sophos Central). Not an error; check again later. ({1})",
+ "MDR-Threat-Feed: nach dem letzten Fehler vorübergehend nicht abgefragt – letzter Stand bleibt erhalten": "MDR threat feed: temporarily not queried after the last error – keeping the last known state"
 }

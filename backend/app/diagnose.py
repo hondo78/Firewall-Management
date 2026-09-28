@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session as DbSession
 from . import sync
 from .models import CentralAccount, Firewall
 from .sophos import connector, entities, xmlconv
-from .sophos.central import CentralError
+from .sophos.central import CentralError, is_busy
 from .sophos.restapi import RestApiError
 from .sophos.xmlapi import XmlApiError
 from .i18n import tr
@@ -28,13 +28,15 @@ class Report:
         self.steps.append({"name": name, "ok": ok, "detail": detail, "method": method, "path": path,
                            "status": status, "ms": ms, "kind": kind})
 
-    def run(self, name: str, fn, *, method: str = "", path: str = ""):
+    def run(self, name: str, fn, *, method: str = "", path: str = "", reraise=None):
         t = time.monotonic()
         try:
             result, detail = fn()
             self.add(name, True, detail, method=method, path=path, ms=int((time.monotonic() - t) * 1000))
             return result
         except (CentralError, XmlApiError, RestApiError, KeyError, ValueError) as e:
+            if reraise and reraise(e):
+                raise
             self.add(name, False, str(e), method=method, path=path, status=getattr(e, "status", None),
                      ms=int((time.monotonic() - t) * 1000))
             return None
@@ -115,10 +117,16 @@ def central(db: DbSession, acc: CentralAccount) -> dict:
     target = next((f for f in fws or [] if (f.get("status") or {}).get("connected")), None)
     if target:
         def export():
-            data = client.export_config(target["id"], ["Zone"])
+            # Probelauf wartet nicht: läuft gerade ein Export (Synchronisation, Sicherung …), wird der Test übersprungen
+            data = client.export_config(target["id"], ["Zone"], wait_busy=False)
             objs, version = xmlconv.parse_entities_xml(xmlconv.read_tar_entities(data), {"Zone"})
             return objs, tr('{0}: {1} Zone(n), API-Version {2}', target.get('name'), len(objs.get('Zone', [])), version or '?')
-        rep.run(tr('Export-Test (nur Zonen)'), export, method="POST", path="/firewall/v1/firewall-config/firewalls/{id}/export")
+        name, path = tr('Export-Test (nur Zonen)'), "/firewall/v1/firewall-config/firewalls/{id}/export"
+        try:
+            rep.run(name, export, method="POST", path=path, reraise=is_busy)
+        except CentralError as e:
+            rep.add(name, None, tr('Übersprungen – für „{0}“ läuft gerade ein anderer Export (Synchronisation, Sicherung oder Sophos Central). Kein Fehler; später erneut prüfen. ({1})',
+                                   target.get('name'), e), method="POST", path=path, status=e.status)
 
     # Nicht dokumentierte, naheliegende GET-Endpunkte (nur lesend)
     if fws:

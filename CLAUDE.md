@@ -55,6 +55,7 @@ The `central` connector plus Central features for **any** firewall linked to a C
   - Every call is an async per-firewall transaction (`wait_fw_transaction`). Sync reads use `MDR_READ_TIMEOUT` (90 s). On error the cache is kept and `fw.mdr_status` is set.
   - `clearIndicators` = `DELETE …/indicators` (all, including foreign ones). It runs before the adds of the same request, `effective_config` mirrors that, and it is not revertable (`_create_revert` skips unchanged feed settings and returns 409 if nothing is left).
   - Indicators cannot be updated; delete and re-add them.
+- **Real-API quirks**: MDR transactions come back with `status/result = null` plus `finishedAt` and `response.statuscode` (`_normalize_fw_tx`). Central allows **one export per firewall** at a time (HTTP 400 „already pending or in-progress“): `export_config` holds a per-firewall lock and waits on foreign exports; the diagnose passes `wait_busy=False` and reports „skipped“. After an MDR read error, `connector._MDR_SKIP_UNTIL` pauses MDR reads for 30 min.
 - **Export**: `POST /firewalls/{id}/central-export` with `entities` (from `central_export_entities.json`, generated from the spec) and `include_dependency` → Entities.xml. `POST /firewalls/{id}/mdr/search` is read-only.
 - The mock implements all of these (MDR state per firewall, München starts as `approvalPending`). Tests: `tests/test_fusion.py`.
 

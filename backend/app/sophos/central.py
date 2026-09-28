@@ -13,6 +13,7 @@ Achtung: Der Leitfaden auf developer.sophos.com nennt dieselben Endpunkte ohne d
 bei HTTP 404 wird einmalig die Variante aus dem Leitfaden probiert und das funktionierende Präfix je Region gemerkt.
 """
 import hashlib
+import threading
 import time
 
 import httpx
@@ -25,6 +26,23 @@ class CentralError(Exception):
     def __init__(self, message: str, status: int | None = None):
         super().__init__(message)
         self.status = status
+
+
+# Central erlaubt je Firewall nur einen laufenden Export („An export operation is already pending or in-progress“).
+# Eigene Exporte (Synchronisation, Sicherung, Ausrollen, Probelauf, Download) laufen deshalb je Firewall nacheinander;
+# läuft ein fremder Export (z. B. aus der Central-Oberfläche), wird gewartet.
+_EXPORT_LOCKS: dict[str, threading.Lock] = {}
+_EXPORT_LOCKS_GUARD = threading.Lock()
+BUSY_MESSAGE = "already pending or in-progress"
+
+
+def export_lock(firewall_id: str) -> threading.Lock:
+    with _EXPORT_LOCKS_GUARD:
+        return _EXPORT_LOCKS.setdefault(firewall_id, threading.Lock())
+
+
+def is_busy(e: Exception) -> bool:
+    return isinstance(e, CentralError) and (getattr(e, "busy", False) or (e.status in (400, 409) and BUSY_MESSAGE in str(e)))
 
 
 # Präfix für Import/Export/Transaktionen: Spezifikation zuerst, dann Leitfaden
@@ -260,11 +278,35 @@ class CentralClient:
             time.sleep(config.CENTRAL_POLL_SECONDS)
 
     def export_config(self, firewall_id: str, entities: list[str] | None, log=None,
-                      include_dependency: bool = False) -> bytes:
+                      include_dependency: bool = False, wait_busy: bool = True) -> bytes:
+        """wait_busy=False: bei einem bereits laufenden Export sofort mit CentralError abbrechen (is_busy)."""
+        lock = export_lock(firewall_id)
+        if not lock.acquire(blocking=wait_busy, timeout=config.CENTRAL_TRANSACTION_TIMEOUT if wait_busy else -1):
+            e = CentralError(tr('Für diese Firewall läuft bereits ein Export dieses Tools'), status=409)
+            e.busy = True
+            raise e
+        try:
+            return self._export(firewall_id, entities, log, include_dependency, wait_busy)
+        finally:
+            lock.release()
+
+    def _export(self, firewall_id: str, entities: list[str] | None, log, include_dependency: bool, wait_busy: bool) -> bytes:
         # fullExport=true verbietet exportEntities und includeDependency
         body = {"fullExport": True} if not entities else {
             "fullExport": False, "includeDependency": include_dependency, "exportEntities": entities}
-        ref = self._cfg("POST", f"/firewalls/{firewall_id}/export", json=body)
+        deadline = time.time() + config.CENTRAL_TRANSACTION_TIMEOUT
+        waiting = False
+        while True:
+            try:
+                ref = self._cfg("POST", f"/firewalls/{firewall_id}/export", json=body)
+                break
+            except CentralError as e:
+                if not (wait_busy and is_busy(e)) or time.time() > deadline:
+                    raise
+                if log and not waiting:
+                    log(tr('Für diese Firewall läuft bereits ein Export (z. B. aus Sophos Central) – warte …'))
+                waiting = True
+                time.sleep(max(config.CENTRAL_POLL_SECONDS, 5))
         tx = self.wait_transaction(ref["transactionId"], log)
         if tx.get("result") != "success":
             raise CentralError(tr('Export fehlgeschlagen: {0}', tx.get('result')))
@@ -311,8 +353,8 @@ class CentralClient:
         """GET /firewall-config/firewalls/{id}/transactions/{tx} bis status=finished."""
         deadline = time.time() + (timeout or config.CENTRAL_TRANSACTION_TIMEOUT)
         while True:
-            tx = self._cfg("GET", f"/firewalls/{firewall_id}/transactions/{transaction_id}",
-                           params={"fields": "request,response,expiryAt,finishedAt"})
+            tx = _normalize_fw_tx(self._cfg("GET", f"/firewalls/{firewall_id}/transactions/{transaction_id}",
+                                             params={"fields": "request,response,expiryAt,finishedAt"}))
             if tx.get("status") == "finished":
                 if log:
                     log(tr('Transaktion {0}: {1}', transaction_id, tx.get("result")))
@@ -352,9 +394,28 @@ class CentralClient:
                          json={"indicatorValues": values})
 
 
+def _normalize_fw_tx(tx: dict) -> dict:
+    """Die echte API (eu02, 09/2026) liefert bei MDR-Transaktionen status/result = null, aber finishedAt und das
+    Ergebnis der Firewall als response.statuscode. Auf die Werte der Spezifikation abbilden."""
+    tx = dict(tx)
+    if tx.get("status") is None and tx.get("finishedAt"):
+        tx["status"] = "finished"
+    if tx.get("status") == "finished" and tx.get("result") in (None, "notAvailable"):
+        code = (tx.get("response") or {}).get("statuscode")
+        try:
+            code = int(code)
+        except (TypeError, ValueError):
+            code = None
+        errors = (tx.get("response") or {}).get("errors")
+        tx["result"] = ("error" if code is not None and code >= 400
+                        else "partialSuccess" if errors else "success")
+    return tx
+
+
 def _tx_error(tx: dict) -> str:
     resp = tx.get("response") or {}
-    detail = resp.get("message") or resp.get("error") or resp.get("errors") or ""
+    detail = resp.get("message") or resp.get("error") or resp.get("errors") or (
+        f"statuscode {resp['statuscode']}" if resp.get("statuscode") else "")
     return f"{tx.get('result')} {detail}".strip()
 
 

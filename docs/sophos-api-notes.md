@@ -74,7 +74,13 @@ Central verteilt die Konfiguration dann selbst; die Oberfläche warnt davor.
   `errors.duplicateMDRIndicators` (unkritisch) bzw. `errors.invalidMDRIndicators` (→ Fehler, Rücknahme).
 - `DELETE …/indicators` löscht **alle** Indikatoren, auch fremde – im Tool nur als ausdrückliche Option
   („Beim Ausrollen alle Indikatoren löschen“) und nicht rücknehmbar.
-- Nicht mit einem echten Tenant geprüft (keine MDR-Lizenz im Testaufbau) – nur gegen `sophos-mock`.
+- **Echte API (eu02, SFOS 23.0, 28.09.2026) weicht ab:** MDR-Transaktionen liefern `status: null` und
+  `result: null`, obwohl `finishedAt` gesetzt ist; das Ergebnis der Firewall steht in `response.statuscode`
+  (z. B. 200), dazu `migratedstatus`. `enabled` kommt als Boolean. Das Tool wertet `finishedAt` als fertig und
+  `statuscode ≥ 400` als Fehler (`central._normalize_fw_tx`). Antwortzeit < 1 s.
+- **Nur ein Export je Firewall gleichzeitig:** ein zweiter `POST …/export` liefert HTTP 400 „An export operation is
+  already pending or in-progress for firewall …“. Das Tool serialisiert eigene Exporte je Firewall
+  (`central.export_lock`) und wartet bei fremden; der Probelauf überspringt den Export-Test stattdessen.
 
 ## Leitfaden ≠ Spezifikation
 

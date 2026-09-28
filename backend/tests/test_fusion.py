@@ -14,6 +14,7 @@ from .conftest import login
 from .test_workflow import deploy_sync, make_user, setup_firewall
 
 REGION = "https://api-eu01.test"
+REAL_FETCH = connector.fetch_config          # vor dem Ersetzen durch die fake-Fixture
 
 
 def make_client(handler):
@@ -389,3 +390,86 @@ def test_inventory_sync_links_direct_firewall_by_serial(client, admin, fake, mon
     assert client.get(f"/api/firewalls/{fw_id}", headers=admin).json()["central_linked"]
     # Eine über Central angebundene Firewall lässt sich nicht lösen
     assert client.put(f"/api/central-accounts/{acc_id}/firewalls/c-fw2/link", headers=admin, json={"firewall_id": None}).status_code == 400
+
+
+BUSY = {"error": "badRequest", "message": "An export operation is already pending or in-progress for firewall fw1."}
+
+
+def _export_handler(busy_times, seen):
+    def handler(request: httpx.Request):
+        if request.url.host == "id.test":
+            return token(request)
+        if request.url.path.endswith("/fw1/export"):
+            seen.append("export")
+            if len(seen) <= busy_times:
+                return httpx.Response(400, json=BUSY)
+            return httpx.Response(202, json={"transactionId": "tx"})
+        if request.url.path.endswith("/transactions/tx"):
+            return httpx.Response(200, json={"id": "tx", "status": "finished", "result": "success",
+                                             "response": {"url": "https://s3.test/x.tar"}})
+        if request.url.host == "s3.test":
+            return httpx.Response(200, content=b"archive")
+        return httpx.Response(404, json={"error": "notFound"})
+    return handler
+
+
+def test_export_waits_while_another_export_runs(monkeypatch):
+    monkeypatch.setattr(central.config, "CENTRAL_POLL_SECONDS", 0)
+    monkeypatch.setattr(central.time, "sleep", lambda s: None)
+    seen, logs = [], []
+    assert make_client(_export_handler(2, seen)).export_config("fw1", None, logs.append) == b"archive"
+    assert seen == ["export"] * 3 and any("warte" in m for m in logs)
+    # Probelauf: nicht warten, sondern als „beschäftigt“ melden
+    seen = []
+    with pytest.raises(CentralError) as ei:
+        make_client(_export_handler(1, seen)).export_config("fw1", ["Zone"], wait_busy=False)
+    assert central.is_busy(ei.value)
+
+
+def test_own_exports_are_serialized():
+    lock = central.export_lock("fw-x")
+    lock.acquire()
+    try:
+        with pytest.raises(CentralError) as ei:
+            make_client(_export_handler(0, [])).export_config("fw-x", ["Zone"], wait_busy=False)
+        assert central.is_busy(ei.value)
+    finally:
+        lock.release()
+
+
+def test_mdr_read_backs_off_after_error(client, admin, fake, monkeypatch):
+    fw_id = setup_firewall(client, admin)
+    link_central(fw_id)
+    calls = []
+
+    def broken(client_, cid, cached, log=None):
+        calls.append(1)
+        raise CentralError("Zeitüberschreitung")
+    monkeypatch.setattr(mdr, "fetch", broken)
+    monkeypatch.setattr(connector, "fetch_config", REAL_FETCH)  # echte Funktion, nur der Firewall-Teil ist fake
+    monkeypatch.setattr(connector, "_fetch_firewall", lambda db, fw, log: (fake.fetch(db, fw)[0], "x"))
+    monkeypatch.setattr(connector, "central_client", lambda acc: None)
+    connector._MDR_SKIP_UNTIL.clear()
+    for _ in range(2):
+        assert client.post(f"/api/firewalls/{fw_id}/sync", headers=admin).status_code == 200
+    assert len(calls) == 1
+    assert client.get(f"/api/firewalls/{fw_id}", headers=admin).json()["mdr_status"].startswith("Fehler")
+    connector._MDR_SKIP_UNTIL.clear()
+
+
+def test_real_central_mdr_transaction_without_status():
+    """Echte API: status/result null, Ergebnis in response.statuscode (beobachtet eu02, 09/2026)."""
+    def handler(request: httpx.Request):
+        if request.url.host == "id.test":
+            return token(request)
+        if request.url.path.endswith("/mdr-threat-feed"):
+            return httpx.Response(202, json={"transactionId": "tx"})
+        return httpx.Response(200, json={"id": "tx", "status": None, "result": None, "finishedAt": "2026-09-28T05:24:24Z",
+                                         "response": {"action": "logOnly", "enabled": True, "statuscode": 200,
+                                                      "lastUpdatedAt": "2026-09-28T04:52:17Z", "migratedstatus": True}})
+
+    feed = make_client(handler).mdr_feed("fw1")
+    assert feed["enabled"] is True and feed["action"] == "logOnly"
+    tx = central._normalize_fw_tx({"status": None, "finishedAt": "x", "response": {"statuscode": 500, "message": "kaputt"}})
+    assert tx["result"] == "error"
+    assert central._normalize_fw_tx({"status": None, "finishedAt": None})["status"] is None

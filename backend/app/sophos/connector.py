@@ -85,19 +85,32 @@ def _cached(db: DbSession, fw: Firewall, entity: str) -> list[dict]:
                            .order_by(ConfigObject.position)).scalars())
 
 
+# Nach einem Fehler (z. B. Firewall antwortet nicht, Feed nicht verfügbar) den Feed eine Weile nicht abfragen –
+# sonst wartete jede Synchronisation bis zum Zeitlimit auf die Firewall.
+MDR_RETRY_SECONDS = 1800
+_MDR_SKIP_UNTIL: dict[str, float] = {}
+
+
 def _fetch_mdr(db: DbSession, fw: Firewall, log: Log | None) -> dict[str, list[dict]]:
     """MDR-Threat-Feed über Central. Bei Fehlern den letzten Stand behalten und den Fehler an der Firewall vermerken."""
+    import time
     if not has_central(fw):
         fw.mdr_status = ""
         return {"mdrThreatFeed": [], "mdrIndicators": []}
+    if time.time() < _MDR_SKIP_UNTIL.get(fw.id, 0):
+        if log:
+            log(tr('MDR-Threat-Feed: nach dem letzten Fehler vorübergehend nicht abgefragt – letzter Stand bleibt erhalten'))
+        return {e2: _cached(db, fw, e2) for e2 in entities.CENTRAL_ENTITIES}
     try:
         client, cid = _central_for(db, fw)
         out = mdr.fetch(client, cid, _cached(db, fw, "mdrIndicators"), log)
     except CentralError as e:
+        _MDR_SKIP_UNTIL[fw.id] = time.time() + MDR_RETRY_SECONDS
         fw.mdr_status = f"Fehler: {e}"[:500]
         if log:
             log(tr('MDR-Threat-Feed (Sophos Central): {0} – letzter Stand bleibt erhalten', e))
         return {e2: _cached(db, fw, e2) for e2 in entities.CENTRAL_ENTITIES}
+    _MDR_SKIP_UNTIL.pop(fw.id, None)
     fw.mdr_status = "ok"
     return out
 
