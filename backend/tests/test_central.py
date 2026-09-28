@@ -101,3 +101,12 @@ def test_real_404_is_not_masked():
 def test_normalize_status():
     assert normalize_status({"managingStatus": "approvedByCustomer", "connected": True})["managing"] == "approvedByCustomer"
     assert normalize_status({"managing": "approved"}) == {"managing": "approved"}
+
+
+def test_upload_sends_exactly_the_signed_headers():
+    url = ("https://s3.test/up?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-SignedHeaders="
+           "content-type%3Bhost%3Bif-none-match%3Bx-amz-server-side-encryption&X-Amz-Signature=x")
+    assert central.upload_headers(url) == {"content-type": "application/x-tar", "if-none-match": "*",
+                                           "x-amz-server-side-encryption": "AES256"}
+    assert central.upload_headers("https://s3.test/up?X-Amz-SignedHeaders=host") == {}
+    assert central.upload_headers("https://s3.test/up") == {}

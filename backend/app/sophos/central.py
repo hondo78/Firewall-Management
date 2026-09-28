@@ -330,8 +330,7 @@ class CentralClient:
         if log:
             log(tr('Import-Transaktion {0} angelegt, lade Archiv hoch ({1} Byte)', tx_id, len(archive)))
         try:
-            # S3-PUT ohne eigenen Content-Type – ein nicht mitsignierter Header ließe die Signatur scheitern
-            r = self._http.request(init.get("method", "PUT"), url, content=archive,
+            r = self._http.request(init.get("method", "PUT"), url, content=archive, headers=upload_headers(url),
                                    timeout=config.HTTP_TIMEOUT_SECONDS * 4)
         except httpx.HTTPError as e:
             raise CentralError(tr('Upload des Archivs fehlgeschlagen: {0}', e)) from e
@@ -392,6 +391,20 @@ class CentralClient:
         """Welche der (höchstens 100) Werte sind im Feed vorhanden? Antwort in tx.response."""
         return self._mdr("POST", firewall_id, "/indicators/search", log=log, timeout=config.MDR_READ_TIMEOUT,
                          json={"indicatorValues": values})
+
+
+# Werte der mitsignierten Header beim S3-Upload (echte API eu02, 09/2026: SignedHeaders =
+# content-type;host;if-none-match;x-amz-server-side-encryption). Weder Spezifikation noch Leitfaden nennen sie
+# vollständig; ermittelt per Test-Upload ohne upload-complete.
+S3_UPLOAD_HEADERS = {"content-type": "application/x-tar", "if-none-match": "*", "x-amz-server-side-encryption": "AES256"}
+
+
+def upload_headers(url: str) -> dict:
+    """Genau die Header senden, die die pre-signed URL als signiert ausweist – nicht mitsignierte Header
+    ließen die Signaturprüfung ebenso scheitern wie fehlende."""
+    from urllib.parse import parse_qs, urlsplit
+    signed = (parse_qs(urlsplit(url).query).get("X-Amz-SignedHeaders") or [""])[0].lower().split(";")
+    return {k: v for k, v in S3_UPLOAD_HEADERS.items() if k in signed}
 
 
 def _normalize_fw_tx(tx: dict) -> dict:

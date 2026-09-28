@@ -104,8 +104,12 @@ Central verteilt die Konfiguration dann selbst; die Oberfläche warnt davor.
   (das Tool setzt `false`, damit ein Antrag ganz oder gar nicht angewendet wird); `secureMasterKey`
   (max. 128 Zeichen) ist nötig, damit verschlüsselte Werte (Passwörter, Schlüssel) importiert werden.
 - Import/Export akzeptieren zusätzlich den Header `X-Partner-ID` (Partner-Ebene).
-- Der Upload geht laut Beschreibung an **Amazon S3** (pre-signed PUT). Zusätzliche Header wie `Content-Type`
-  dürfen nicht gesendet werden, wenn sie nicht mitsigniert wurden; das Tool sendet den reinen Body.
+- Der Upload geht laut Beschreibung an **Amazon S3** (pre-signed PUT). **Echte API (eu02, 28.09.2026):** die URL ist
+  mit `X-Amz-SignedHeaders=content-type;host;if-none-match;x-amz-server-side-encryption` signiert. Ohne diese Header
+  → HTTP 403 `SignatureDoesNotMatch`. Die signierten Werte (per Test-Upload ohne `upload-complete` ermittelt):
+  `Content-Type: application/x-tar`, `If-None-Match: *`, `x-amz-server-side-encryption: AES256`. Der Leitfaden nennt
+  nur Content-Type (dort `application/zip`) und die Verschlüsselung. Das Tool sendet genau die Header, die in
+  `X-Amz-SignedHeaders` stehen (`central.upload_headers`) – nicht mitsignierte Header ließen die Prüfung ebenso scheitern.
 - Benötigte Central-Rechte (`x-soph-permissions`): Lesen `fwcm.firewall.group:read`, Import/Export
   `fwcm.firewall.api.config:write`, Transaktionen `fwcm.firewall.api.config:read`.
 - `configImport.status` einer Gruppe kennt `initializing`, `initializingFailed`, `initializingFailedExport`,
