@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Management tool for **Sophos Firewalls** with roles/permissions, a **four-eyes approval workflow** for every config change, and a hash-chained audit log. UI on `:8096` (`FWM_PORT`). Unlike most LAN tools in `~/docker` it **has its own login** (JWT). The approval workflow needs identities, so don't remove it. The UI design follows the Sophos Config Studio: an entity navigator, SFOS-style rule table, a compare view and Entities.xml export. See `README.md` for features and the demo setup.
+Management tool for **Sophos Firewalls** with roles/permissions, a **four-eyes approval workflow** for every config change, and a hash-chained audit log. UI on `:8096` (`FWM_PORT`). `README.md` is the English project documentation (German: `README.de.md`); the user guide for the approval workflow with demo video is `docs/approval-guide.md` (media in `docs/media/`, re-recording in `docs/demo/README.md`). Unlike most LAN tools in `~/docker` it **has its own login** (JWT). The approval workflow needs identities, so don't remove it. The UI design follows the Sophos Config Studio: an entity navigator, SFOS-style rule table, a compare view and Entities.xml export. See `README.md` for features and the demo setup.
 
 ## Commands
 
