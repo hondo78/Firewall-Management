@@ -473,3 +473,29 @@ def test_real_central_mdr_transaction_without_status():
     tx = central._normalize_fw_tx({"status": None, "finishedAt": "x", "response": {"statuscode": 500, "message": "kaputt"}})
     assert tx["result"] == "error"
     assert central._normalize_fw_tx({"status": None, "finishedAt": None})["status"] is None
+
+
+def test_real_central_409_already_exists_counts_as_done():
+    """Echte API: Anlegen eines vorhandenen Indikators → statuscode 409 „All entries already exist“."""
+    def handler(request: httpx.Request):
+        if request.url.host == "id.test":
+            return token(request)
+        if request.url.path.endswith("/indicators"):
+            return httpx.Response(202, json={"transactionId": "tx"})
+        return httpx.Response(200, json={"id": "tx", "status": None, "result": None, "finishedAt": "2026-09-28T05:35:47Z",
+                                         "response": {"error": "resourceConflict", "statuscode": 409,
+                                                      "statusmessage": "All entries already exist"}})
+
+    c = make_client(handler)
+    assert c.mdr_add("fw1", [{"type": "domain-name", "value": "evil.com"}])["result"] == "unchanged"
+    # Ein anderer Fehler bleibt ein Fehler – mit der Meldung der Firewall
+    with pytest.raises(CentralError, match="All entries already exist"):
+        c._mdr("POST", "fw1", "/indicators", json={})
+
+    # Rücknahme löscht bereits vorhandene Indikatoren nicht mit
+    fc = FakeCentral({"evil.com": "domain-name"})
+    fc.mdr_add = lambda cid, items, log=None: {"result": "unchanged"}
+    undo = mdr.apply(fc, "fw1", [{"entity": "mdrIndicators", "action": "add", "name": "evil.com",
+                                  "data": {"name": "evil.com", "type": "domain-name"}}], lambda m: None)
+    undo()
+    assert fc.indicators == {"evil.com": "domain-name"}

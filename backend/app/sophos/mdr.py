@@ -97,6 +97,13 @@ def _check_add(tx: dict) -> None:
         raise CentralError(tr('Ungültige Indikatoren: {0}', ", ".join(str(i.get("value", i)) for i in invalid)))
 
 
+def _created(tx: dict, part: list[dict]) -> list[dict]:
+    """Tatsächlich neu angelegte Indikatoren: ohne die als Duplikat gemeldeten (die gab es schon vorher)."""
+    errors = (tx.get("response") or {}).get("errors") or {}
+    dup = {str(i.get("value")) for i in (errors.get("duplicateMDRIndicators") or {}).get("items") or [] if isinstance(i, dict)}
+    return [i for i in part if i["value"] not in dup]
+
+
 def apply(client: CentralClient, cid: str, ops: list[dict], log: Log) -> Callable[[], None]:
     """Einstellungen, Löschungen, Neuanlagen – in dieser Reihenfolge. Gibt eine Rücknahme-Funktion zurück
     (für einen Fehler im anschließenden Konfigurationsteil). Bei einem Fehler hier wird selbst zurückgenommen."""
@@ -123,14 +130,23 @@ def apply(client: CentralClient, cid: str, ops: list[dict], log: Log) -> Callabl
                 undo.append((FEED_NAME, lambda b=before: client.mdr_settings(cid, b.get("enabled"), b.get("action"))))
         removes = [_ind(o) for o in ops if o["entity"] == "mdrIndicators" and o["action"] == "remove"]
         for part in _chunks(removes):
-            client.mdr_delete(cid, part, log)
+            if (client.mdr_delete(cid, part, log) or {}).get("result") == "unchanged":
+                log(tr('MDR-Indikatoren waren bereits entfernt: {0}', ", ".join(i["value"] for i in part)))
+                continue
             log(tr('MDR-Indikatoren gelöscht: {0}', ", ".join(i["value"] for i in part)))
             undo.append((tr('{0} Indikatoren', len(part)), lambda p=part: client.mdr_add(cid, p)))
         adds = [_ind(o) for o in ops if o["entity"] == "mdrIndicators" and o["action"] in ("add", "update")]
         for part in _chunks(adds):
-            _check_add(client.mdr_add(cid, part, log))
-            log(tr('MDR-Indikatoren angelegt: {0}', ", ".join(i["value"] for i in part)))
-            undo.append((tr('{0} Indikatoren', len(part)), lambda p=part: client.mdr_delete(cid, p)))
+            tx = client.mdr_add(cid, part, log) or {}
+            if tx.get("result") == "unchanged":
+                # Schon vorhanden (z. B. in Sophos Central angelegt): Ziel erreicht – bei einer Rücknahme nicht löschen
+                log(tr('MDR-Indikatoren waren bereits vorhanden: {0}', ", ".join(i["value"] for i in part)))
+                continue
+            _check_add(tx)
+            new = _created(tx, part)
+            log(tr('MDR-Indikatoren angelegt: {0}', ", ".join(i["value"] for i in new) or "–"))
+            if new:
+                undo.append((tr('{0} Indikatoren', len(new)), lambda p=new: client.mdr_delete(cid, p)))
     except CentralError:
         rollback()
         raise

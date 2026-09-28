@@ -362,11 +362,16 @@ class CentralClient:
                 raise CentralError(tr('Zeitüberschreitung beim Warten auf Transaktion {0}', transaction_id))
             time.sleep(config.CENTRAL_POLL_SECONDS)
 
-    def _mdr(self, method: str, firewall_id: str, suffix: str = "", log=None, timeout: int | None = None, **kw) -> dict:
+    def _mdr(self, method: str, firewall_id: str, suffix: str = "", log=None, timeout: int | None = None,
+             accept: tuple[int, ...] = (), **kw) -> dict:
+        """accept: HTTP-Status der Firewall (response.statuscode), die das Ziel bereits erfüllen – z. B. 409
+        „All entries already exist“ beim Anlegen. Solche Transaktionen gelten als Erfolg (result = „unchanged“)."""
         ref = self._cfg(method, f"/firewalls/{firewall_id}/mdr-threat-feed{suffix}", **kw)
         tx = self.wait_fw_transaction(firewall_id, ref["transactionId"], log, timeout)
         if tx.get("result") not in ("success", "partialSuccess"):
-            raise CentralError(tr('MDR-Threat-Feed: {0}', _tx_error(tx)))
+            if _status_code(tx) in accept:
+                return {**tx, "result": "unchanged"}
+            raise CentralError(tr('MDR-Threat-Feed: {0}', _tx_error(tx)), status=_status_code(tx))
         return tx
 
     def mdr_feed(self, firewall_id: str, log=None) -> dict:
@@ -379,10 +384,10 @@ class CentralClient:
 
     def mdr_add(self, firewall_id: str, indicators: list[dict], log=None) -> dict:
         """Höchstens 100 Indikatoren {type: ipv4-addr|domain-name|url, value} pro Aufruf."""
-        return self._mdr("POST", firewall_id, "/indicators", log=log, json={"indicators": indicators})
+        return self._mdr("POST", firewall_id, "/indicators", log=log, accept=(409,), json={"indicators": indicators})
 
     def mdr_delete(self, firewall_id: str, indicators: list[dict], log=None) -> dict:
-        return self._mdr("POST", firewall_id, "/indicators/delete", log=log, json={"indicators": indicators})
+        return self._mdr("POST", firewall_id, "/indicators/delete", log=log, accept=(404,), json={"indicators": indicators})
 
     def mdr_delete_all(self, firewall_id: str, log=None) -> dict:
         return self._mdr("DELETE", firewall_id, "/indicators", log=log)
@@ -425,11 +430,18 @@ def _normalize_fw_tx(tx: dict) -> dict:
     return tx
 
 
+def _status_code(tx: dict) -> int | None:
+    try:
+        return int((tx.get("response") or {}).get("statuscode"))
+    except (TypeError, ValueError):
+        return None
+
+
 def _tx_error(tx: dict) -> str:
     resp = tx.get("response") or {}
-    detail = resp.get("message") or resp.get("error") or resp.get("errors") or (
-        f"statuscode {resp['statuscode']}" if resp.get("statuscode") else "")
-    return f"{tx.get('result')} {detail}".strip()
+    parts = [resp.get("statusmessage") or resp.get("message"), resp.get("error"), resp.get("errors"),
+             f"HTTP {resp['statuscode']}" if resp.get("statuscode") else None]
+    return " – ".join(str(p) for p in parts if p) or str(tx.get("result"))
 
 
 def normalize_status(status: dict | None) -> dict:
