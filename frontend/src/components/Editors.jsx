@@ -320,7 +320,7 @@ export function ObjectEditor({ entity, label, config, object, onClose, onSubmit 
     FQDNHostGroup: <GroupForm {...props} container="FQDNHostList" itemKey="FQDNHost" options={opts.fqdnHosts} label={t("Mitglieder (FQDN-Hosts)")} />,
   }
   return (
-    <EditorShell title={isNew ? `${label}: neu` : t("{0} „{1}“ bearbeiten", label, object.Name)} entity={entity}
+    <EditorShell title={isNew ? t("{0}: neu", label) : t("{0} „{1}“ bearbeiten", label, object.Name)} entity={entity}
       data={data} setData={setData} isNew={isNew} form={forms[entity]} onClose={onClose}
       onSubmit={(payload) => onSubmit({ entity, action: isNew ? 'add' : 'update', name: payload.Name, data: payload })} />
   )

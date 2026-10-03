@@ -44,6 +44,11 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    # Letzte vollständige Anmeldung (Login, 2FA-Schritt, SSO, erneute Anmeldung) – Grundlage dafür, ob Freigaben
+    # außerhalb einer Web-Sitzung (Telegram) dieselben Regeln erfüllen wie im Web
+    last_auth_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    last_auth_mfa: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    last_auth_src: Mapped[str] = mapped_column(String(10), default="", server_default="")
     # Benachrichtigungen: E-Mail an/aus, Telegram-Chat (per Einmal-Code aus dem Profil verknüpft)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Zwei-Faktor (TOTP): Geheimnis verschlüsselt; pending = während der Einrichtung, noch nicht bestätigt

@@ -12,9 +12,9 @@ A German version is at [media/de/freigabe-demo.mp4](media/de/freigabe-demo.mp4).
 |---|---|
 | 1 · Request | 0:05 |
 | 2 · First review | 1:23 |
-| 3 · Second approval | 1:50 |
-| 4 · Deploy | 2:10 |
-| 5 · Audit log | 2:31 |
+| 3 · Second approval | 1:49 |
+| 4 · Deploy | 2:09 |
+| 5 · Audit log | 2:30 |
 
 All people and firewalls in the video and screenshots are fictitious; they run against the built-in Sophos mock.
 
@@ -153,7 +153,8 @@ IP. **Check integrity** recomputes the hash chain and shows whether any entry wa
 - **Each person counts once.** When two or more approvals are required, they must come from different people.
 - **Rejections need a reason.** The requester sees it in the history and is notified.
 - **Fresh sign-in to decide.** Old sessions must sign in again before approving; two-factor authentication can
-  be required for approvers or for everyone.
+  be required for approvers or for everyone. Approvals via Telegram are measured against the approver's last web
+  sign-in: it must be within the re-authentication time and, if two-factor is required, have used it.
 - **What is approved is what is deployed.** If the firewall has changed since submission, deployment stops with
   "Conflict" instead of overwriting someone else's changes.
 - **No partial deployment.** If an API call fails, the tool undoes what it already wrote, as far as the firewall
@@ -174,7 +175,7 @@ IP. **Check integrity** recomputes the hash chain and shows whether any entry wa
 | Import and restore | Objects from an `Entities.xml` or a backup go into the draft and pass through the same approval. |
 | Analysis | Open a finding with one click, fix it and get a new evaluation; the fix sits in your draft. |
 | MDR threat feed | Feed settings and indicators of firewalls linked to Sophos Central are changed through requests like any other object. "Delete all indicators" cannot be reverted. |
-| Approve via Telegram | Linked approvers can approve directly in Telegram; the same rules apply. |
+| Approve via Telegram | Linked approvers can approve with a button in Telegram (rejecting only on the web). The same rules apply: the button works only within the re-authentication time after a web sign-in and, if two-factor is required, only after a sign-in with a second factor. Refused attempts are recorded in the audit log. |
 
 Tenant administration in Sophos Central (renaming firewalls, groups, approving management, removing firewalls)
 does not change firewall configurations. It is therefore not a change request: it is superadmin-only, runs

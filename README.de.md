@@ -1,6 +1,6 @@
 # Firewall-Management (Sophos)
 
-[English version](README.md) · [Demo-Video: Änderung mit Vier-Augen-Freigabe](docs/media/de/freigabe-demo.mp4) (2:56, Untertitel)
+[English version](README.md) · [Demo-Video: Änderung mit Vier-Augen-Freigabe](docs/media/de/freigabe-demo.mp4) (2:55, Untertitel)
 
 [![Demo-Video](docs/media/de/freigabe-demo-poster.jpg)](docs/media/de/freigabe-demo.mp4)
 
@@ -64,7 +64,8 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 - **Benachrichtigungen**: E-Mail, Microsoft Teams, Slack (Incoming Webhook, optional @here bei neuen Anträgen), Telegram (mit Genehmigen-Knopf) für neue Anträge, Entscheidungen,
   Ausrollen/Fehler, ablaufende Befristungen und API-Keys sowie Änderungen außerhalb des Tools.
 - **Anmeldung**: Zwei-Faktor (TOTP) wahlweise verpflichtend, SSO per OpenID Connect (Entra ID, Authentik, Keycloak …)
-  mit Rollen aus Gruppen, erneute Anmeldung vor dem Genehmigen.
+  mit Rollen aus Gruppen, erneute Anmeldung vor dem Genehmigen. Freigaben per Telegram gelten nur innerhalb dieser
+  Zeit nach einer Web-Anmeldung (mit zweitem Faktor, falls verlangt).
 - **Probelauf**: prüft Anmeldung, Rechte und alle benötigten Endpunkte mit rein lesenden Aufrufen, für
   Central-Konten und einzelne Firewalls. Abweichungen zwischen Sophos-Leitfaden und OpenAPI-Spezifikation sowie
   die Suche nach nicht dokumentierten Endpunkten: siehe `docs/sophos-api-notes.md`.
@@ -87,8 +88,8 @@ Anmeldung mit `ADMIN_USERNAME` / `ADMIN_PASSWORD` (nur beim ersten Start verwend
 
 ### Demo mit der Sophos-Attrappe
 
-`COMPOSE_PROFILES=mock` (Standard in `.env.example`) startet `sophos-mock`, das Sophos Central und die
-XML-API von vier Demo-Firewalls nachbildet:
+`COMPOSE_PROFILES=mock` (Standard in `.env.example`) startet `sophos-mock`, das Sophos Central, die SFOS REST-API und
+die XML-API von vier Demo-Firewalls nachbildet:
 
 - Sophos Central: *Administration › Sophos Central › Konto verbinden*, Client-ID `mock-client`,
   Secret `mock-secret`, unter „Erweitert“ beide URLs auf `http://sophos-mock:8000` → „Firewalls übernehmen“.

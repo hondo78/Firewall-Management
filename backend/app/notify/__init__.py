@@ -15,7 +15,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from .. import permissions
+from .. import permissions, security
 from ..audit import audit
 from ..db import SessionLocal
 from ..models import ChangeRequest, Firewall, User, utcnow
@@ -269,6 +269,12 @@ def _handle_update(update: dict) -> None:
             try:
                 if not cr:
                     raise HTTPException(404, tr('Antrag nicht gefunden'))
+                # Dieselben Regeln wie im Web: frische Anmeldung und ggf. zweiter Faktor (siehe security)
+                problem = security.decision_auth_problem(db, user)
+                if problem:
+                    audit(db, "change.decision_refused", actor=user, target_type="change", target_id=cr.id, ip="telegram",
+                          details={"number": cr.number, "channel": "telegram", "reason": problem})
+                    raise HTTPException(403, problem)
                 changes.decide(db, user, cr, "approve", "per Telegram", ip="telegram")
                 answer = tr('{0} genehmigt', texts.cr_no(cr)) + (tr(' – wird ausgerollt') if cr.status == "approved" else "")
             except HTTPException as e:

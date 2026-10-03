@@ -180,7 +180,7 @@ function Ipv4Form({ data, setData, isNew }) {
       <Field label={t("Typ")}><Seg options={[['ipv4Address', 'Host'], ['ipv4Network', t("Netzwerk")], ['ipv4Range', t("Bereich")], ['ipv4List', t("Liste")]]}
         value={data.type} onChange={setType} /></Field>
       <div className="form-grid">
-        {data.type === 'ipv4Address' && <Field label="IPv4-Adresse"><input value={data.ipv4Address || ''} onChange={set('ipv4Address')} placeholder="10.0.0.1" /></Field>}
+        {data.type === 'ipv4Address' && <Field label={t("IPv4-Adresse")}><input value={data.ipv4Address || ''} onChange={set('ipv4Address')} placeholder="10.0.0.1" /></Field>}
         {data.type === 'ipv4Network' && <>
           <Field label={t("Netzadresse")}><input value={data.ipv4NetworkAddress || ''} onChange={set('ipv4NetworkAddress')} placeholder="10.0.0.0" /></Field>
           <Field label={t("Präfixlänge (CIDR)")}><input type="number" min={0} max={32} value={data.cidr ?? ''} onChange={set('cidr', true)} /></Field>
@@ -275,7 +275,7 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
     mdrIndicators: <MdrIndicatorForm {...props} />,
   }
   return (
-    <EditorShell title={isNew ? `${label}: neu` : SINGLETON_ENTITIES.has(entity) ? `${label} bearbeiten` : t("{0} „{1}“ bearbeiten", label, object.name)} entity={entity}
+    <EditorShell title={isNew ? t("{0}: neu", label) : SINGLETON_ENTITIES.has(entity) ? t("{0} bearbeiten", label) : t("{0} „{1}“ bearbeiten", label, object.name)} entity={entity}
       data={data} setData={setData} isNew={isNew} form={forms[entity] || policyForm(entity, props)} onClose={onClose}
       onSubmit={(payload) => onSubmit({ entity, action: isNew ? 'add' : 'update', name: payload.name, data: payload })} />
   )

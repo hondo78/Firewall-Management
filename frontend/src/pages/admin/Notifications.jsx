@@ -101,7 +101,7 @@ export default function Notifications() {
             <Field label={t("Bot-Benutzername")} hint={t("ohne @, für den Verknüpfungslink")}><input value={form.telegram.bot_username} onChange={set('telegram', 'bot_username')} /></Field>
           </div>
           <label className="check"><input type="checkbox" checked={form.telegram.allow_approve} onChange={set('telegram', 'allow_approve')} />
-            <span>{t("Genehmigen per Knopf erlauben")} <span className="muted small">{t("(gleiche Rechte- und Vier-Augen-Prüfung wie im Web; Ablehnen nur im Web)")}</span></span></label>
+            <span>{t("Genehmigen per Knopf erlauben")} <span className="muted small">{t("(gleiche Rechte- und Vier-Augen-Prüfung wie im Web; Ablehnen nur im Web)")} {t("Gilt nur innerhalb der Frist für erneute Anmeldung nach einer Web-Anmeldung – mit zweitem Faktor, falls verlangt.")}</span></span></label>
           <div className="row"><button className="sm" onClick={() => runTest('telegram')}>{t("Test an meinen Chat")}</button><TestResult ch="telegram" /></div>
         </div>
 

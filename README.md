@@ -30,15 +30,17 @@ and deployed through the API only after other people have approved them.
 
 ```
 Draft ──submit──▶ Awaiting approval ──n × approve──▶ Approved ──deploy──▶ Deployed
-                     │                                                      │
-                     ├─▶ Rejected (comment required)                        └─▶ Revert … (new request)
-                     └─▶ Withdrawn                       Conflict / Failed (can be redeployed)
+                     │                                  │                   │
+                     ├─▶ Rejected (comment required)    ├─▶ Failed ─▶ deploy again
+                     └─▶ Withdrawn                      └─▶ Conflict ─▶ submit again on the current state
+                                                                            └─▶ Revert … (new request)
 ```
 
 - The requester can never approve their own request, whatever their role, superadmins included.
 - The number of required approvals (1–3 distinct people) is fixed when the request is submitted.
 - Approvers must re-authenticate if their sign-in is older than 30 minutes (configurable); two-factor
-  authentication can be required.
+  authentication can be required. The same applies to approvals via Telegram: they count only within that time
+  after a web sign-in that met the two-factor requirement.
 - Before writing, the tool reads the firewall's live configuration. If the affected objects changed since
   submission, deployment stops with **Conflict** instead of overwriting someone else's change.
 - If an API call fails, changes already written are rolled back.

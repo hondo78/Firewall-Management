@@ -94,6 +94,53 @@ def test_telegram_link_and_approve_button(client, admin, fake, outbox):
     assert "ungültig" in outbox["telegram"][-1][1]
 
 
+def test_telegram_approval_needs_fresh_sign_in_and_mfa(client, admin, fake, outbox):
+    """Telegram-Freigaben gelten nur mit derselben Anmeldequalität wie im Web (reauth_minutes, Zwei-Faktor-Pflicht)."""
+    from datetime import timedelta
+    from app.db import SessionLocal
+    from app.models import User, utcnow
+    enable_all(client, admin)
+    fw_id = setup_firewall(client, admin)
+    op = make_user(client, admin, "operator", [("Operator", None)])
+    ap = make_user(client, admin, "approver", [("Approver", None)])
+    code = client.post("/api/auth/telegram-link", headers=ap).json()["code"]
+    notify.handle_update({"message": {"text": f"/start {code}", "chat": {"id": 4711}}})
+    cid = submit_new_rule(client, fw_id, op)
+
+    def tap(n):
+        notify.handle_update({"callback_query": {"id": f"q{n}", "data": f"approve:{cid}", "message": {"chat": {"id": 4711}}}})
+        return outbox["tg_calls"][-1][1]["text"]
+
+    # Web-Anmeldung liegt länger als reauth_minutes (30) zurück → abgewiesen
+    with SessionLocal() as db:
+        u = db.query(User).filter(User.username == "approver").one()
+        u.last_auth_at = utcnow() - timedelta(hours=2)
+        db.commit()
+    assert "Minuten" in tap(1)
+    assert client.get(f"/api/changes/{cid}", headers=op).json()["status"] == "pending"
+    refused = client.get("/api/audit", headers=admin, params={"action": "change.decision_refused"}).json()["items"]
+    assert refused and refused[0]["details"]["channel"] == "telegram"
+
+    # Frische Anmeldung, aber Zwei-Faktor-Pflicht und Anmeldung ohne zweiten Faktor → abgewiesen
+    from .conftest import login
+    login(client, "approver", "secret-password-1")
+    from app import settings as app_settings
+
+    def require_mfa(mode):
+        # direkt in der DB: mit aktiver Pflicht wäre auch die Admin-Sitzung des Tests gesperrt
+        with SessionLocal() as db:
+            app_settings.set_many(db, {"require_mfa": mode})
+            db.commit()
+    require_mfa("privileged")
+    assert "zweitem Faktor" in tap(2)
+    assert client.get(f"/api/changes/{cid}", headers=op).json()["status"] == "pending"
+
+    # Ohne Zwei-Faktor-Pflicht und mit frischer Anmeldung → genehmigt
+    require_mfa("none")
+    tap(3)
+    assert client.get(f"/api/changes/{cid}", headers=op).json()["status"] == "approved"
+
+
 def test_key_expiry_reminder_levels(client, admin, fake, outbox):
     from datetime import datetime, timedelta, timezone
     from app.db import SessionLocal

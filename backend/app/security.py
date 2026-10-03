@@ -30,7 +30,29 @@ def create_token(user: User, *, mfa: bool = False, source: str = "local") -> str
     now = utcnow()
     payload = {"sub": user.id, "iat": int(now.timestamp()), "exp": now + timedelta(hours=config.JWT_HOURS),
                "mfa": mfa, "src": source}
+    # Jede ausgestellte Sitzung ist eine vollständige Anmeldung – für Freigaben ohne Web-Sitzung festhalten
+    user.last_auth_at, user.last_auth_mfa, user.last_auth_src = now, mfa, source
+    from sqlalchemy.orm import object_session
+    session = object_session(user)
+    if session is not None:
+        session.commit()
     return jwt.encode(payload, config.JWT_SECRET, algorithm="HS256")
+
+
+def decision_auth_problem(db, user: User) -> str | None:
+    """Freigaben ohne Web-Sitzung (Telegram): dieselben Regeln wie im Web, gemessen an der letzten Web-Anmeldung.
+    - erneute Anmeldung: sie darf nicht länger als reauth_minutes zurückliegen
+    - Zwei-Faktor-Pflicht: diese Anmeldung muss mit zweitem Faktor (bzw. SSO, falls es als MFA zählt) erfolgt sein
+    Gibt die Begründung zurück, warum nicht freigegeben werden darf, sonst None."""
+    from . import mfa, settings
+    minutes = int(settings.get(db, "reauth_minutes"))
+    last = user.last_auth_at
+    if minutes and (last is None or (utcnow() - last).total_seconds() > minutes * 60):
+        return tr('Freigabe nur bis {0} Minuten nach einer Anmeldung im Web – bitte im Web anmelden und erneut tippen '
+                  '(oder dort genehmigen)', minutes)
+    if mfa.required(db, user) and not mfa_satisfied(db, {"mfa": user.last_auth_mfa, "src": user.last_auth_src}):
+        return tr('Freigabe nur nach einer Anmeldung mit zweitem Faktor – bitte im Web mit Zwei-Faktor anmelden')
+    return None
 
 
 def create_purpose_token(user: User, purpose: str, minutes: int = 5) -> str:

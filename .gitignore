@@ -6,6 +6,4 @@ __pycache__/
 .sfos-key
 
 # Zwischenstände der Demo-Aufnahme (docs/demo/README.md)
-docs/demo/video*/
-docs/demo/shots*/
-docs/demo/err.png
+docs/demo/out/

@@ -442,5 +442,7 @@
  "Übersprungen – für „{0}“ läuft gerade ein anderer Export (Synchronisation, Sicherung oder Sophos Central). Kein Fehler; später erneut prüfen. ({1})": "Skipped – another export is running for “{0}” (synchronisation, backup or Sophos Central). Not an error; check again later. ({1})",
  "MDR-Threat-Feed: nach dem letzten Fehler vorübergehend nicht abgefragt – letzter Stand bleibt erhalten": "MDR threat feed: temporarily not queried after the last error – keeping the last known state",
  "MDR-Indikatoren waren bereits entfernt: {0}": "MDR indicators were already removed: {0}",
- "MDR-Indikatoren waren bereits vorhanden: {0}": "MDR indicators already existed: {0}"
+ "MDR-Indikatoren waren bereits vorhanden: {0}": "MDR indicators already existed: {0}",
+ "Freigabe nur bis {0} Minuten nach einer Anmeldung im Web – bitte im Web anmelden und erneut tippen (oder dort genehmigen)": "Approval only up to {0} minutes after a web sign-in – sign in on the web and tap again (or approve there)",
+ "Freigabe nur nach einer Anmeldung mit zweitem Faktor – bitte im Web mit Zwei-Faktor anmelden": "Approval only after a sign-in with a second factor – sign in on the web with two-factor authentication"
 }

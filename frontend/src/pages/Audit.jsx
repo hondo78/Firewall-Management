@@ -14,7 +14,7 @@ export const AUDIT_LABEL = {
   'central.firewall_updated': t("Firewall in Central geändert"), 'central.firewall_approved': t("Central-Verwaltung freigegeben"),
   'central.firewall_deleted': t("Firewall aus Central entfernt"), 'central.group_created': t("Central-Gruppe angelegt"),
   'central.group_updated': t("Central-Gruppe geändert"), 'central.group_deleted': t("Central-Gruppe gelöscht"),
-  'central.firewall_linked': t("Central-Zuordnung geändert"),
+  'central.firewall_linked': t("Central-Zuordnung geändert"), 'change.decision_refused': t("Freigabe abgewiesen (Anmeldung)"),
   'group.created': t("Gruppe angelegt"), 'group.updated': t("Gruppe geändert"), 'group.deleted': t("Gruppe gelöscht"),
   'firewall.created': t("Firewall hinzugefügt"), 'firewall.updated': t("Firewall-Anbindung geändert"),
   'firewall.removed': t("Firewall entfernt"), 'firewall.synced': t("Firewall synchronisiert"),
@@ -61,7 +61,7 @@ export default function Audit() {
         : t("Hash-Kette unterbrochen bei Eintrag #{0} – Log wurde nachträglich verändert!", verify.broken_at)}</div>}
       <div className="panel panel-pad" style={{ marginBottom: 14 }}>
         <div className="form-grid">
-          <select value={filter.action} onChange={set('action')} aria-label={t("Bereich")}>{PREFIXES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+          <select value={filter.action} onChange={set('action')} aria-label={t("Ereignisbereich")}>{PREFIXES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
           <input placeholder={t("Benutzer")} value={filter.actor} onChange={set('actor')} />
           <input placeholder={t("Suche in Details …")} value={filter.q} onChange={set('q')} />
           <input type="date" value={filter.since} onChange={set('since')} aria-label={t("Von")} />
