@@ -4,7 +4,7 @@ import { api, can, fmt } from '../../api'
 import { useAuth } from '../../App'
 import { Empty, ErrorBox, Field, Modal, Seg, useLoad } from '../../components/ui'
 import { t } from '../../i18n'
-import { Pager, usePaging } from './tableParts'
+import { Pager, store, usePaging } from './tableParts'
 
 /**
  * Verbindungsanalyse: Verbindungen aus den Syslog-Firewall-Logs eines Zeitraums als Netzwerkplan und Tabelle.
@@ -21,6 +21,8 @@ const local = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.ge
 const label = (e, side) => e[`${side}_name`] || e[side]
 const port = (e) => (e.dst_port ? `${e.protocol}/${e.dst_port}` : e.protocol)
 const size = (b) => (b > 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b > 1e3 ? `${(b / 1e3).toFixed(0)} kB` : `${b} B`)
+/** Externe Zone(n): WAN, bei mehreren Uplinks auch Varianten wie „WAN2“ */
+const isWan = (zone) => /^wan/i.test(zone || '')
 const ref = (e) => ({ src: e.src, dst: e.dst, protocol: e.protocol, dst_port: e.dst_port })
 
 /** Zonen von links nach rechts: intern zuerst, WAN zuletzt */
@@ -262,6 +264,9 @@ export default function FlowsTab({ fw }) {
   const [verdict, setVerdict] = useState('all')
   const [action, setAction] = useState('all')
   const [q, setQ] = useState('')
+  // Verbindungen von/zur WAN-Zone ausblenden (gemerkt) – übersichtlicher für den internen Verkehr
+  const [hideWan, setHideWanState] = useState(() => store.get('fwm.flows.hideWan', false))
+  const setHideWan = (v) => { setHideWanState(v); store.set('fwm.flows.hideWan', v) }
   const [selected, setSelected] = useState(new Set())
   const [note, setNote] = useState('')
   const [msg, setMsg] = useState(null)
@@ -278,7 +283,8 @@ export default function FlowsTab({ fw }) {
   const edges = useMemo(() => (data?.edges || []).filter((e) =>
     (verdict === 'all' || (verdict === 'open' ? !e.verdict : e.verdict === verdict))
     && (action === 'all' || e.action === action)
-    && (!f || `${e.src} ${e.dst} ${e.src_name} ${e.dst_name} ${port(e)} ${e.service} ${e.src_zone} ${e.dst_zone}`.toLowerCase().includes(f))), [data, verdict, action, f])
+    && (!hideWan || (!isWan(e.src_zone) && !isWan(e.dst_zone)))
+    && (!f || `${e.src} ${e.dst} ${e.src_name} ${e.dst_name} ${port(e)} ${e.service} ${e.src_zone} ${e.dst_zone}`.toLowerCase().includes(f))), [data, verdict, action, f, hideWan])
   const paging = usePaging('flows', edges.length)
   const [openPair, setOpenPair] = useState(null)
   // Paar aus den aktuellen Daten – nach dem Einstufen mit neuen Einstufungen
@@ -337,6 +343,8 @@ export default function FlowsTab({ fw }) {
       <div className="row small" style={{ flexWrap: 'wrap', gap: 10 }}>
         <Seg options={[['all', t("Alle")], ['open', t("Nicht eingestuft")], ['legit', t("Legitim")], ['illegit', t("Nicht legitim")]]} value={verdict} onChange={setVerdict} />
         <Seg options={[['all', t("Erlaubt + blockiert")], ['allow', t("Erlaubt")], ['deny', t("Blockiert")]]} value={action} onChange={setAction} />
+        <label className="check small"><input type="checkbox" checked={hideWan} onChange={(e) => { setHideWan(e.target.checked); paging.setPage(0) }} />
+          <span>{t("WAN ausblenden")}</span></label>
         <input placeholder={t("Suchen (IP, Name, Port, Zone) …")} value={q} onChange={(e) => { setQ(e.target.value); paging.setPage(0) }} style={{ flex: 1, minWidth: 200 }} />
       </div>
       {mayClassify && selected.size > 0 && <div className="panel panel-pad row flow-selbar" style={{ flexWrap: 'wrap', gap: 8 }}>

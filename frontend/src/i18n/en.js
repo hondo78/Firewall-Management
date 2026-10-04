@@ -1632,6 +1632,7 @@ export default {
   "WAF-Regeln": "WAF rules",
   "Wählen Sie die Quellzonen, Netzwerke und Geräte aus.": "Select the source zones, networks and devices.",
   "Wählen Sie die Zielzonen, Netzwerke, Geräte und Dienste aus.": "Select the destination zones, networks, devices and services.",
+  "WAN ausblenden": "Hide WAN",
   "Warnen": "Warn",
   "Warten auf Ihre Genehmigung": "Awaiting your approval",
   "Wartet auf Genehmigung": "Awaiting approval",
