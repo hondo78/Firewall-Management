@@ -254,6 +254,87 @@ function TemplateModal({ fw, range, level, prefix, onClose }) {
   )
 }
 
+/** Alle Verbindungen nach der Firewall-Regel einstufen, die sie erlaubt bzw. blockiert hat */
+function RuleClassifyModal({ fw, edges, level, onClose, onDone }) {
+  // Regel → Verbindungen; ohne Regelname (z. B. Standard-Drop, ungültiger Verkehr) als eigene Gruppe
+  const rules = useMemo(() => {
+    const map = new Map()
+    edges.forEach((e) => {
+      (e.rules.length ? e.rules : ['']).forEach((r) => {
+        const k = `${e.action}|${r}`
+        const g = map.get(k) || { key: k, rule: r, action: e.action, edges: [] }
+        g.edges.push(e)
+        map.set(k, g)
+      })
+    })
+    return [...map.values()].sort((a, b) => (a.action === b.action ? b.edges.length - a.edges.length : a.action === 'allow' ? -1 : 1))
+  }, [edges])
+  const [choice, setChoice] = useState({})
+  const [onlyOpen, setOnlyOpen] = useState(true)
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const preset = () => setChoice(Object.fromEntries(rules.map((g) => [g.key, g.action === 'allow' ? 'legit' : 'illegit'])))
+  const targets = (v) => {
+    const out = new Map()
+    rules.filter((g) => choice[g.key] === v).forEach((g) => g.edges
+      .filter((e) => !onlyOpen || !e.verdict)
+      .forEach((e) => out.set(e.key, ref(e))))
+    return [...out.values()]
+  }
+  const legit = targets('legit')
+  const illegit = targets('illegit')
+  const run = async () => {
+    setBusy(true); setError('')
+    try {
+      let n = 0
+      for (const [v, items] of [['legit', legit], ['illegit', illegit]]) {
+        for (let i = 0; i < items.length; i += 2000) {
+          const r = await api(`/firewalls/${fw.id}/flows/decisions`, { method: 'POST', body: { items: items.slice(i, i + 2000), verdict: v,
+            note: note || t("Nach Firewall-Regel eingestuft") } })
+          n += r.updated
+        }
+      }
+      onDone(t("{0} Verbindungen nach Firewall-Regel eingestuft ({1} legitim, {2} nicht legitim).", n, legit.length, illegit.length))
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={t("Nach Firewall-Regel einstufen")} onClose={onClose} wide>
+      <div className="stack">
+        <div className="muted small">{t("Alle Verbindungen des gewählten Zeitraums, die eine Regel erlaubt bzw. blockiert hat, auf einmal einstufen. Die Einstufung gilt auf der aktuellen Ebene ({0}).", level === 'net' ? t("Netze (/24)") : t("Hosts"))}</div>
+        <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <button className="sm" onClick={preset}>{t("Erlaubende Regeln → legitim, blockierende → nicht legitim")}</button>
+          <button className="sm ghost" onClick={() => setChoice({})}>{t("Alle auf „nicht ändern“")}</button>
+          <label className="check small"><input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} />
+            <span>{t("Nur noch nicht eingestufte Verbindungen (bestehende Entscheidungen bleiben)")}</span></label>
+        </div>
+        <div className="table-wrap" style={{ maxHeight: 380, overflowY: 'auto' }}>
+          <table className="no-resize">
+            <thead><tr><th>{t("Firewall-Regel")}</th><th>{t("Aktion")}</th><th>{t("Verbindungen")}</th><th>{t("davon offen")}</th><th>{t("Einstufen als")}</th></tr></thead>
+            <tbody>{rules.map((g) => {
+              const open = g.edges.filter((e) => !e.verdict).length
+              return (
+                <tr key={g.key}>
+                  <td>{g.rule ? <b>{g.rule}</b> : <span className="muted">{g.action === 'deny' ? t("ohne Regel (Standard-Drop, ungültiger Verkehr)") : t("ohne Regelname im Log")}</span>}</td>
+                  <td>{g.action === 'deny' ? <span className="badge b-warn">{t("blockiert")}</span> : <span className="badge">{t("erlaubt")}</span>}</td>
+                  <td className="num">{g.edges.length}</td>
+                  <td className="num">{open}</td>
+                  <td><Seg options={[['', t("nicht ändern")], ['legit', t("legitim")], ['illegit', t("nicht legitim")]]} value={choice[g.key] || ''}
+                    onChange={(v) => setChoice({ ...choice, [g.key]: v })} /></td>
+                </tr>)
+            })}</tbody>
+          </table>
+        </div>
+        <input placeholder={t("Notiz (optional), z. B. Ticket oder Begründung")} value={note} onChange={(e) => setNote(e.target.value)} />
+        <div className="small"><b>{t("Wird eingestuft: {0} legitim, {1} nicht legitim", legit.length, illegit.length)}</b></div>
+        <ErrorBox error={error} />
+        <div className="modal-foot"><button onClick={onClose}>{t("Abbrechen")}</button>
+          <button className="primary" disabled={busy || !(legit.length + illegit.length)} onClick={run}>{busy ? t("Stufe ein …") : t("Einstufen")}</button></div>
+      </div>
+    </Modal>
+  )
+}
+
 export default function FlowsTab({ fw }) {
   const { me } = useAuth()
   const mayClassify = can(me, 'change.create', fw)
@@ -271,6 +352,7 @@ export default function FlowsTab({ fw }) {
   const [note, setNote] = useState('')
   const [msg, setMsg] = useState(null)
   const [modal, setModal] = useState(false)
+  const [ruleModal, setRuleModal] = useState(false)
   const [tick, setTick] = useState(0)
   const range = useMemo(() => {
     if (preset === 'custom') return { start: new Date(custom.start).toISOString(), end: new Date(custom.end).toISOString() }
@@ -322,6 +404,7 @@ export default function FlowsTab({ fw }) {
         <button className="sm" onClick={() => setTick(tick + 1)}>{t("Aktualisieren")}</button>
         <div className="right row">
           <Seg options={[['plan', t("Netzwerkplan")], ['table', t("Tabelle")]]} value={view} onChange={setView} />
+          {mayClassify && <button className="sm" onClick={() => setRuleModal(true)}>{t("Nach Firewall-Regel einstufen …")}</button>}
           {mayClassify && <button className="primary sm" onClick={() => setModal(true)}>{t("Regeln als Vorlage erzeugen …")}</button>}
         </div>
       </div>
@@ -388,6 +471,8 @@ export default function FlowsTab({ fw }) {
             <Pager total={edges.length} {...paging} />
             <div className="muted small" style={{ padding: '0 12px 10px' }}>{t("* Einstufung von einem umfassenderen Netz übernommen.")}</div>
           </div>}
+      {ruleModal && <RuleClassifyModal fw={fw} edges={data.edges} level={level} onClose={() => setRuleModal(false)}
+        onDone={(text) => { setRuleModal(false); setMsg({ kind: 'ok', text }); setTick(tick + 1) }} />}
       {modal && <TemplateModal fw={fw} range={range} level={level} prefix={data.rule_prefix} onClose={() => setModal(false)} />}
     </div>
   )

@@ -100,6 +100,7 @@ The SFOS REST API only returns WAF rules as `ruleType: waf` with a placeholder `
     reuses existing hosts and services, creates missing ones as `<prefix>H_…`, `<prefix>N_…_<len>`, `<prefix>TCP_<port>`,
     puts drop rules first, and converts to REST via `importer.to_rest`. Non-TCP/UDP flows are skipped with a note.
 - The map draws **one line per host pair** (zones + addresses, `pairsOf`), labelled with its ports. Clicking a line opens `PairPanel`, the submenu that lists every port of the pair and classifies them one by one or all together. The line colour reflects the ports: green when all are legit, red when any is illegit, amber when only some are classified.
+- `RuleClassifyModal` classifies by firewall rule: it groups the period's edges by (action, `fw_rule_name`; an empty name means default drop or invalid traffic) and posts decisions in chunks of 2000. A preset maps allowing rules to legit and blocking ones to illegit. By default it only touches unclassified edges.
 - Classifying needs `change.create`. The template goes through the normal template push (four-eyes). The mock's
   `POST /mock/syslog` generates realistic traffic for tests and demos.
 
