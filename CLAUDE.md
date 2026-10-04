@@ -80,6 +80,28 @@ The SFOS REST API only returns WAF rules as `ruleType: waf` with a placeholder `
 - The group diff is `GET /api/groups/{id}/drift?reference=`.
 - **Lint:** `lint.py` normalizes rules from both formats into `Rule` (sets, None = any). `for_change` reports only findings the request introduces (compared by `_key`, which ignores positions). `analyze` gives the full report. "unused" only checks rules, groups and NAT, not VPN or web filter, which is why the UI collapses these hints.
 
+### Connection analysis (`flows/`, `routers/flows.py`, `pages/firewall/FlowsTab.jsx`)
+- `flows/receiver.py` receives firewall logs via syslog: UDP is one thread with an 8 MB receive buffer, because a
+  thread per datagram lost about half the packets under load; TCP uses socketserver with RFC 6587 octet counting. It
+  listens on container port `SYSLOG_LISTEN_PORT` (5140), mapped to host `FWM_SYSLOG_PORT` (514); `0` turns it off and
+  the tests use that. It is started from `main.lifespan`, independent of the worker.
+- It parses SFOS key=value logs (v19+ `device_serial_id`, `log_subtype`, `bytes_sent`; older `device_id`, `status`,
+  `sent_bytes`). Only `log_type="Firewall"` with src/dst IPs is used.
+- `Collector` sums flows in memory and upserts them every `FLOW_FLUSH_SECONDS` into **hourly** `flow_buckets`. Raw logs
+  are never stored. `worker._flow_cleanup` deletes buckets older than `flows_retention_days`.
+- `syslog_senders` maps sender IP → firewall: automatically when the log serial matches `firewalls.serial`, otherwise
+  by an admin, who also copies the serial onto the firewall because REST firewalls do not report it. Messages from
+  unassigned senders are counted as `ignored` with a sample.
+- `flows/analysis.py`:
+  - `query` aggregates the buckets of a period at level `host` or `net` (/24), labels them with object names from the
+    cached config, and attaches `flow_decisions` (IP or CIDR; the most specific match wins, inherited ones are marked).
+  - `build_template_items` turns classified edges into template items: allow for legit, drop for illegit, one rule
+    per (action, zones, destination, service) with all sources, so there is no source×destination cross product. It
+    reuses existing hosts and services, creates missing ones as `<prefix>H_…`, `<prefix>N_…_<len>`, `<prefix>TCP_<port>`,
+    puts drop rules first, and converts to REST via `importer.to_rest`. Non-TCP/UDP flows are skipped with a note.
+- Classifying needs `change.create`. The template goes through the normal template push (four-eyes). The mock's
+  `POST /mock/syslog` generates realistic traffic for tests and demos.
+
 ### Notifications (`notify/`)
 - `notify.change_event(id, kind)` is called **inside** the workflow functions (submit/decide/deploy/expire…), so web and Telegram trigger the same messages. It runs in a thread pool; tests set `notify.SYNC = True` (SQLite StaticPool).
 - Channels: SMTP, a Teams workflow webhook with an Adaptive Card, a Slack incoming webhook with Block Kit (`deliver(..., teams=(title, lines, url))` feeds both Teams and Slack; `urgent` adds the configured `@here`/`@channel`; webhook URLs must be https), and Telegram (long polling in a thread started by the worker, linked via a one-time code; `approve:<id>` callbacks go through `changes.decide` after `security.decision_auth_problem`: the same reauth window and MFA requirement as the web, measured against the user's last full sign-in, `users.last_auth_at/_mfa/_src`, which `create_token` records; refusals are audited as `change.decision_refused`).

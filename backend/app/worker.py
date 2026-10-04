@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import threading
+import time
 from datetime import timedelta
 
 from sqlalchemy import or_, select
@@ -150,12 +151,27 @@ def _recover_stuck() -> None:
         db.commit()
 
 
+_last_flow_cleanup = 0.0
+
+
+def _flow_cleanup() -> None:
+    """Stündlich: zusammengefasste Verbindungen jenseits der Aufbewahrungsdauer löschen."""
+    global _last_flow_cleanup
+    if time.time() - _last_flow_cleanup < 3600:
+        return
+    _last_flow_cleanup = time.time()
+    from .flows import receiver
+    n = receiver.cleanup()
+    if n:
+        log.info("Verbindungsanalyse: %s alte Einträge gelöscht", n)
+
+
 async def run_forever() -> None:
     await asyncio.to_thread(_recover_stuck)
     stop = threading.Event()
     threading.Thread(target=notify.run_telegram_forever, args=(stop,), daemon=True, name="telegram").start()
     while True:
-        for step in (_expire_due, _deploy_due, _sync_due, _backup_due, notify.check_reminders):
+        for step in (_expire_due, _deploy_due, _sync_due, _backup_due, notify.check_reminders, _flow_cleanup):
             try:
                 await asyncio.to_thread(in_default_language(step))
             except Exception:

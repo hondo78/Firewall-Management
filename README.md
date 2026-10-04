@@ -87,6 +87,20 @@ The [approval guide](docs/approval-guide.md) walks through the whole flow with s
 - Firmware updates (check, schedule, cancel), licences and open alerts per firewall, export of selected object
   types with dependencies.
 
+**Connection analysis from firewall logs**
+- The firewalls send their firewall logs via syslog (UDP/TCP, port 514). The tool aggregates them per hour into
+  connections: source, destination, protocol, port, zones, allowed/blocked, count, bytes. Raw logs are not stored.
+- Tab *Connections* per firewall: a **network map** (zones as columns, hosts or /24 networks as nodes, connections
+  coloured by classification) and a table, for a selectable period. IPs are labelled with the firewall's object names.
+- Classify connections (or whole networks) as **legitimate** or **not legitimate**, with a note; the more specific
+  classification wins.
+- **Create rules as a template**: legitimate connections become allow rules, illegitimate ones drop rules, with a
+  configurable **name prefix**. One rule per destination and service with all observed sources, so a rule allows only
+  what was actually seen. Existing host and service objects are reused; missing ones are created with the prefix.
+  The template is rolled out like any other, through a change request with four-eyes approval.
+- Senders are matched to firewalls by the serial number in the log, or assigned by hand under
+  *Administration › Settings*.
+
 **Backups and history**
 - Scheduled backups of every firewall's configuration (daily/weekly/monthly, retention, pinning, optional file
   copies), manual backups, download, compare with the current state, restore through a draft.
@@ -130,6 +144,11 @@ accounts, *Firewall › Settings › Dry run* for single firewalls. It changes n
   organisation accounts, select the tenant after saving.
 - **XML API**: on the firewall, enable *Backup & firmware › API*, allow this server's IP and use a dedicated API
   administrator.
+- **Firewall logs (connection analysis)**: on the firewall, add a syslog server under *System services › Log
+  settings* (this server's IP, port 514, UDP or TCP, format "Standard syslog protocol") and enable the *Firewall*
+  logs for it. Logging must be enabled in the firewall rules you want to see. Firewalls connected via the REST API do
+  not report their serial number, so assign the sender once under *Administration › Settings › Syslog senders*; the
+  serial number is then taken over from the log.
 
 API quirks found on real systems (paths that differ between guide and spec, page sizes, S3 upload headers,
 transactions without a status) are documented in [docs/sophos-api-notes.md](docs/sophos-api-notes.md).
@@ -169,6 +188,7 @@ Settings in `.env`:
 | `POSTGRES_PASSWORD` | Database password. |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | First superadmin, only used while the user table is empty. |
 | `FWM_PORT` | Host port of the UI (default 8096). |
+| `FWM_SYSLOG_PORT` | Host port for receiving firewall logs via syslog, UDP and TCP (default 514). |
 | `TZ` | Time zone for schedules and display (default Europe/Berlin). |
 | `SYSLOG_HOST`, `SYSLOG_PORT`, `SYSLOG_PROTOCOL` | Optional audit forwarding via syslog. |
 | `COMPOSE_PROFILES` | `mock` starts the Sophos mock. |

@@ -61,6 +61,12 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   Vier-Augen-Prinzip durchläuft. Anträge verweisen auf Vorlage und Version.
 - **Regel-Prüfung**: Any-Any, offen aus dem Internet, verdeckte/redundante Regeln, fehlende Protokollierung,
   ungenutzte/doppelte Objekte – beim Einreichen, für den Approver und als Tab „Analyse“.
+- **Verbindungsanalyse aus Firewall-Logs**: Die Firewalls senden ihre Firewall-Logs per Syslog (UDP/TCP, Port 514);
+  das Tool fasst sie stündlich zu Verbindungen zusammen (ohne Rohlogs). Tab *Verbindungen*: **Netzwerkplan** (Zonen als
+  Spalten, Hosts bzw. /24-Netze als Knoten) und Tabelle für einen wählbaren Zeitraum; Verbindungen oder ganze Netze als
+  **legitim / nicht legitim** einstufen. Daraus **Regeln als Vorlage** mit einstellbarem **Präfix**: Allow für legitime,
+  Drop für nicht legitime Verbindungen, je Ziel und Dienst mit allen beobachteten Quellen; vorhandene Objekte werden
+  wiederverwendet. Ausgerollt wird über einen Antrag mit Vier-Augen-Freigabe.
 - **Benachrichtigungen**: E-Mail, Microsoft Teams, Slack (Incoming Webhook, optional @here bei neuen Anträgen), Telegram (mit Genehmigen-Knopf) für neue Anträge, Entscheidungen,
   Ausrollen/Fehler, ablaufende Befristungen und API-Keys sowie Änderungen außerhalb des Tools.
 - **Anmeldung**: Zwei-Faktor (TOTP) wahlweise verpflichtend, SSO per OpenID Connect (Entra ID, Authentik, Keycloak …)
@@ -101,6 +107,14 @@ die XML-API von vier Demo-Firewalls nachbildet:
 Für den Produktivbetrieb `COMPOSE_PROFILES=` leeren (Stand dieser Installation: Attrappe ist aus,
 Demo-Benutzer und Demo-Firewalls sind deaktiviert bzw. entfernt). Wieder einschalten:
 `COMPOSE_PROFILES=mock docker compose up -d sophos-mock`.
+
+### Firewall-Logs (Verbindungsanalyse)
+
+Auf der Firewall unter *System services › Log settings* einen Syslog-Server anlegen (IP dieses Servers, Port 514 –
+`FWM_SYSLOG_PORT` –, UDP oder TCP, Format „Standard syslog protocol“) und dafür die *Firewall*-Logs aktivieren. In den
+Firewall-Regeln muss die Protokollierung an sein. Über REST angebundene Firewalls melden keine Seriennummer – den
+Absender einmal unter *Administration › Einstellungen › Syslog-Absender* zuordnen; danach wird die Seriennummer aus dem
+Log übernommen.
 
 ### Echte Firewalls
 

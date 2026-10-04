@@ -542,3 +542,22 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 table.cols-fixed { min-width: 100%; }
 table.cols-fixed th, table.cols-fixed td { overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
 table.cols-fixed td.actions, table.cols-fixed th.actions { overflow: visible; }
+
+/* Verbindungsanalyse: Netzwerkplan */
+.flow-plan { overflow: auto; max-height: 75vh; }
+.flow-plan svg { display: block; }
+.flow-zone { fill: var(--panel-2); stroke: var(--border); }
+.flow-zone-label { fill: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.flow-node { cursor: pointer; }
+.flow-node rect { fill: var(--panel); stroke: var(--border); }
+.flow-node rect.sel { stroke: var(--accent); stroke-width: 2; }
+.flow-node:hover rect { stroke: var(--accent); }
+.flow-node-name { font-size: 12px; fill: var(--text); font-weight: 600; }
+.flow-node-addr { font-size: 10.5px; fill: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; }
+.flow-edge { cursor: pointer; }
+.flow-edge:hover { opacity: 1 !important; stroke-width: 4; }
+.flow-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; align-items: center; }
+.flow-legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 4px; }
+.flow-legend i.dash { background: repeating-linear-gradient(90deg, var(--muted) 0 6px, transparent 6px 10px); }
+.flow-selbar { position: sticky; top: 8px; z-index: 5; box-shadow: var(--shadow); }
+tr.selected td { background: var(--accent-soft); }

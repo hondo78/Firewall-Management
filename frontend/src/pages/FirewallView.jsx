@@ -9,6 +9,7 @@ import { Chips, DiffTable, Empty, ErrorBox, Field, Modal, Status, Tabs, useLoad 
 import { SyncState } from './Firewalls'
 import Diagnose from '../components/Diagnose'
 import AnalysisTab from './firewall/AnalysisTab'
+import FlowsTab from './firewall/FlowsTab'
 import Editor from './firewall/Editor'
 import CentralTab from './firewall/CentralTab'
 import Findings from '../components/Findings'
@@ -254,7 +255,7 @@ export default function FirewallView() {
   }
   if (error) return <ErrorBox error={error} />
   if (!fw) return null
-  const tabs = [['config', t("Konfiguration")], ['analysis', t("Analyse")], ['compare', t("Vergleich & Versionen")], ['changes', t("Anträge")], ['backups', t("Sicherungen")],
+  const tabs = [['config', t("Konfiguration")], ['analysis', t("Analyse")], ['flows', t("Verbindungen")], ['compare', t("Vergleich & Versionen")], ['changes', t("Anträge")], ['backups', t("Sicherungen")],
     fw.central_id && ['firmware', t("Firmware")], fw.central_id && ['central', t("Lizenzen & Alerts")], can(me, 'firewall.manage', fw) && ['settings', t("Einstellungen")]]
 
   return (
@@ -287,6 +288,7 @@ export default function FirewallView() {
       <Tabs tabs={tabs} value={tab} onChange={(t) => nav(`/firewalls/${id}/${t}`)} />
       {tab === 'config' && (cfgError ? <ErrorBox error={cfgError} /> : cfg && <Editor key={cfg.format} fw={fw} cfg={cfg} draft={draft} reload={reload} />)}
       {tab === 'analysis' && <AnalysisTab fw={fw} onDraftChanged={reload} />}
+      {tab === 'flows' && <FlowsTab fw={fw} />}
       {tab === 'compare' && <CompareTab fw={fw} />}
       {tab === 'changes' && <ChangesTab fw={fw} />}
       {tab === 'firmware' && <FirmwareTab fw={fw} />}

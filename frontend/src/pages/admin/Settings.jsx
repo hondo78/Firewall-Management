@@ -82,9 +82,62 @@ export default function SettingsPage() {
         </div>}
         <label className="check"><input type="checkbox" checked={form.backup_to_directory} onChange={(e) => setForm({ ...form, backup_to_directory: e.target.checked })} />
           <span>{t("Sicherungen zusätzlich als Datei ablegen")} <span className="muted small">{t("(Verzeichnis")} <code>{t("backups/")}</code> {t("im Projektordner, gzip-JSON – z. B. für die Datensicherung des Servers)")}</span></span></label>
+        <h3 style={{ margin: '10px 0 0' }}>{t("Verbindungsanalyse (Syslog)")}</h3>
+        <label className="check"><input type="checkbox" checked={form.flows_enabled} onChange={(e) => setForm({ ...form, flows_enabled: e.target.checked })} />
+          <span>{t("Firewall-Logs per Syslog auswerten")} <span className="muted small">{t("(Netzwerkplan und Einstufung im Firewall-Tab „Verbindungen“)")}</span></span></label>
+        <div className="form-grid">
+          <Field label={t("Aufbewahrung (Tage)")} hint={t("Zusammengefasste Verbindungen; Rohlogs werden nicht gespeichert")}>
+            <input type="number" min={1} max={365} value={form.flows_retention_days} onChange={(e) => setForm({ ...form, flows_retention_days: Number(e.target.value) })} />
+          </Field>
+          <Field label={t("Standard-Präfix für erzeugte Regeln")} hint={t("Buchstaben, Ziffern, _ . - (max. 20)")}>
+            <input value={form.flows_rule_prefix} maxLength={20} onChange={(e) => setForm({ ...form, flows_rule_prefix: e.target.value })} />
+          </Field>
+        </div>
         {msg && <div className={`alert ${msg.kind}`}>{msg.text}</div>}
         <div><button className="primary" onClick={save}>{t("Speichern")}</button></div>
       </div>
+      <SyslogSenders />
     </>
+  )
+}
+
+/** Absender von Syslog-Nachrichten: automatisch über die Seriennummer zugeordnet oder hier von Hand */
+function SyslogSenders() {
+  const [data, error, reload] = useLoad(() => api('/flows/senders'), [])
+  const [fws] = useLoad(() => api('/firewalls'), [])
+  const [msg, setMsg] = useState(null)
+  const assign = async (ip, firewallId) => {
+    try { await api(`/flows/senders/${ip}`, { method: 'PUT', body: { firewall_id: firewallId || null } }); reload() } catch (e) { setMsg(e.message) }
+  }
+  const remove = async (ip) => {
+    try { await api(`/flows/senders/${ip}`, { method: 'DELETE' }); reload() } catch (e) { setMsg(e.message) }
+  }
+  if (error) return <ErrorBox error={error} />
+  if (!data) return null
+  return (
+    <div className="panel stack" style={{ maxWidth: 1100, marginTop: 16 }}>
+      <div className="panel-head"><h3>{t("Syslog-Absender")}</h3>
+        <span className="muted small">{data.receiver_port ? t("Empfang auf Port {0} (UDP und TCP)", data.receiver_port) : t("Syslog-Empfang ist abgeschaltet (SYSLOG_LISTEN_PORT=0)")}</span></div>
+      <ErrorBox error={msg} />
+      {!data.senders.length ? <div className="panel-pad muted small">{t("Noch keine Syslog-Nachrichten empfangen. Auf der Firewall unter System services › Log settings diesen Server als Syslog-Server eintragen.")}</div> : (
+        <div className="table-wrap"><table>
+          <thead><tr><th>{t("Absender")}</th><th>{t("Gerät / Seriennummer")}</th><th>{t("Nachrichten")}</th><th>{t("Nicht ausgewertet")}</th><th>{t("Zuletzt")}</th><th>{t("Firewall")}</th><th className="actions" /></tr></thead>
+          <tbody>{data.senders.map((s) => (
+            <tr key={s.ip}>
+              <td className="mono">{s.ip}</td>
+              <td className="small">{s.device_name || '–'}<div className="muted mono">{s.serial || ''}</div></td>
+              <td className="num">{s.messages.toLocaleString()}</td>
+              <td className="num" title={s.sample || ''}>{s.ignored.toLocaleString()}</td>
+              <td className="small">{new Date(s.last_seen).toLocaleString()}</td>
+              <td><select value={s.firewall_id || ''} onChange={(e) => assign(s.ip, e.target.value)} aria-label={t("Firewall zuordnen")}>
+                <option value="">{t("– nicht zugeordnet –")}</option>
+                {(fws || []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select></td>
+              <td className="actions"><button className="sm ghost" onClick={() => remove(s.ip)}>{t("Entfernen")}</button></td>
+            </tr>))}
+          </tbody>
+        </table></div>)}
+      <div className="panel-pad muted small" style={{ paddingTop: 0 }}>{t("Nachrichten nicht zugeordneter Absender werden gezählt, aber nicht ausgewertet. Als „nicht ausgewertet“ zählen außerdem Logs, die keine Firewall-Verbindung beschreiben (z. B. Web-Filter, System).")}</div>
+    </div>
   )
 }

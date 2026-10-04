@@ -33,6 +33,10 @@ DEFAULTS: dict = {
     "backup_monthday": 1,              # 1–31 (monatlich; kürzere Monate → letzter Tag)
     "backup_keep": 30,                 # je Firewall aufbewahrte, nicht angeheftete Sicherungen
     "backup_to_directory": False,      # zusätzlich als Datei in BACKUP_DIR (Volume) ablegen
+    # Verbindungsanalyse: Firewall-Logs per Syslog empfangen und als Verbindungen zusammenfassen
+    "flows_enabled": True,
+    "flows_retention_days": 30,        # zusammengefasste Verbindungen so lange aufbewahren
+    "flows_rule_prefix": "FLOW_",      # Präfix für Regeln und Objekte, die aus Einstufungen erzeugt werden
 }
 
 
@@ -72,6 +76,13 @@ def set_many(db: DbSession, values: dict) -> dict:
             value = max(0, min(value, 6))
         if key == "backup_monthday":
             value = max(1, min(value, 31))
+        if key == "flows_retention_days":
+            value = max(1, min(value, 365))
+        if key == "flows_rule_prefix":
+            import re
+            value = value.strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{0,20}", value):
+                raise ValueError("flows_rule_prefix")
         if key == "backup_keep":
             value = max(1, min(value, 1000))
         if get(db, key) != value:

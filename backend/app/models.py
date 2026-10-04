@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, TypeDecorator,
-                        UniqueConstraint)
+from sqlalchemy import (JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text,
+                        TypeDecorator, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -278,6 +278,63 @@ class ChangeEvent(Base):
     actor_name: Mapped[str] = mapped_column(String(200), default="system")
     kind: Mapped[str] = mapped_column(String(30))
     text: Mapped[str] = mapped_column(Text, default="")
+
+
+class FlowBucket(Base):
+    """Verbindungen aus den Syslog-Firewall-Logs, je Stunde zusammengefasst (keine Rohlogs – das Volumen bliebe sonst
+    unbeherrschbar). Schlüssel: Firewall, Stunde, Quelle, Ziel, Protokoll, Zielport, Zonen, Aktion, Regel."""
+    __tablename__ = "flow_buckets"
+    __table_args__ = (UniqueConstraint("firewall_id", "hour", "src_ip", "dst_ip", "protocol", "dst_port", "src_zone",
+                                       "dst_zone", "action", "rule_id", name="uq_flow_bucket"),
+                      Index("ix_flow_fw_hour", "firewall_id", "hour"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    firewall_id: Mapped[str] = mapped_column(ForeignKey("firewalls.id", ondelete="CASCADE"))
+    hour: Mapped[datetime] = mapped_column(TZDateTime())
+    src_ip: Mapped[str] = mapped_column(String(45))
+    dst_ip: Mapped[str] = mapped_column(String(45))
+    protocol: Mapped[str] = mapped_column(String(12))
+    dst_port: Mapped[int] = mapped_column(Integer, default=0)          # 0 = ohne Port (ICMP …)
+    src_zone: Mapped[str] = mapped_column(String(60), default="")
+    dst_zone: Mapped[str] = mapped_column(String(60), default="")
+    action: Mapped[str] = mapped_column(String(10))                    # allow | deny
+    rule_id: Mapped[str] = mapped_column(String(20), default="")
+    rule_name: Mapped[str] = mapped_column(String(200), default="")
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    first_seen: Mapped[datetime] = mapped_column(TZDateTime())
+    last_seen: Mapped[datetime] = mapped_column(TZDateTime())
+
+
+class FlowDecision(Base):
+    """Einstufung einer Verbindung durch einen Admin: legitim oder nicht legitim. src/dst sind IPs oder Netze (CIDR) –
+    eine Entscheidung für ein Netz gilt für alle Verbindungen daraus, sofern es keine genauere gibt."""
+    __tablename__ = "flow_decisions"
+    __table_args__ = (UniqueConstraint("firewall_id", "src", "dst", "protocol", "dst_port", name="uq_flow_decision"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    firewall_id: Mapped[str] = mapped_column(ForeignKey("firewalls.id", ondelete="CASCADE"), index=True)
+    src: Mapped[str] = mapped_column(String(50))
+    dst: Mapped[str] = mapped_column(String(50))
+    protocol: Mapped[str] = mapped_column(String(12))
+    dst_port: Mapped[int] = mapped_column(Integer, default=0)
+    verdict: Mapped[str] = mapped_column(String(10))                   # legit | illegit
+    note: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+
+
+class SyslogSender(Base):
+    """Absender von Syslog-Nachrichten. Zuordnung zur Firewall automatisch über die Seriennummer im Log oder von Hand;
+    Nachrichten nicht zugeordneter Absender werden gezählt, aber nicht ausgewertet."""
+    __tablename__ = "syslog_senders"
+    ip: Mapped[str] = mapped_column(String(45), primary_key=True)
+    firewall_id: Mapped[str | None] = mapped_column(ForeignKey("firewalls.id", ondelete="SET NULL"), nullable=True)
+    serial: Mapped[str] = mapped_column(String(60), default="")
+    device_name: Mapped[str] = mapped_column(String(200), default="")
+    messages: Mapped[int] = mapped_column(BigInteger, default=0)
+    ignored: Mapped[int] = mapped_column(BigInteger, default=0)       # nicht ausgewertet (keine Firewall, kein Verkehr)
+    first_seen: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+    sample: Mapped[str] = mapped_column(Text, default="")
 
 
 class Setting(Base):

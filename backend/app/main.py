@@ -10,7 +10,7 @@ from . import config, crypto, migrations, permissions, worker
 from .audit import audit
 from .db import Base, SessionLocal, engine
 from .models import Role, User
-from .routers import admin, audit_log, auth, central, changes, firewalls, notifications, templates, backups
+from .routers import admin, audit_log, auth, central, changes, firewalls, flows, notifications, templates, backups
 from .security import hash_password
 from .i18n import tr
 
@@ -58,7 +58,16 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(migrations.run)
     await asyncio.to_thread(bootstrap)
     tasks = [] if config.DISABLE_WORKER else [asyncio.create_task(worker.run_forever())]
+    # Syslog-Empfang der Firewall-Logs (Verbindungsanalyse) – eigener Thread, unabhängig vom Worker
+    import threading
+    from .flows import receiver
+    stop = threading.Event()
+    servers = receiver.start(stop)
     yield
+    stop.set()
+    for srv in servers:
+        srv.shutdown()
+    receiver.collector.flush()
     for t in tasks:
         t.cancel()
 
@@ -77,7 +86,7 @@ async def language_middleware(request: Request, call_next):
         i18n._current.reset(token)
 
 
-for r in (auth, admin, central, firewalls, changes, audit_log, notifications, templates, backups):
+for r in (auth, admin, central, firewalls, changes, audit_log, notifications, templates, backups, flows):
     app.include_router(r.router)
 
 

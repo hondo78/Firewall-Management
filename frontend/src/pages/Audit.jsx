@@ -15,6 +15,7 @@ export const AUDIT_LABEL = {
   'central.firewall_deleted': t("Firewall aus Central entfernt"), 'central.group_created': t("Central-Gruppe angelegt"),
   'central.group_updated': t("Central-Gruppe geändert"), 'central.group_deleted': t("Central-Gruppe gelöscht"),
   'central.firewall_linked': t("Central-Zuordnung geändert"), 'change.decision_refused': t("Freigabe abgewiesen (Anmeldung)"),
+  'flows.classified': t("Verbindungen eingestuft"), 'flows.sender_assigned': t("Syslog-Absender zugeordnet"), 'flows.sender_deleted': t("Syslog-Absender entfernt"),
   'group.created': t("Gruppe angelegt"), 'group.updated': t("Gruppe geändert"), 'group.deleted': t("Gruppe gelöscht"),
   'firewall.created': t("Firewall hinzugefügt"), 'firewall.updated': t("Firewall-Anbindung geändert"),
   'firewall.removed': t("Firewall entfernt"), 'firewall.synced': t("Firewall synchronisiert"),
@@ -29,7 +30,7 @@ export const AUDIT_LABEL = {
 
 const PREFIXES = [['', t("Alle Bereiche")], ['auth.', t("Anmeldungen")], ['change.', t("Anträge")], ['firewall.', t("Firewalls")],
   ['config.', t("Konfiguration")], ['firmware.', t("Firmware")], ['user.', t("Benutzer")], ['role.', t("Rollen")],
-  ['central.', t("Sophos Central")], ['settings.', t("Einstellungen")], ['audit.', t("Audit")]]
+  ['central.', t("Sophos Central")], ['flows.', t("Verbindungsanalyse")], ['settings.', t("Einstellungen")], ['audit.', t("Audit")]]
 
 function target(e) {
   if (e.target_type === 'change') return <Link to={`/changes/${e.target_id}`}>{e.details?.number ? crNo(e.details.number) : t("Antrag")}</Link>

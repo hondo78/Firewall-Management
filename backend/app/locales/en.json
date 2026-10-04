@@ -444,5 +444,19 @@
  "MDR-Indikatoren waren bereits entfernt: {0}": "MDR indicators were already removed: {0}",
  "MDR-Indikatoren waren bereits vorhanden: {0}": "MDR indicators already existed: {0}",
  "Freigabe nur bis {0} Minuten nach einer Anmeldung im Web – bitte im Web anmelden und erneut tippen (oder dort genehmigen)": "Approval only up to {0} minutes after a web sign-in – sign in on the web and tap again (or approve there)",
- "Freigabe nur nach einer Anmeldung mit zweitem Faktor – bitte im Web mit Zwei-Faktor anmelden": "Approval only after a sign-in with a second factor – sign in on the web with two-factor authentication"
+ "Freigabe nur nach einer Anmeldung mit zweitem Faktor – bitte im Web mit Zwei-Faktor anmelden": "Approval only after a sign-in with a second factor – sign in on the web with two-factor authentication",
+ "Aus Verbindungsanalyse": "From connection analysis",
+ "{0} Verbindungen ohne TCP/UDP-Port bzw. mit IPv6 übersprungen": "{0} connections without a TCP/UDP port or with IPv6 skipped",
+ "IPv6 wird für Regeln noch nicht unterstützt": "IPv6 is not yet supported for rules",
+ "Aus Verbindungsanalyse: {0} Verbindungen": "From connection analysis: {0} connections",
+ "Ungültige Adresse „{0}“": "Invalid address “{0}”",
+ "Aus der Verbindungsanalyse von „{0}“, {1:%d.%m.%Y %H:%M} – {2:%d.%m.%Y %H:%M} (UTC): {3} Allow-, {4} Drop-Regeln.": "From the connection analysis of “{0}”, {1:%Y-%m-%d %H:%M} – {2:%Y-%m-%d %H:%M} (UTC): {3} allow and {4} drop rules.",
+ "{0}Verbindungen {1} {2:%Y-%m-%d}": "{0}Connections {1} {2:%Y-%m-%d}",
+ "Der Beginn muss vor dem Ende liegen": "The start must be before the end",
+ "Zeitraum höchstens ein Jahr": "The period may be at most one year",
+ "Ebene muss host oder net sein": "Level must be host or net",
+ "Einstufung muss legit oder illegit sein": "Classification must be legit or illegit",
+ "Präfix: nur Buchstaben, Ziffern, _ . - (höchstens 20 Zeichen)": "Prefix: only letters, digits, _ . - (at most 20 characters)",
+ "Keine eingestuften Verbindungen im Zeitraum – erst Verbindungen als legitim bzw. nicht legitim einstufen": "No classified connections in the period – first classify connections as legitimate or not legitimate",
+ "Absender nicht gefunden": "Sender not found"
 }

@@ -50,3 +50,8 @@ BACKUP_DIR = _env("BACKUP_DIR", "/backups")
 
 # Worker im Test abschalten
 DISABLE_WORKER = _env("DISABLE_WORKER") == "1"
+# Syslog-Empfang der Firewall-Logs (Verbindungsanalyse): Port im Container, UDP und TCP; 0 = aus
+SYSLOG_LISTEN_PORT = int(_env("SYSLOG_LISTEN_PORT", "5140"))
+FLOW_FLUSH_SECONDS = float(_env("FLOW_FLUSH_SECONDS", "5"))
+# Port, unter dem die Firewalls den Empfang erreichen (Host-Port aus docker-compose) – nur zur Anzeige
+SYSLOG_PUBLIC_PORT = int(_env("SYSLOG_PUBLIC_PORT", "514"))

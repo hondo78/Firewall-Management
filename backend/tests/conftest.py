@@ -7,6 +7,7 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["FWM_MASTER_KEY"] = base64.b64encode(b"k" * 32).decode()
 os.environ["ADMIN_PASSWORD"] = "admin-password-123"
 os.environ["DISABLE_WORKER"] = "1"
+os.environ["SYSLOG_LISTEN_PORT"] = "0"          # kein Syslog-Empfang in Tests
 os.environ["JWT_SECRET"] = "test"
 
 import pytest  # noqa: E402

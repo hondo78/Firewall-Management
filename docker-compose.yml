@@ -34,6 +34,7 @@ services:
       SYSLOG_PORT: ${SYSLOG_PORT:-514}
       SYSLOG_PROTOCOL: ${SYSLOG_PROTOCOL:-udp}
       BACKUP_DIR: /backups
+      SYSLOG_PUBLIC_PORT: ${FWM_SYSLOG_PORT:-514}
     volumes:
       # Sicherungsdateien (nur wenn „zusätzlich als Datei ablegen“ aktiv ist)
       - ./backups:/backups
@@ -41,6 +42,10 @@ services:
       - "host.docker.internal:host-gateway"
     expose:
       - "8000"
+    ports:
+      # Syslog-Empfang der Firewall-Logs (Verbindungsanalyse); FWM_SYSLOG_PORT leer → Port 514
+      - "${FWM_SYSLOG_PORT:-514}:5140/udp"
+      - "${FWM_SYSLOG_PORT:-514}:5140/tcp"
 
   frontend:
     build: ./frontend

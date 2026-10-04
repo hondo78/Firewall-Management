@@ -750,6 +750,68 @@ async def xml_api(serial: str, request: Request):
     return xml_response(out)
 
 
+# --- Syslog-Generator (Verbindungsanalyse) -------------------------------------------------------------------
+# Erzeugt Firewall-Logs im SFOS-Format (ab v19: device_serial_id, log_type="Firewall", …) und sendet sie per UDP/TCP
+# an den Syslog-Empfang des Tools. Verkehr passend zu den Demo-Objekten der Zentrale, inkl. ein paar Auffälligkeiten.
+
+TRAFFIC = [
+    # (Anteil, Quelle, Zielzone, Ziel, Protokoll, Port, Quellzone, Aktion, Regel-ID, Regelname)
+    (30, "lan", "WAN", ["8.8.8.8", "1.1.1.1"], "UDP", 53, "LAN", "Allowed", "1", "LAN nach Internet"),
+    (40, "lan", "WAN", ["142.250.185.78", "151.101.1.69", "104.16.132.229"], "TCP", 443, "LAN", "Allowed", "1", "LAN nach Internet"),
+    (8, "lan", "WAN", ["91.189.91.39"], "TCP", 80, "LAN", "Allowed", "1", "LAN nach Internet"),
+    (6, "lan", "WAN", ["162.159.200.1"], "UDP", 123, "LAN", "Allowed", "1", "LAN nach Internet"),
+    (12, "wan", "DMZ", ["10.10.20.10"], "TCP", 443, "WAN", "Allowed", "2", "Internet nach Webserver"),
+    (5, "wan", "DMZ", ["10.10.20.25"], "TCP", 25, "WAN", "Allowed", "3", "Mail eingehend"),
+    (6, "lan", "DMZ", ["10.10.20.25"], "TCP", 587, "LAN", "Allowed", "4", "Mail ausgehend"),
+    (4, "admin", "DMZ", ["10.10.20.10", "10.10.20.25"], "TCP", 22, "LAN", "Allowed", "5", "Admin-Zugriff DMZ"),
+    (2, "lan", "WAN", ["203.0.113.66"], "TCP", 4444, "LAN", "Allowed", "1", "LAN nach Internet"),
+    (3, "wan", "DMZ", ["10.10.20.10"], "TCP", 22, "WAN", "Denied", "0", ""),
+    (2, "wan", "LAN", ["192.168.10.2"], "TCP", 3389, "WAN", "Denied", "0", ""),
+    (2, "lan", "WAN", ["8.8.4.4"], "ICMP", 0, "LAN", "Allowed", "1", "LAN nach Internet"),
+]
+WAN_SOURCES = ["198.51.100.7", "203.0.113.20", "192.0.2.44", "185.220.101.5", "45.155.205.233"]
+
+
+def syslog_line(fw: dict, rnd) -> str:
+    import random as _r  # noqa: F401
+    share = [t[0] for t in TRAFFIC]
+    _, src_kind, dz, dsts, proto, port, sz, sub, rid, rname = rnd.choices(TRAFFIC, weights=share)[0]
+    src = {"lan": f"192.168.10.{rnd.randint(20, 80)}", "admin": f"192.168.10.{rnd.randint(200, 205)}",
+           "wan": rnd.choice(WAN_SOURCES)}[src_kind]
+    sent, recv = rnd.randint(60, 4000), rnd.randint(60, 90000)
+    status = "Allow" if sub == "Allowed" else "Deny"
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
+    port_part = f'src_port={rnd.randint(1024, 65000)} dst_port={port} ' if proto in ("TCP", "UDP") else ""
+    return (f'<30>device_name="SFW" timestamp="{ts}" device_model="{fw["model"].split("_")[0]}" '
+            f'device_serial_id="{fw["serial"]}" log_id="010101600001" log_type="Firewall" log_component="Firewall Rule" '
+            f'log_subtype="{sub}" log_version=1 severity="Information" fw_rule_id="{rid}" fw_rule_name="{rname}" '
+            f'fw_rule_type="NETWORK" status="{status}" src_zone_type="{sz}" src_zone="{sz}" dst_zone_type="{dz}" '
+            f'dst_zone="{dz}" src_ip="{src}" dst_ip="{rnd.choice(dsts)}" protocol="{proto}" {port_part}'
+            f'bytes_sent={sent} bytes_received={recv} in_interface="Port1" out_interface="Port2"')
+
+
+@app.post("/mock/syslog")
+async def send_syslog(request: Request):
+    """{"target": "backend", "port": 5140, "serial": "X21002ZENTRALE1", "count": 500, "transport": "udp"}"""
+    import random
+    import socket
+    body = await request.json()
+    fw = state["firewalls"].get(body.get("serial", "X21002ZENTRALE1"))
+    if not fw:
+        raise HTTPException(404, "unknown serial")
+    rnd = random.Random(body.get("seed"))
+    lines = [syslog_line(fw, rnd) for _ in range(int(body.get("count", 200)))]
+    host, port = body.get("target", "backend"), int(body.get("port", 5140))
+    if body.get("transport", "udp") == "tcp":
+        with socket.create_connection((host, port), timeout=10) as s:
+            s.sendall(("\n".join(lines) + "\n").encode())
+    else:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            for line in lines:
+                s.sendto(line.encode(), (host, port))
+    return {"sent": len(lines), "example": lines[0]}
+
+
 # --- Test-Helfer ---------------------------------------------------------------------------------------------
 
 @app.post("/mock/reset")
