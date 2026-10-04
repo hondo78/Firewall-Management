@@ -29,62 +29,102 @@ function zoneOrder(zones) {
   return [...zones].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
 }
 
-function Plan({ edges, selected, onToggle, onToggleMany }) {
-  const shown = edges.slice(0, PLAN_MAX)
+/** Eine Linie je Host-Paar (Zone + Adresse auf beiden Seiten); die Ports stehen an der Linie und im Untermenü. */
+function pairsOf(edges) {
+  const map = new Map()
+  edges.forEach((e) => {
+    const k = `${e.src_zone || '–'}|${e.src}|${e.dst_zone || '–'}|${e.dst}`
+    const p = map.get(k) || { key: k, src: e.src, dst: e.dst, src_name: e.src_name, dst_name: e.dst_name,
+      src_zone: e.src_zone || '–', dst_zone: e.dst_zone || '–', count: 0, edges: [] }
+    p.count += e.count
+    p.edges.push(e)
+    map.set(k, p)
+  })
+  map.forEach((p) => {
+    p.edges.sort((a, b) => b.count - a.count)
+    const v = new Set(p.edges.map((e) => e.verdict || 'open'))
+    p.state = v.has('illegit') ? 'illegit' : v.size === 1 && v.has('legit') ? 'legit' : v.has('legit') ? 'mixed' : 'open'
+    p.denied = p.edges.every((e) => e.action === 'deny')
+    const ports = [...new Set(p.edges.map(port))]
+    p.label = ports.slice(0, 2).join(', ') + (ports.length > 2 ? ` +${ports.length - 2}` : '')
+  })
+  return [...map.values()].sort((a, b) => b.count - a.count)
+}
+
+const PAIR_COLOR = { ...COLOR, mixed: 'var(--warn)' }
+
+function Plan({ edges, selected, openPair, onOpenPair, onToggleMany }) {
+  const allPairs = useMemo(() => pairsOf(edges), [edges])
+  const pairs = allPairs.slice(0, PLAN_MAX)
   const { nodes, columns, height } = useMemo(() => {
     const byKey = new Map()
-    const add = (zone, addr, name, count) => {
+    const add = (zone, addr, name, count, keys) => {
       const k = `${zone}|${addr}`
       const n = byKey.get(k) || { key: k, zone, addr, name, count: 0, edges: [] }
       n.count += count
+      n.edges.push(...keys)
       byKey.set(k, n)
       return n
     }
-    shown.forEach((e) => {
-      const s = add(e.src_zone || '–', e.src, e.src_name, e.count)
-      const d = add(e.dst_zone || '–', e.dst, e.dst_name, e.count)
-      s.edges.push(e.key); d.edges.push(e.key)
+    pairs.forEach((p) => {
+      const keys = p.edges.map((e) => e.key)
+      add(p.src_zone, p.src, p.src_name, p.count, keys)
+      add(p.dst_zone, p.dst, p.dst_name, p.count, keys)
     })
     const cols = zoneOrder(new Set([...byKey.values()].map((n) => n.zone)))
     let maxRows = 0
     cols.forEach((z, ci) => {
       const list = [...byKey.values()].filter((n) => n.zone === z).sort((a, b) => b.count - a.count)
-      list.forEach((n, ri) => { n.x = 40 + ci * 300; n.y = 56 + ri * 46 })
+      list.forEach((n, ri) => { n.x = 40 + ci * 340; n.y = 56 + ri * 46 })
       maxRows = Math.max(maxRows, list.length)
     })
     return { nodes: byKey, columns: cols, height: 80 + maxRows * 46 }
-  }, [shown])
+  }, [pairs])
   const W = 190
   const H = 34
-  const width = Math.max(columns.length * 300 + 40, 600)
-  const path = (e) => {
-    const s = nodes.get(`${e.src_zone || '–'}|${e.src}`)
-    const d = nodes.get(`${e.dst_zone || '–'}|${e.dst}`)
+  const width = Math.max(columns.length * 340, 600)
+  const geo = (p) => {
+    const s = nodes.get(`${p.src_zone}|${p.src}`)
+    const d = nodes.get(`${p.dst_zone}|${p.dst}`)
     const sy = s.y + H / 2
     const dy = d.y + H / 2
-    if (d.x > s.x) return `M${s.x + W},${sy} C${s.x + W + 70},${sy} ${d.x - 70},${dy} ${d.x},${dy}`
-    if (d.x < s.x) return `M${s.x},${sy} C${s.x - 70},${sy} ${d.x + W + 70},${dy} ${d.x + W},${dy}`
-    return `M${s.x + W},${sy} C${s.x + W + 60},${sy} ${d.x + W + 60},${dy} ${d.x + W},${dy}`
+    let pts
+    if (d.x > s.x) pts = [s.x + W, sy, s.x + W + 80, sy, d.x - 80, dy, d.x, dy]
+    else if (d.x < s.x) pts = [s.x, sy, s.x - 80, sy, d.x + W + 80, dy, d.x + W, dy]
+    else pts = [s.x + W, sy, s.x + W + 70, sy, d.x + W + 70, dy, d.x + W, dy]
+    const [x0, y0, x1, y1, x2, y2, x3, y3] = pts
+    // Mitte der Bézierkurve (t = 0,5) für die Port-Beschriftung
+    const mx = (x0 + 3 * x1 + 3 * x2 + x3) / 8
+    const my = (y0 + 3 * y1 + 3 * y2 + y3) / 8
+    return { d: `M${x0},${y0} C${x1},${y1} ${x2},${y2} ${x3},${y3}`, mx, my }
   }
+  const labelled = new Set(pairs.slice(0, 40).map((p) => p.key))
   return (
     <div className="flow-plan">
-      {edges.length > PLAN_MAX && <div className="muted small">{t("Der Plan zeigt die {0} häufigsten von {1} Verbindungen – Filter oder die Netz-Ebene nutzen; die Tabelle zeigt alle.", PLAN_MAX, edges.length)}</div>}
+      {allPairs.length > PLAN_MAX && <div className="muted small">{t("Der Plan zeigt die {0} häufigsten von {1} Verbindungen – Filter oder die Netz-Ebene nutzen; die Tabelle zeigt alle.", PLAN_MAX, allPairs.length)}</div>}
       <svg width={width} height={height} role="img" aria-label={t("Netzwerkplan")}>
         {columns.map((z, i) => (
           <g key={z}>
-            <rect x={20 + i * 300} y={8} width={230} height={height - 16} rx={10} className="flow-zone" />
-            <text x={135 + i * 300} y={32} textAnchor="middle" className="flow-zone-label">{z}</text>
+            <rect x={20 + i * 340} y={8} width={230} height={height - 16} rx={10} className="flow-zone" />
+            <text x={135 + i * 340} y={32} textAnchor="middle" className="flow-zone-label">{z}</text>
           </g>
         ))}
-        {shown.map((e) => {
-          const sel = selected.has(e.key)
-          const v = e.verdict || 'open'
+        {pairs.map((p) => {
+          const g = geo(p)
+          const open = openPair === p.key
+          const sel = p.edges.some((e) => selected.has(e.key))
+          const dim = (openPair && !open) || (selected.size && !sel && !open)
           return (
-            <path key={e.key + e.action + e.src_zone + e.dst_zone} d={path(e)} fill="none" stroke={COLOR[v]}
-              strokeWidth={(sel ? 3 : 1) + Math.log10(e.count + 1)} strokeDasharray={e.action === 'deny' ? '6 4' : undefined}
-              opacity={selected.size && !sel ? 0.25 : 0.85} className="flow-edge" onClick={() => onToggle(e.key)}>
-              <title>{`${label(e, 'src')} → ${label(e, 'dst')} · ${port(e)}${e.service ? ` (${e.service})` : ''} · ${e.action === 'deny' ? t("blockiert") : t("erlaubt")} · ${e.count}× · ${e.verdict ? VERDICT[e.verdict][0] : t("nicht eingestuft")}`}</title>
-            </path>
+            <g key={p.key} className="flow-edge" onClick={() => onOpenPair(open ? null : p.key)} opacity={dim ? 0.25 : 0.9}>
+              <path d={g.d} fill="none" stroke="transparent" strokeWidth={12} />
+              <path d={g.d} fill="none" stroke={PAIR_COLOR[p.state]} strokeWidth={(open || sel ? 3 : 1) + Math.log10(p.count + 1)}
+                strokeDasharray={p.denied ? '6 4' : undefined} />
+              {(labelled.has(p.key) || open) && <g transform={`translate(${g.mx},${g.my})`}>
+                <rect x={-(p.label.length * 3.4) - 5} y={-9} width={p.label.length * 6.8 + 10} height={17} rx={8} className="flow-port-bg" />
+                <text textAnchor="middle" y={4} className="flow-port">{p.label}</text>
+              </g>}
+              <title>{`${label(p, 'src')} → ${label(p, 'dst')}\n${p.edges.map((e) => `${port(e)}${e.service ? ` (${e.service})` : ''} · ${e.count}× · ${e.verdict ? VERDICT[e.verdict][0] : t("nicht eingestuft")}`).join('\n')}`}</title>
+            </g>
           )
         })}
         {[...nodes.values()].map((n) => {
@@ -102,10 +142,57 @@ function Plan({ edges, selected, onToggle, onToggleMany }) {
       <div className="flow-legend small">
         <span><i style={{ background: COLOR.open }} /> {t("nicht eingestuft")}</span>
         <span><i style={{ background: COLOR.legit }} /> {t("legitim")}</span>
-        <span><i style={{ background: COLOR.illegit }} /> {t("nicht legitim")}</span>
+        <span><i style={{ background: PAIR_COLOR.mixed }} /> {t("teilweise eingestuft")}</span>
+        <span><i style={{ background: COLOR.illegit }} /> {t("mind. ein Port nicht legitim")}</span>
         <span><i className="dash" /> {t("von der Firewall blockiert")}</span>
-        <span className="muted">{t("Linie anklicken = auswählen, Knoten anklicken = alle seine Verbindungen")}</span>
+        <span className="muted">{t("Linie anklicken = Ports dieser Verbindung, Knoten anklicken = alle seine Verbindungen auswählen")}</span>
       </div>
+    </div>
+  )
+}
+
+/** Untermenü einer Verbindung zwischen zwei Hosts: alle Ports einzeln oder zusammen einstufen */
+function PairPanel({ pair, mayClassify, onClassify, onClose }) {
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const run = async (edges, v) => { setBusy(true); try { await onClassify(edges, v, note) } finally { setBusy(false) } }
+  return (
+    <div className="flow-pair panel">
+      <div className="panel-head">
+        <div style={{ minWidth: 0 }}>
+          <b>{label(pair, 'src')}</b> <span className="muted">→</span> <b>{label(pair, 'dst')}</b>
+          <div className="muted small">{pair.src} ({pair.src_zone}) → {pair.dst} ({pair.dst_zone})</div>
+        </div>
+        <button className="ghost sm right" onClick={onClose} aria-label={t("Schließen")}>×</button>
+      </div>
+      <div className="flow-pair-body">
+        <table className="no-resize">
+          <thead><tr><th>{t("Port")}</th><th>{t("Anzahl")}</th><th>{t("Einstufung")}</th>{mayClassify && <th />}</tr></thead>
+          <tbody>{pair.edges.map((e) => (
+            <tr key={e.key + e.action}>
+              <td><span className="mono">{port(e)}</span>{e.service && <div className="muted small">{e.service}</div>}
+                {e.action === 'deny' && <div><span className="badge b-warn">{t("blockiert")}</span></div>}</td>
+              <td className="num small">{e.count.toLocaleString()}<div className="muted">{size(e.bytes)}</div></td>
+              <td>{e.verdict ? <span className={`badge ${VERDICT[e.verdict][1]}`} title={e.note || ''}>{VERDICT[e.verdict][0]}{!e.verdict_exact && ' *'}</span> : <span className="muted small">–</span>}</td>
+              {mayClassify && <td className="nowrap">
+                <button className="sm flow-ok" disabled={busy} title={t("legitim")} onClick={() => run([e], 'legit')}>✓</button>{' '}
+                <button className="sm danger" disabled={busy} title={t("nicht legitim")} onClick={() => run([e], 'illegit')}>✕</button>{' '}
+                {e.verdict && e.verdict_exact && <button className="sm ghost" disabled={busy} title={t("Einstufung entfernen")} onClick={() => run([e], null)}>↺</button>}
+              </td>}
+            </tr>))}
+          </tbody>
+        </table>
+      </div>
+      {mayClassify && <div className="flow-pair-foot stack">
+        <input placeholder={t("Notiz (optional), z. B. Ticket oder Begründung")} value={note} onChange={(ev) => setNote(ev.target.value)} />
+        <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+          <span className="small muted">{t("Alle {0} Ports:", pair.edges.length)}</span>
+          <button className="sm flow-ok" disabled={busy} onClick={() => run(pair.edges, 'legit')}>{t("legitim")}</button>
+          <button className="sm danger" disabled={busy} onClick={() => run(pair.edges, 'illegit')}>{t("nicht legitim")}</button>
+          <button className="sm" disabled={busy} onClick={() => run(pair.edges, null)}>{t("zurücksetzen")}</button>
+        </div>
+      </div>}
+      <div className="muted small" style={{ padding: '0 12px 10px' }}>{t("* von einem umfassenderen Netz übernommen – „zurücksetzen“ wirkt nur auf eigene Einstufungen.")}</div>
     </div>
   )
 }
@@ -193,6 +280,9 @@ export default function FlowsTab({ fw }) {
     && (action === 'all' || e.action === action)
     && (!f || `${e.src} ${e.dst} ${e.src_name} ${e.dst_name} ${port(e)} ${e.service} ${e.src_zone} ${e.dst_zone}`.toLowerCase().includes(f))), [data, verdict, action, f])
   const paging = usePaging('flows', edges.length)
+  const [openPair, setOpenPair] = useState(null)
+  // Paar aus den aktuellen Daten – nach dem Einstufen mit neuen Einstufungen
+  const pair = useMemo(() => (openPair ? pairsOf(edges).find((p) => p.key === openPair) || null : null), [openPair, edges])
   const toggle = (k) => { const s = new Set(selected); s.has(k) ? s.delete(k) : s.add(k); setSelected(s) }
   const toggleMany = (keys) => {
     const s = new Set(selected)
@@ -200,13 +290,14 @@ export default function FlowsTab({ fw }) {
     keys.forEach((k) => (all ? s.delete(k) : s.add(k)))
     setSelected(s)
   }
-  const classify = async (v) => {
-    const items = (data?.edges || []).filter((e) => selected.has(e.key))
+  const classify = async (v, edgeList = null, noteText = note) => {
+    const items = edgeList || (data?.edges || []).filter((e) => selected.has(e.key))
     const unique = [...new Map(items.map((e) => [e.key, ref(e)])).values()]
     try {
-      const r = await api(`/firewalls/${fw.id}/flows/decisions`, { method: 'POST', body: { items: unique, verdict: v, note } })
+      const r = await api(`/firewalls/${fw.id}/flows/decisions`, { method: 'POST', body: { items: unique, verdict: v, note: noteText } })
       setMsg({ kind: 'ok', text: v ? t("{0} Verbindungen als „{1}“ eingestuft.", r.updated, VERDICT[v][0]) : t("Einstufung von {0} Verbindungen entfernt.", r.updated) })
-      setSelected(new Set()); setNote(''); setTick(tick + 1)
+      if (!edgeList) { setSelected(new Set()); setNote('') }
+      setTick(tick + 1)
     } catch (e) { setMsg({ kind: 'error', text: e.message }) }
   }
 
@@ -257,7 +348,12 @@ export default function FlowsTab({ fw }) {
         <button className="sm ghost" onClick={() => setSelected(new Set())}>{t("Auswahl aufheben")}</button>
       </div>}
       {!edges.length ? <div className="panel"><Empty>{t("Keine Verbindungen für diese Auswahl.")}</Empty></div>
-        : view === 'plan' ? <div className="panel panel-pad"><Plan edges={edges} selected={selected} onToggle={toggle} onToggleMany={toggleMany} /></div>
+        : view === 'plan' ? <div className="flow-plan-wrap">
+          <div className="panel panel-pad" style={{ minWidth: 0, flex: 1 }}>
+            <Plan edges={edges} selected={selected} openPair={pair?.key} onOpenPair={setOpenPair} onToggleMany={toggleMany} /></div>
+          {pair && <PairPanel key={pair.key} pair={pair} mayClassify={mayClassify} onClose={() => setOpenPair(null)}
+            onClassify={(list, v, n) => classify(v, list, n)} />}
+        </div>
           : <div className="panel table-wrap">
             <table>
               <thead><tr>

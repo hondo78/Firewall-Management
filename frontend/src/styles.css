@@ -561,3 +561,12 @@ table.cols-fixed td.actions, table.cols-fixed th.actions { overflow: visible; }
 .flow-legend i.dash { background: repeating-linear-gradient(90deg, var(--muted) 0 6px, transparent 6px 10px); }
 .flow-selbar { position: sticky; top: 8px; z-index: 5; box-shadow: var(--shadow); }
 tr.selected td { background: var(--accent-soft); }
+.flow-plan-wrap { display: flex; gap: 12px; align-items: flex-start; }
+.flow-pair { width: 400px; flex-shrink: 0; position: sticky; top: 8px; max-height: 85vh; display: flex; flex-direction: column; }
+.flow-pair-body { overflow-y: auto; }
+.flow-pair-body td, .flow-pair-body th { padding: 6px 10px; }
+.flow-pair-foot { padding: 10px 12px; border-top: 1px solid var(--border); }
+.flow-port-bg { fill: var(--panel); stroke: var(--border); }
+.flow-port { font-size: 10.5px; fill: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; pointer-events: none; }
+button.flow-ok { border-color: var(--ok); color: var(--ok); }
+@media (max-width: 1100px) { .flow-plan-wrap { flex-direction: column; } .flow-pair { width: 100%; position: static; } }
