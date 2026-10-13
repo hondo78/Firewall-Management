@@ -87,6 +87,21 @@ The [approval guide](docs/approval-guide.md) walks through the whole flow with s
 - Firmware updates (check, schedule, cancel), licences and open alerts per firewall, export of selected object
   types with dependencies.
 
+**Migration assistant** (like in Sophos Firewall Config Studio)
+- Take over the configuration of **FortiGate** (`.conf`), **Palo Alto** (`running-config.xml`), **SonicWall** (`.exp`),
+  **WatchGuard** (Fireware XML), **Sophos UTM** (Entities.xml from `migrate.pl`) or another **Sophos Firewall**.
+- An overview per vendor shows what is migrated; after the upload a **migration report** lists every area as
+  supported, partial, manual or not supported, with the affected objects.
+- Source interfaces and zones are **mapped to Sophos zones**, with suggestions from role and name. An optional name
+  prefix avoids conflicts.
+- Migrated: addresses (host, network, range, FQDN, MAC, IPv6), groups (nested ones flattened, IP/FQDN split), services
+  and service groups, firewall rules with zones, addresses, services, action and logging. Security profiles, users,
+  schedules, NAT, VPN, interfaces and routing are listed for manual setup.
+- A rule that cannot be migrated completely (e.g. a country or dynamic address) is migrated **disabled** and marked
+  "action required" – it is never silently made broader.
+- Target: the **draft** of a firewall (compare, select, four-eyes approval), a **template**, or a download of
+  **Entities.xml**. The file is only processed in memory.
+
 **Connection analysis from firewall logs**
 - The firewalls send their firewall logs via syslog (UDP/TCP, port 514). The tool aggregates them per hour into
   connections: source, destination, protocol, port, zones, allowed/blocked, count, bytes. Raw logs are not stored.

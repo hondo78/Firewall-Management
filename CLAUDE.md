@@ -80,6 +80,29 @@ The SFOS REST API only returns WAF rules as `ruleType: waf` with a placeholder `
 - The group diff is `GET /api/groups/{id}/drift?reference=`.
 - **Lint:** `lint.py` normalizes rules from both formats into `Rule` (sets, None = any). `for_change` reports only findings the request introduces (compared by `_key`, which ignores positions). `analyze` gives the full report. "unused" only checks rules, groups and NAT, not VPN or web filter, which is why the UI collapses these hints.
 
+### Migration assistant (`migration/`, `routers/migration.py`, `pages/Migration.jsx`)
+- Modelled on Config Studio's migration (vendor picker with a "what is migrated" matrix, upload, migration report,
+  zone mapping).
+- Each vendor parser turns its file into a neutral model (`migration/model.py`: interfaces/zones, addresses, groups,
+  services, service groups, rules, NAT for the report, report rows):
+  - `fortigate.py` parses `config/edit/set/next/end`.
+  - `paloalto.py` reads shared objects and the first vsys.
+  - `sonicwall.py` reads base64 + urlencoded `key_N` pairs.
+  - `watchguard.py` reads `<profile>` and resolves aliases.
+  - `utm`/`sophos` sources are Entities.xml and go straight through `importer.parse_upload`.
+- SonicWall and WatchGuard formats are unofficial. The parsers were written from the known key names and tested only
+  against synthetic samples, never real exports.
+- `convert.py` turns the model into XML-format SFOS dicts using `zone_map` and `prefix`: names are sanitized, made
+  unique and limited to 60 characters; groups are flattened, mixed IP/FQDN groups split, inline IPs become hosts.
+  **A rule with anything it cannot translate is emitted disabled with a "manual" note, never broadened.**
+- Targets:
+  - `to-draft` reuses `importer.review/store` and the frontend reuses the exported `ImportModal` with
+    `/firewalls/{id}/import/apply`.
+  - `to-template` uses `service.template_items`, converting to REST via `importer.to_rest`.
+  - `download` builds an Entities.xml.
+- Sessions live in memory for 60 min per user. Parsing needs `change.create` anywhere. Backend strings that are only
+  translated at output time (vendor hints, matrix) are registered in `tools/i18n_check.py`.
+
 ### Connection analysis (`flows/`, `routers/flows.py`, `pages/firewall/FlowsTab.jsx`)
 - `flows/receiver.py` receives firewall logs via syslog: UDP is one thread with an 8 MB receive buffer, because a
   thread per datagram lost about half the packets under load; TCP uses socketserver with RFC 6587 octet counting. It

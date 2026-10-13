@@ -101,11 +101,13 @@ export function canAnywhere(me, perm) {
 }
 
 /** Datei-Upload (multipart) mit Bearer-Token. */
-export async function upload(path, file) {
+export async function upload(path, file, fields = {}) {
   const form = new FormData()
+  Object.entries(fields).forEach(([k, v]) => form.append(k, v))
   form.append('file', file)
   const token = getToken()
-  const res = await fetch(`/api${path}`, { method: 'POST', body: form, headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  const headers = { 'Accept-Language': lang, ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const res = await fetch(`/api${path}`, { method: 'POST', body: form, headers })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : body.detail?.message || `${res.status} ${res.statusText}`)
   return body

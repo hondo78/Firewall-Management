@@ -167,7 +167,7 @@ function BulkAddModal({ entity, label, fmt, config, onClose, onAdd }) {
 
 const IMPORT_STATUS = [['new', t("Neu")], ['changed', t("Geändert")], ['same', t("Identisch")], ['unsupported', t("Nicht übernehmbar")]]
 
-function ImportModal({ fw, review, onClose, onApplied }) {
+export function ImportModal({ fw, review, onClose, onApplied }) {
   const [tab, setTab] = useState(review.counts.new ? 'new' : 'changed')
   const [sel, setSel] = useState(() => new Set(review.items.filter((i) => i.status === 'new' || i.status === 'changed').map((i) => i.key)))
   const [q, setQ] = useState('')

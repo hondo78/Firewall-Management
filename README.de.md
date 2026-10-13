@@ -61,6 +61,13 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
   Vier-Augen-Prinzip durchläuft. Anträge verweisen auf Vorlage und Version.
 - **Regel-Prüfung**: Any-Any, offen aus dem Internet, verdeckte/redundante Regeln, fehlende Protokollierung,
   ungenutzte/doppelte Objekte – beim Einreichen, für den Approver und als Tab „Analyse“.
+- **Migrationsassistent** (wie im Sophos Config Studio): Konfiguration von **FortiGate** (`.conf`), **Palo Alto**
+  (`running-config.xml`), **SonicWall** (`.exp`), **WatchGuard** (Fireware-XML), **Sophos UTM** (Entities.xml aus
+  `migrate.pl`) oder einer **Sophos Firewall** übernehmen. Übersicht „was übernommen wird“, **Migrationsbericht**
+  (unterstützt / teilweise / manuell / nicht unterstützt), **Zonen-Zuordnung** und optionales Namenspräfix. Übernommen
+  werden Adressen, Gruppen, Dienste und Firewall-Regeln; Sicherheitsprofile, Benutzer, NAT, VPN, Interfaces stehen
+  im Bericht. Nicht vollständig übertragbare Regeln werden **deaktiviert** übernommen statt weiter gefasst. Ziel:
+  **Entwurf** einer Firewall (Vier-Augen-Freigabe), **Vorlage** oder **Entities.xml** zum Herunterladen.
 - **Verbindungsanalyse aus Firewall-Logs**: Die Firewalls senden ihre Firewall-Logs per Syslog (UDP/TCP, Port 514);
   das Tool fasst sie stündlich zu Verbindungen zusammen (ohne Rohlogs). Tab *Verbindungen*: **Netzwerkplan** (Zonen als
   Spalten, Hosts bzw. /24-Netze als Knoten) und Tabelle für einen wählbaren Zeitraum; Verbindungen oder ganze Netze als

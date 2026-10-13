@@ -54,6 +54,16 @@ for n in ast.walk(ent):
             if v and not v.startswith("/") and not re.fullmatch(r"[a-z][A-Za-z0-9]*", v) and not re.fullmatch(r"[A-Z][a-z]+[A-Z]\w*", v) \
                     and not re.fullmatch(r"[A-Z]{2,}[A-Za-z]*", v):
                 keys.setdefault(v, "sophos/entities.py")
+# Migrationsassistent: Hersteller-Hinweise und Übersicht „was übernommen wird“ (übersetzt in routers/migration.py)
+mig = ast.parse((ROOT / "migration" / "service.py").read_text(encoding="utf-8"))
+for n in ast.walk(mig):
+    if isinstance(n, ast.Dict):
+        for k, v in zip(n.keys, n.values):
+            if isinstance(k, ast.Constant) and k.value == "hint" and isinstance(v, ast.Constant):
+                keys.setdefault(v.value, "migration/service.py")
+    if isinstance(n, ast.Tuple) and len(n.elts) == 3 and all(isinstance(e, ast.Constant) for e in n.elts) \
+            and n.elts[2].value in ("supported", "partial", "manual", "unsupported"):
+        keys.setdefault(n.elts[1].value, "migration/service.py")
 txt = ast.parse((ROOT / "notify" / "texts.py").read_text(encoding="utf-8"))
 for n in txt.body:
     if isinstance(n, ast.Assign) and isinstance(n.value, ast.Dict):

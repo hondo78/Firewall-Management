@@ -570,3 +570,11 @@ tr.selected td { background: var(--accent-soft); }
 .flow-port { font-size: 10.5px; fill: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; pointer-events: none; }
 button.flow-ok { border-color: var(--ok); color: var(--ok); }
 @media (max-width: 1100px) { .flow-plan-wrap { flex-direction: column; } .flow-pair { width: 100%; position: static; } }
+
+/* Migrationsassistent */
+.mig-vendors { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.mig-vendor { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; text-align: left;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.mig-vendor:hover { border-color: var(--accent); }
+.mig-vendor.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.mig-vendor b { font-size: 15px; }

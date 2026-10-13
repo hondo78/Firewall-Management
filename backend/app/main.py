@@ -10,7 +10,7 @@ from . import config, crypto, migrations, permissions, worker
 from .audit import audit
 from .db import Base, SessionLocal, engine
 from .models import Role, User
-from .routers import admin, audit_log, auth, central, changes, firewalls, flows, notifications, templates, backups
+from .routers import admin, audit_log, auth, central, changes, firewalls, flows, migration, notifications, templates, backups
 from .security import hash_password
 from .i18n import tr
 
@@ -86,7 +86,7 @@ async def language_middleware(request: Request, call_next):
         i18n._current.reset(token)
 
 
-for r in (auth, admin, central, firewalls, changes, audit_log, notifications, templates, backups, flows):
+for r in (auth, admin, central, firewalls, changes, audit_log, notifications, templates, backups, flows, migration):
     app.include_router(r.router)
 
 
