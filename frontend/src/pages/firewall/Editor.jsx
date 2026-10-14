@@ -165,6 +165,9 @@ function BulkAddModal({ entity, label, fmt, config, onClose, onAdd }) {
   )
 }
 
+// Einträge je Anfrage beim Übernehmen eines Imports in den Entwurf
+const IMPORT_CHUNK = 250
+
 const IMPORT_STATUS = [['new', t("Neu")], ['changed', t("Geändert")], ['same', t("Identisch")], ['unsupported', t("Nicht übernehmbar")]]
 
 export function ImportModal({ fw, review, onClose, onApplied }) {
@@ -178,12 +181,39 @@ export function ImportModal({ fw, review, onClose, onApplied }) {
   const list = review.items.filter((i) => i.status === tab && (!f || `${i.name} ${i.label}`.toLowerCase().includes(f)))
   const groups = list.reduce((m, i) => ({ ...m, [t(i.label)]: [...(m[t(i.label)] || []), i] }), {})
   const selectable = tab === 'new' || tab === 'changed'
+  // Kategorien einklappbar; bei großen Importen (z. B. WatchGuard) anfangs alle zu
+  const [collapsed, setCollapsed] = useState(() => new Set(review.items.length > 200 ? review.items.map((i) => t(i.label)) : []))
+  const fold = (label) => { const n = new Set(collapsed); n.has(label) ? n.delete(label) : n.add(label); setCollapsed(n) }
+  const allFolded = Object.keys(groups).every((l) => collapsed.has(l))
   const toggle = (k) => { const n = new Set(sel); n.has(k) ? n.delete(k) : n.add(k); setSel(n) }
   const toggleAll = (items) => { const n = new Set(sel); const all = items.every((i) => n.has(i.key)); items.forEach((i) => (all ? n.delete(i.key) : n.add(i.key))); setSel(n) }
+  const [progress, setProgress] = useState(null)
+  const cancel = useRef(false)
+  // Große Importe (z. B. WatchGuard-Migration) in Teilen übernehmen – eine Anfrage je IMPORT_CHUNK Einträge
   const apply = async () => {
     setBusy(true)
     setError('')
-    try { onApplied(await api(`/firewalls/${fw.id}/import/apply`, { method: 'POST', body: { token: review.token, keys: [...sel] } })) } catch (e) { setError(e.message) }
+    cancel.current = false
+    const order = new Map(review.items.map((i, n) => [i.key, n]))
+    const keys = [...sel].sort((a, b) => order.get(a) - order.get(b))
+    const parts = Math.ceil(keys.length / IMPORT_CHUNK)
+    const total = { added: 0, skipped: [], draft: null }
+    try {
+      for (let p = 0; p < parts; p++) {
+        if (cancel.current) { total.skipped.push(t("Abgebrochen – {0} von {1} Einträgen nicht übernommen", keys.length - p * IMPORT_CHUNK, keys.length)); break }
+        setProgress({ done: p * IMPORT_CHUNK, total: keys.length })
+        const r = await api(`/firewalls/${fw.id}/import/apply`, { method: 'POST',
+          body: { token: review.token, keys: keys.slice(p * IMPORT_CHUNK, (p + 1) * IMPORT_CHUNK), chunk: parts > 1 ? `${p + 1}/${parts}` : '' } })
+        total.added += r.added
+        total.skipped.push(...r.skipped)
+        total.draft = r.draft || total.draft
+      }
+      onApplied(total)
+    } catch (e) {
+      // bereits übernommene Teile bleiben im Entwurf
+      setError(total.added ? t("{0} – {1} Objekte sind bereits im Entwurf", e.message, total.added) : e.message)
+    }
+    setProgress(null)
     setBusy(false)
   }
   return (
@@ -193,15 +223,20 @@ export function ImportModal({ fw, review, onClose, onApplied }) {
         <div className="seg" style={{ alignSelf: 'flex-start' }}>
           {IMPORT_STATUS.map(([k, l]) => <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{l} ({review.counts[k]})</button>)}
         </div>
-        <input placeholder={t("Filtern …")} value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="row">
+          <input placeholder={t("Filtern …")} value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
+          <button className="sm" disabled={!list.length} onClick={() => setCollapsed(allFolded ? new Set() : new Set([...collapsed, ...Object.keys(groups)]))}>
+            {allFolded ? t("Alle aufklappen") : t("Alle einklappen")}</button>
+        </div>
         <div className="table-wrap" style={{ maxHeight: 420, overflowY: 'auto' }}>
           {!list.length ? <Empty>{t("Keine Einträge.")}</Empty> : <table><tbody>
             {Object.entries(groups).map(([label, items]) => (
               <Fragment key={label}>
-                <tr className="group-row"><td colSpan={4}>
-                  {selectable && <input type="checkbox" checked={items.every((i) => sel.has(i.key))} onChange={() => toggleAll(items)} style={{ marginRight: 8 }} />}
-                  <b>{label}</b> <span className="muted small">({items.length})</span></td></tr>
-                {items.map((i) => (
+                <tr className="group-row" style={{ cursor: 'pointer' }} onClick={() => fold(label)}><td colSpan={4}>
+                  <Icon name="chevron" size={12} className={`cs-chev ${collapsed.has(label) ? '' : 'open'}`} />{' '}
+                  {selectable && <input type="checkbox" checked={items.every((i) => sel.has(i.key))} onClick={(e) => e.stopPropagation()} onChange={() => toggleAll(items)} style={{ marginRight: 8 }} />}
+                  <b>{label}</b> <span className="muted small">({items.length}{selectable ? t(", {0} ausgewählt", items.filter((i) => sel.has(i.key)).length) : ''})</span></td></tr>
+                {!collapsed.has(label) && items.map((i) => (
                   <Fragment key={i.key}>
                     <tr>
                       <td style={{ width: 28 }}>{selectable && <input type="checkbox" checked={sel.has(i.key)} onChange={() => toggle(i.key)} />}</td>
@@ -217,8 +252,13 @@ export function ImportModal({ fw, review, onClose, onApplied }) {
           </tbody></table>}
         </div>
         <ErrorBox error={error} />
+        {progress && <div className="stack" style={{ gap: 4 }}>
+          <progress max={progress.total} value={progress.done} style={{ width: '100%' }} />
+          <div className="muted small">{t("Übernehme {0} von {1} Objekten (je {2} pro Schritt) …", Math.min(progress.done + IMPORT_CHUNK, progress.total), progress.total, IMPORT_CHUNK)}</div>
+        </div>}
         <div className="modal-foot">
-          <button onClick={onClose}>{t("Abbrechen")}</button>
+          {busy ? <button onClick={() => { cancel.current = true }}>{t("Nach diesem Schritt anhalten")}</button>
+            : <button onClick={onClose}>{t("Abbrechen")}</button>}
           <button className="primary" disabled={busy || !sel.size} onClick={apply}>{busy ? t("Übernehme …") : t("{0} Objekte in den Entwurf", sel.size)}</button>
         </div>
       </div>

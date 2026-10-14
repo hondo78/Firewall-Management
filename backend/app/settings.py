@@ -15,6 +15,9 @@ DEFAULTS: dict = {
     # Befristete Anträge: automatische Rücknahme nach Ablauf ohne erneute Freigabe ausrollen
     # (die Befristung wurde mit dem ursprünglichen Antrag im Vier-Augen-Prinzip genehmigt)
     "temp_revert_preapproved": True,
+    # Superadmins dürfen Anträge ohne Vier-Augen-Freigabe einreichen und sofort ausrollen (protokolliert, Genehmiger
+    # werden benachrichtigt)
+    "superadmin_bypass_approval": True,
     # Maximale Befristung in Tagen (0 = unbegrenzt)
     "temp_max_days": 90,
     # Zwei-Faktor-Pflicht: "none" | "privileged" (Genehmigen/Verwalten/Admin) | "all"

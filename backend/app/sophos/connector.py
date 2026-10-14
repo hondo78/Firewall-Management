@@ -18,6 +18,9 @@ from ..i18n import tr
 ConnectorError = (CentralError, XmlApiError, RestApiError)
 Log = Callable[[str], None]
 
+# Objekte je Sophos-Central-Import (REST und XML-API schicken ohnehin ein Objekt je Aufruf)
+CENTRAL_IMPORT_CHUNK = 300
+
 
 class DeployError(Exception):
     pass
@@ -237,13 +240,21 @@ def _apply_firewall(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> N
         client, cid = _central_for(db, fw)
         objs = [(o["entity"], xmlconv.with_position(o["data"], o.get("position"))
                  if o["entity"] == "FirewallRule" else o["data"]) for o in ordered]
-        archive = xmlconv.build_tar(xmlconv.build_entities_xml(objs, fw.api_version))
-        tx = client.import_config([cid], archive, log)
-        items = (tx.get("response") or {}).get("items") or []
-        mine = next((i for i in items if i.get("firewallId") == cid), None)
-        result = (mine or {}).get("result") or tx.get("result")
-        if result != "success":
-            raise DeployError(tr('Import auf der Firewall fehlgeschlagen (Ergebnis: {0})', result))
+        # Große Anträge (z. B. Migration) in mehreren Importen – in Schreibreihenfolge, Objekte vor Gruppen vor Regeln
+        parts = [objs[i:i + CENTRAL_IMPORT_CHUNK] for i in range(0, len(objs), CENTRAL_IMPORT_CHUNK)]
+        for n, part in enumerate(parts, 1):
+            if len(parts) > 1:
+                log(tr('Import-Teil {0}/{1} ({2} Objekte) …', n, len(parts), len(part)))
+            archive = xmlconv.build_tar(xmlconv.build_entities_xml(part, fw.api_version))
+            tx = client.import_config([cid], archive, log)
+            items = (tx.get("response") or {}).get("items") or []
+            mine = next((i for i in items if i.get("firewallId") == cid), None)
+            result = (mine or {}).get("result") or tx.get("result")
+            if result != "success":
+                if n > 1:
+                    # Central kann nicht löschen – frühere Teile bleiben auf der Firewall
+                    log(tr('Teile 1–{0} sind bereits auf der Firewall angewendet und werden nicht zurückgenommen', n - 1))
+                raise DeployError(tr('Import auf der Firewall fehlgeschlagen (Ergebnis: {0})', result))
         log(tr('Import erfolgreich abgeschlossen'))
         return
     if fw.connector == "rest":

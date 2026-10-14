@@ -59,6 +59,10 @@ def managers(db, fw: Firewall) -> list[User]:
 def _recipients(db, cr: ChangeRequest, kind: str) -> list[User]:
     if kind == "pending":
         return approvers(db, cr.firewall, cr.created_by)
+    if kind == "bypassed":
+        # Wer sonst genehmigt hätte, soll davon wissen
+        people = {u.id: u for u in approvers(db, cr.firewall, cr.created_by) + managers(db, cr.firewall)}
+        return [u for u in people.values() if u.active and u.id != cr.created_by]
     people = {cr.creator.id: cr.creator} if cr.creator else {}
     if kind in ("deployed", "failed", "conflict", "expiry_failed"):
         for e in cr.events:
@@ -138,7 +142,7 @@ def _change_event(change_id: str, kind: str) -> None:
                 buttons = [[{"text": tr('✅ Genehmigen'), "callback_data": f"approve:{cr.id}"}]]
             return {"subject": subject, "body": body, "buttons": buttons,
                     "channel": (subject, texts.change_lines(cr, kind), texts.link(cfg["public_url"], cr))}
-        deliver(db, cfg, users, render, channel=kind in ("pending", "deployed", "failed", "conflict", "expiry_failed"),
+        deliver(db, cfg, users, render, channel=kind in ("pending", "bypassed", "deployed", "failed", "conflict", "expiry_failed"),
                 urgent=kind == "pending")
 
 

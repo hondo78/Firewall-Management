@@ -1,5 +1,5 @@
 """Änderungsanträge (Vier-Augen-Prinzip)."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 from .. import changes, permissions, worker
 from ..audit import audit
 from ..db import get_db
-from ..models import ChangeRequest, Firewall, User
+from ..models import ChangeRequest, Firewall, User, utcnow
 from ..permissions import firewall_or_404
 from ..security import client_ip, get_current_user, require_recent_auth
 from ..serializers import change_out, change_summary
@@ -35,6 +35,8 @@ class SubmitIn(BaseModel):
     expires_at: datetime | None = None
     # Sammelantrag: dieselben Änderungen zusätzlich auf diesen Firewalls
     extra_firewall_ids: list[str] = Field(default_factory=list, max_length=100)
+    # Nur Superadmin: ohne Vier-Augen-Freigabe einreichen und sofort ausrollen
+    bypass_approval: bool = False
 
 
 class DecisionIn(BaseModel):
@@ -88,9 +90,21 @@ def remove_operation(change_id: str, index: int, user: User = Depends(get_curren
 def submit(change_id: str, body: SubmitIn, request: Request, user: User = Depends(get_current_user),
            db: DbSession = Depends(get_db)):
     cr = _change_or_404(db, user, change_id)
-    changes.submit(db, user, cr, title=body.title, justification=body.justification, ticket_ref=body.ticket_ref,
-                   deploy_after=body.deploy_after, ip=client_ip(request), expires_at=body.expires_at,
-                   extra_firewall_ids=body.extra_firewall_ids)
+    if body.bypass_approval:
+        changes.check_bypass(db, user)
+        require_recent_auth(request, db)
+    members = changes.submit(db, user, cr, title=body.title, justification=body.justification,
+                             ticket_ref=body.ticket_ref, deploy_after=body.deploy_after, ip=client_ip(request),
+                             expires_at=body.expires_at, extra_firewall_ids=body.extra_firewall_ids,
+                             bypass=body.bypass_approval)
+    due = body.deploy_after is None or (body.deploy_after if body.deploy_after.tzinfo
+                                        else body.deploy_after.replace(tzinfo=timezone.utc)) <= utcnow()
+    if body.bypass_approval and due:
+        # sofort ausrollen (mit Ausrollzeitpunkt übernimmt das der Worker)
+        for m in members:
+            if changes.claim_for_deploy(db, m.id, ("approved",)):
+                worker.deploy_in_background(m.id, user.id)
+        db.refresh(cr)
     return change_out(db, cr, user)
 
 

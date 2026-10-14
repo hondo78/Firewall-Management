@@ -10,6 +10,7 @@ STATUS = {"pending": "wartet auf Genehmigung", "approved": "genehmigt", "rejecte
 SUBJECT = {
     "pending": "Genehmigung benötigt",
     "approved": "Antrag genehmigt",
+    "bypassed": "Ohne Freigabe ausgerollt (Superadmin)",
     "rejected": "Antrag abgelehnt",
     "deployed": "Änderung ausgerollt",
     "failed": "Ausrollen fehlgeschlagen",
@@ -39,7 +40,9 @@ def change_lines(cr: ChangeRequest, kind: str) -> list[str]:
         fws = ", ".join(m.firewall.name for m in members) + tr(' (Sammelantrag, {0} Firewalls)', len(members))
     lines = [f"{cr_no(cr)} · {cr.title}", tr('Firewall: {0}', fws),
              tr('Antragsteller: {0}', cr.creator.username if cr.creator else tr('System'))]
-    if kind == "pending":
+    if kind in ("pending", "bypassed"):
+        if kind == "bypassed":
+            lines.append(tr('Ohne Vier-Augen-Freigabe eingereicht – direkt zum Ausrollen freigegeben'))
         lines.append(tr('Begründung: {0}', cr.justification))
         if cr.expires_at:
             lines.append(tr('Befristet bis {0:%d.%m.%Y %H:%M} UTC', cr.expires_at))

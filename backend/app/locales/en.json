@@ -573,5 +573,13 @@
  "Proxy-Policies, Aliase werden aufgelöst": "Proxy policies; aliases are resolved",
  "XML-Schema inoffiziell – Ergebnis sorgfältig prüfen": "Unofficial XML schema – review the result carefully",
  "Alle Objekte und Regeln aus der Entities.xml von migrate.pl": "All objects and rules from the Entities.xml produced by migrate.pl",
- "Alle von diesem Tool verwalteten Objekttypen der Entities.xml": "All object types of the Entities.xml that this tool manages"
+ "Alle von diesem Tool verwalteten Objekttypen der Entities.xml": "All object types of the Entities.xml that this tool manages",
+ "Ausrollen ohne Freigabe ist in den Einstellungen abgeschaltet": "Deploying without approval is disabled in the settings",
+ "Import-Teil {0}/{1} ({2} Objekte) …": "Import part {0}/{1} ({2} objects) …",
+ "Import: {0} Operation(en) übernommen": "Import: {0} operation(s) added",
+ "Nur Superadmins dürfen ohne Freigabe ausrollen": "Only superadmins may deploy without approval",
+ "Ohne Freigabe ausgerollt (Superadmin)": "Deployed without approval (superadmin)",
+ "Ohne Vier-Augen-Freigabe eingereicht (Superadmin)": "Submitted without four-eyes approval (superadmin)",
+ "Ohne Vier-Augen-Freigabe eingereicht – direkt zum Ausrollen freigegeben": "Submitted without four-eyes approval – released for deployment directly",
+ "Teile 1–{0} sind bereits auf der Firewall angewendet und werden nicht zurückgenommen": "Parts 1–{0} are already applied on the firewall and will not be rolled back"
 }

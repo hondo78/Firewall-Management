@@ -654,27 +654,27 @@ async def import_review(firewall_id: str, file: UploadFile = File(...), user: Us
 class ImportApplyIn(BaseModel):
     token: str
     keys: list[str] = Field(max_length=5000)
+    chunk: str = Field(default="", max_length=20)   # z. B. "3/12" – Teil eines in Schleifen übernommenen Imports
 
 
 @router.post("/firewalls/{firewall_id}/import/apply")
 def import_apply(firewall_id: str, body: ImportApplyIn, request: Request, user: User = Depends(get_current_user),
                  db: DbSession = Depends(get_db)):
-    """Ausgewählte Import-Einträge in den eigenen Entwurf übernehmen (einzeln geprüft)."""
+    """Ausgewählte Import-Einträge in den eigenen Entwurf übernehmen (einzeln geprüft).
+    Große Importe schickt die Oberfläche in Teilen (IMPORT_CHUNK Einträge je Aufruf); mit `chunk` wird nur der
+    Entwurfskopf statt des ganzen Antrags zurückgegeben."""
     from .. import importer
     from ..serializers import change_out
     fw = firewall_or_404(db, user, firewall_id, "change.create")
     items = importer.load(body.token, user.id, fw.id)
     ops = importer.operations(items, set(body.keys), sync.cached_config(db, fw))
-    added, skipped, draft = 0, [], None
-    for op in ops:
-        try:
-            draft, _ = changes.draft_add(db, user, fw, op)
-            added += 1
-        except HTTPException as e:
-            db.rollback()
-            skipped.append(f"{tr(entities.LABELS.get(op['entity'], op['entity']))} „{op['name']}“: {e.detail}")
-    if draft is None:
-        draft = changes.get_draft(db, user, fw)
+    if not ops:
+        return {"added": 0, "skipped": [], "draft": None}
+    draft, added, skipped = changes.draft_add_many(db, user, fw, ops)
     audit(db, "config.import_to_draft", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
-          details={"firewall": fw.name, "added": added, "skipped": len(skipped)})
-    return {"added": added, "skipped": skipped, "draft": change_out(db, draft, user) if draft else None}
+          details={"firewall": fw.name, "added": added, "skipped": len(skipped),
+                   **({"chunk": body.chunk} if body.chunk else {})})
+    if body.chunk:
+        return {"added": added, "skipped": skipped,
+                "draft": {"id": draft.id, "number": draft.number, "operations": len(draft.operations or [])}}
+    return {"added": added, "skipped": skipped, "draft": change_out(db, draft, user)}

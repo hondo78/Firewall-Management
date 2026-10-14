@@ -67,30 +67,35 @@ def effective_config(config: dict[str, list[dict]], ops: list[dict]) -> dict[str
     """Konfiguration, wie sie nach Anwendung der Operationen aussähe (für Vorschau und Prüfungen)."""
     out = copy.deepcopy(config)
     for o in ops:
-        lst = out.setdefault(o["entity"], [])
-        idx = next((i for i, x in enumerate(lst) if entities.oname(x) == o["name"]), None)
-        if o["action"] == "remove":
-            if idx is not None:
-                lst.pop(idx)
-            continue
-        if o["entity"] == "mdrThreatFeed" and (o.get("data") or {}).get("clearIndicators"):
-            # beim Ausrollen läuft „alle löschen“ vor den Neuanlagen desselben Antrags → diese bleiben
-            added = {x["name"] for x in ops if x["entity"] == "mdrIndicators" and x["action"] == "add"}
-            out["mdrIndicators"] = [x for x in out.get("mdrIndicators", []) if entities.oname(x) in added]
+        _apply_op(out, o, ops)
+    return out
+
+
+def _apply_op(out: dict[str, list[dict]], o: dict, ops: list[dict]) -> None:
+    """Eine Operation auf eine Konfiguration anwenden (in place)."""
+    lst = out.setdefault(o["entity"], [])
+    idx = next((i for i, x in enumerate(lst) if entities.oname(x) == o["name"]), None)
+    if o["action"] == "remove":
         if idx is not None:
             lst.pop(idx)
-        pos = o.get("position")
-        if o["entity"] in entities.RULE_ENTITIES and pos:
-            kind = pos.get("type", "bottom")
-            names = [entities.oname(x) for x in lst]
-            if kind == "top":
-                idx = 0
-            elif kind in ("after", "before") and pos.get("ref") in names:
-                idx = names.index(pos["ref"]) + (1 if kind == "after" else 0)
-            else:
-                idx = len(lst)
-        lst.insert(len(lst) if idx is None else idx, o["data"])
-    return out
+        return
+    if o["entity"] == "mdrThreatFeed" and (o.get("data") or {}).get("clearIndicators"):
+        # beim Ausrollen läuft „alle löschen“ vor den Neuanlagen desselben Antrags → diese bleiben
+        added = {x["name"] for x in ops if x["entity"] == "mdrIndicators" and x["action"] == "add"}
+        out["mdrIndicators"] = [x for x in out.get("mdrIndicators", []) if entities.oname(x) in added]
+    if idx is not None:
+        lst.pop(idx)
+    pos = o.get("position")
+    if o["entity"] in entities.RULE_ENTITIES and pos:
+        kind = pos.get("type", "bottom")
+        names = [entities.oname(x) for x in lst]
+        if kind == "top":
+            idx = 0
+        elif kind in ("after", "before") and pos.get("ref") in names:
+            idx = names.index(pos["ref"]) + (1 if kind == "after" else 0)
+        else:
+            idx = len(lst)
+    lst.insert(len(lst) if idx is None else idx, o["data"])
 
 
 references = entities.references
@@ -296,6 +301,35 @@ def draft_add(db: DbSession, user: User, fw: Firewall, op: dict) -> tuple[Change
     return cr, warnings
 
 
+def draft_add_many(db: DbSession, user: User, fw: Firewall, ops: list[dict]) -> tuple[ChangeRequest, int, list[str]]:
+    """Viele Operationen auf einmal (Import): wie draft_add je Operation geprüft, aber Konfiguration, Verweisprüfung
+    und Speichern nur einmal – sonst wüchse der Aufwand bei tausenden Objekten quadratisch.
+    Ergebnis: (Entwurf, Anzahl übernommen, übersprungene Einträge mit Grund)."""
+    config = sync.cached_config(db, fw)
+    cr = get_draft(db, user, fw, create=True)
+    draft_ops = list(cr.operations or [])
+    working = effective_config(config, draft_ops)
+    added, skipped = 0, []
+    for op in ops:
+        try:
+            clean = validate_operation(fw, op, working)
+            if clean["action"] == "remove":
+                users = used_by(working, clean["entity"], clean["name"])
+                if users:
+                    raise HTTPException(409, tr('Wird noch verwendet von: {0}', ', '.join(users)))
+        except HTTPException as e:
+            skipped.append(f"{tr(entities.LABELS.get(op.get('entity'), op.get('entity')))} „{op.get('name')}“: {e.detail}")
+            continue
+        draft_ops = merge_operation(draft_ops, clean)
+        _apply_op(working, clean, draft_ops)
+        added += 1
+    if added:
+        cr.operations = with_before(draft_ops, config)
+        event(db, cr, "draft_changed", tr('Import: {0} Operation(en) übernommen', added), user)
+    db.commit()
+    return cr, added, skipped
+
+
 def draft_remove(db: DbSession, user: User, cr: ChangeRequest, index: int) -> None:
     ops = list(cr.operations or [])
     if not 0 <= index < len(ops):
@@ -320,13 +354,17 @@ def check_expiry(db: DbSession, expires_at, deploy_after) -> None:
 
 
 def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justification: str, ticket_ref: str,
-           deploy_after, ip: str, expires_at=None, extra_firewall_ids: list[str] | None = None) -> list[ChangeRequest]:
-    """Einreichen; mit extra_firewall_ids als Sammelantrag (gleiche Änderungen auf weiteren Firewalls)."""
+           deploy_after, ip: str, expires_at=None, extra_firewall_ids: list[str] | None = None,
+           bypass: bool = False) -> list[ChangeRequest]:
+    """Einreichen; mit extra_firewall_ids als Sammelantrag (gleiche Änderungen auf weiteren Firewalls).
+    bypass: Superadmin reicht ohne Vier-Augen-Freigabe ein – der Antrag ist sofort genehmigt."""
+    if bypass:
+        check_bypass(db, user)
     extra = _prepare_batch(db, user, cr, extra_firewall_ids or [])
     if extra:
         cr.batch_id = new_id()
     _submit_one(db, user, cr, title=title, justification=justification, ticket_ref=ticket_ref,
-                deploy_after=deploy_after, ip=ip, expires_at=expires_at, announce=not extra)
+                deploy_after=deploy_after, ip=ip, expires_at=expires_at, announce=not extra, bypass=bypass)
     if not extra:
         return [cr]
     batch_id = cr.batch_id
@@ -338,10 +376,10 @@ def submit(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justific
         db.flush()
         event(db, sib, "created", tr('Sammelantrag mit CR-{0:04d}', cr.number), user)
         _submit_one(db, user, sib, title=title, justification=justification, ticket_ref=ticket_ref,
-                    deploy_after=deploy_after, ip=ip, expires_at=expires_at, announce=False)
+                    deploy_after=deploy_after, ip=ip, expires_at=expires_at, announce=False, bypass=bypass)
         out.append(sib)
     db.commit()
-    notify.change_event(cr.id, "pending")
+    notify.change_event(cr.id, "bypassed" if bypass else "pending")
     return out
 
 
@@ -374,7 +412,7 @@ def _prepare_batch(db: DbSession, user: User, cr: ChangeRequest, firewall_ids: l
 
 
 def _submit_one(db: DbSession, user: User, cr: ChangeRequest, *, title: str, justification: str, ticket_ref: str,
-                deploy_after, ip: str, expires_at=None, announce: bool = True) -> None:
+                deploy_after, ip: str, expires_at=None, announce: bool = True, bypass: bool = False) -> None:
     if cr.status != "draft" or cr.created_by != user.id:
         raise HTTPException(409, tr('Nur eigene Entwürfe können eingereicht werden'))
     if not cr.operations:
@@ -388,10 +426,10 @@ def _submit_one(db: DbSession, user: User, cr: ChangeRequest, *, title: str, jus
         raise HTTPException(403, tr('Keine Berechtigung, Änderungen für diese Firewall zu beantragen'))
     config = sync.cached_config(db, fw)
     # Gegen den aktuellen Cache neu prüfen (die Konfiguration kann sich seit Anlage des Entwurfs geändert haben)
-    working = config
+    working = copy.deepcopy(config)
     for o in cr.operations:
         validate_operation(fw, o, working)
-        working = effective_config(working, [o])
+        _apply_op(working, o, cr.operations)
     cr.operations = with_before(cr.operations, config)
     cr.title, cr.justification, cr.ticket_ref = title.strip(), justification.strip(), ticket_ref.strip()
     check_expiry(db, expires_at, deploy_after)
@@ -407,8 +445,27 @@ def _submit_one(db: DbSession, user: User, cr: ChangeRequest, *, title: str, jus
         **({"expires_at": expires_at.isoformat()} if expires_at else {}),
         **({"batch": cr.batch_id} if cr.batch_id else {}),
     })
+    if bypass:
+        # Kein Vier-Augen-Prinzip: sofort genehmigt, deutlich im Verlauf und Audit vermerkt
+        cr.status = "approved"
+        cr.decided_at = utcnow()
+        event(db, cr, "approval_bypassed", tr('Ohne Vier-Augen-Freigabe eingereicht (Superadmin)'), user)
+        audit(db, "change.approval_bypassed", actor=user, target_type="change", target_id=cr.id, ip=ip, details={
+            "number": cr.number, "firewall": fw.name, "title": cr.title, "operations": len(cr.operations),
+            **({"batch": cr.batch_id} if cr.batch_id else {})})
     if announce:
-        notify.change_event(cr.id, "pending")
+        notify.change_event(cr.id, "bypassed" if bypass else "pending")
+
+
+def may_bypass(db: DbSession, user: User) -> bool:
+    return bool(user.is_superadmin and settings.get(db, "superadmin_bypass_approval"))
+
+
+def check_bypass(db: DbSession, user: User) -> None:
+    if not user.is_superadmin:
+        raise HTTPException(403, tr('Nur Superadmins dürfen ohne Freigabe ausrollen'))
+    if not settings.get(db, "superadmin_bypass_approval"):
+        raise HTTPException(403, tr('Ausrollen ohne Freigabe ist in den Einstellungen abgeschaltet'))
 
 
 def approvals(cr: ChangeRequest) -> list[ChangeEvent]:

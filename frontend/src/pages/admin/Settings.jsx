@@ -27,6 +27,8 @@ export default function SettingsPage() {
           <span>{t("Genehmigte Anträge automatisch ausrollen")} <span className="muted small">{t("(sonst manuell durch Berechtigte mit „change.deploy“)")}</span></span></label>
         <label className="check"><input type="checkbox" checked={form.require_ticket} onChange={(e) => setForm({ ...form, require_ticket: e.target.checked })} />
           <span>{t("Ticket-Referenz beim Einreichen verpflichtend")}</span></label>
+        <label className="check"><input type="checkbox" checked={form.superadmin_bypass_approval} onChange={(e) => setForm({ ...form, superadmin_bypass_approval: e.target.checked })} />
+          <span>{t("Superadmins dürfen ohne Freigabe ausrollen")} <span className="muted small">{t("(Vier-Augen-Prinzip wird umgangen; protokolliert, Genehmiger werden benachrichtigt)")}</span></span></label>
         <h3 style={{ margin: '10px 0 0' }}>{t("Anmeldung & Sicherheit")}</h3>
         <Field label={t("Zwei-Faktor-Anmeldung verpflichtend für")} hint={t("Betroffene müssen TOTP einrichten, bevor sie weiterarbeiten können. Vorher selbst einrichten!")}>
           <select value={form.require_mfa} onChange={(e) => setForm({ ...form, require_mfa: e.target.value })} style={{ maxWidth: 360 }}>

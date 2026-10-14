@@ -13,6 +13,7 @@ import FlowsTab from './firewall/FlowsTab'
 import Editor from './firewall/Editor'
 import CentralTab from './firewall/CentralTab'
 import Findings from '../components/Findings'
+import { ReauthModal } from '../components/Reauth'
 import CompareTab from './firewall/CompareTab'
 import FirmwareTab from './firewall/FirmwareTab'
 import BackupsTab from './firewall/BackupsTab'
@@ -50,15 +51,25 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings, fw }) {
   const candidates = (fws || []).filter((f) => f.id !== fw.id && f.last_sync_at && f.capabilities.format === fw.capabilities.format && f.permissions.includes('change.create'))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const { me } = useAuth()
+  // Superadmin: ohne Vier-Augen-Freigabe einreichen und sofort ausrollen (in den Einstellungen abschaltbar)
+  const mayBypass = !!(me?.is_superadmin && settings?.superadmin_bypass_approval)
+  const [bypass, setBypass] = useState(false)
+  const [reauth, setReauth] = useState(false)
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
   const submit = async () => {
     setBusy(true)
+    setError('')
     try {
       const body = { ...form, deploy_after: form.deploy_after ? new Date(form.deploy_after).toISOString() : null,
-        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null, extra_firewall_ids: extra }
+        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null, extra_firewall_ids: extra,
+        bypass_approval: mayBypass && bypass }
       const r = await api(`/changes/${draft.id}/submit`, { method: 'POST', body })
       onDone(r)
-    } catch (e) { setError(e.message) } finally { setBusy(false) }
+    } catch (e) {
+      if (e.code === 'reauth_required') setReauth(true)
+      else setError(e.message)
+    } finally { setBusy(false) }
   }
   return (
     <Modal title={t("Antrag {0} einreichen", crNo(draft.number))} onClose={onClose} wide>
@@ -90,6 +101,10 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings, fw }) {
             </div>
           </details>
         )}
+        {mayBypass && <label className="check alert warn small">
+          <input type="checkbox" checked={bypass} onChange={(e) => setBypass(e.target.checked)} />
+          <span><b>{t("Ohne Freigabe ausrollen (Superadmin)")}</b> – {t("der Antrag gilt sofort als genehmigt und wird ausgerollt (bzw. zum gewählten Zeitpunkt). Das wird im Audit-Log vermerkt und alle Genehmiger werden benachrichtigt.")}</span>
+        </label>}
         {draft.analysis?.length > 0 && <div className="panel panel-pad stack" style={{ borderColor: 'var(--warn)' }}>
           <h3 style={{ margin: 0 }}>{t("Regel-Prüfung")}</h3>
           <div className="muted small">{t("Diese Befunde sieht auch der Approver. Bitte prüfen oder in der Begründung erklären.")}</div>
@@ -101,8 +116,10 @@ function SubmitModal({ draft, onClose, onDone, requireTicket, settings, fw }) {
       </div>
       <div className="modal-foot">
         <button onClick={onClose}>{t("Abbrechen")}</button>
-        <button className="primary" disabled={busy || !form.title || !form.justification} onClick={submit}>{t("Zur Genehmigung einreichen")}</button>
+        <button className={bypass && mayBypass ? 'danger' : 'primary'} disabled={busy || !form.title || !form.justification} onClick={submit}>
+          {bypass && mayBypass ? t("Ohne Freigabe ausrollen") : t("Zur Genehmigung einreichen")}</button>
       </div>
+      {reauth && <ReauthModal onClose={() => setReauth(false)} onDone={() => { setReauth(false); submit() }} />}
     </Modal>
   )
 }
