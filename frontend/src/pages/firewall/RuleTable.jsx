@@ -78,7 +78,7 @@ function AddMenu({ label, items }) {
 }
 
 export default function RuleTable({ entity, entities, rows, fw, mayEdit, pendingBy, draftBy, findings, onSelect, onEdit, onAddFor,
-  onOp, onShow, onBulkDelete, onBulkToggle, onAddWaf }) {
+  onOp, onShow, onBulkDelete, onBulkToggle, onBulkEdit, onAddWaf }) {
   const rest = isRestEntity(entity)
   const isNat = entity === 'natRulesIpv4'
   const cols = isNat ? NAT_COLS : RULE_COLS(rest)
@@ -154,6 +154,9 @@ export default function RuleTable({ entity, entities, rows, fw, mayEdit, pending
             <AddMenu label={isNat ? t("NAT-Regel hinzufügen") : t("Firewall-Regel hinzufügen")} items={addItems} />
             <button disabled={!selRows.length} onClick={async () => { await onBulkToggle(selRows.map((r) => r.obj), allOff); setSel(new Set()) }}>
               {allOff ? t("Einschalten") : t("Ausschalten")}{selRows.length ? ` (${selRows.length})` : ''}</button>
+            {!isNat && onBulkEdit && <button disabled={!selRows.length} title={t("Logging, IPS, Webfilter, Zeitplan … für alle ausgewählten Regeln setzen")}
+              onClick={() => onBulkEdit(selRows.map((r) => r.obj), () => setSel(new Set()))}>
+              <Icon name="edit" size={13} /> {t("Bearbeiten")}{selRows.length ? ` (${selRows.length})` : ''}</button>}
             {fw.capabilities.remove && <button className="danger" disabled={!selRows.length}
               onClick={async () => { await onBulkDelete(selRows.map((r) => oname(r.obj))); setSel(new Set()) }}>{t("Löschen")}</button>}
           </>}

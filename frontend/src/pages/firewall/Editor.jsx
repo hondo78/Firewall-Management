@@ -16,6 +16,7 @@ import { DiffTable, Empty, ErrorBox, Modal, Seg, useLoad } from '../../component
 import { OperationCard } from '../FirewallView'
 import { Analysis, ColumnPicker, IconButton, PendingBadges, Pager, store, useDismiss, usePaging } from './tableParts'
 import RuleTable from './RuleTable'
+import BulkRuleEdit from '../../components/BulkRuleEdit'
 import { t } from '../../i18n'
 
 /** Konfigurations-Editor im Stil des Sophos Firewall Config Studio. */
@@ -461,14 +462,16 @@ export default function Editor({ fw, cfg, draft, reload }) {
     setMsg({ kind: errors.length ? 'warn' : 'ok', text: t("{0} zum Löschen in den Entwurf übernommen{1}", names.length - errors.length, errors.length ? t(" · übersprungen: {0}", errors.join('; ')) : '') })
   }
   const bulkToggle = async (objs, on) => {
-    const errors = []
-    for (const obj of objs) {
-      const data = isRestEntity(entity) ? { ...obj, enabled: on } : { ...obj, Status: on ? 'Enable' : 'Disable' }
-      try { await addOp({ entity, action: 'update', name: oname(obj), data }, true) } catch (e) { errors.push(`${oname(obj)}: ${e.message}`) }
-    }
+    const operations = objs.map((obj) => ({ entity, action: 'update', name: oname(obj),
+      data: isRestEntity(entity) ? { ...obj, enabled: on } : { ...obj, Status: on ? 'Enable' : 'Disable' } }))
+    try {
+      const r = await api(`/firewalls/${fw.id}/draft/operations/bulk`, { method: 'POST', body: { operations } })
+      setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t(on ? "{0} Regeln eingeschaltet (Entwurf){1}" : "{0} Regeln ausgeschaltet (Entwurf){1}", r.added, r.skipped.length ? t(" · übersprungen: {0}", r.skipped.join('; ')) : '') })
+    } catch (e) { setMsg({ kind: 'error', text: e.message }) }
     reload()
-    setMsg({ kind: errors.length ? 'warn' : 'ok', text: t(on ? "{0} Regeln eingeschaltet (Entwurf){1}" : "{0} Regeln ausgeschaltet (Entwurf){1}", objs.length - errors.length, errors.length ? t(" · übersprungen: {0}", errors.join('; ')) : '') })
   }
+  // Mehrfachbearbeitung (Logging, IPS, …) wie im Config Studio
+  const [bulkEdit, setBulkEdit] = useState(null)
   const addFor = (e) => { if (e !== entity) select(e); setEditing({ obj: null }) }
   // Firewall-/NAT-Regeln (REST) werden wie in SFOS als ganze Seite bearbeitet
   // Bearbeitet wird ggf. eine andere Entität als die angezeigte (WAF-Regel aus der Firewall-Regelliste)
@@ -567,7 +570,8 @@ export default function Editor({ fw, cfg, draft, reload }) {
           ? <RuleTable key={entity} entity={entity} entities={cfg.entities} rows={rows} fw={fw} mayEdit={mayEdit} pendingBy={pendingBy} draftBy={draftBy}
             findings={findings} onSelect={select} onEdit={editRule} onAddFor={addFor}
             onAddWaf={rest ? (fw.waf_xml ? () => setEditing({ obj: null, entity: 'wafRules' }) : () => setWafInfo(true)) : null} onOp={quickOp}
-            onShow={(obj) => setDetail({ entity, obj })} onBulkDelete={bulkDelete} onBulkToggle={bulkToggle} />
+            onShow={(obj) => setDetail({ entity, obj })} onBulkDelete={bulkDelete} onBulkToggle={bulkToggle}
+            onBulkEdit={(objs, clear) => setBulkEdit({ objs, clear })} />
           : <>{CENTRAL_ENTITIES.has(entity) && <MdrBar fw={fw} entity={entity} />}<EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
             findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
             onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} /></>}
@@ -583,6 +587,10 @@ export default function Editor({ fw, cfg, draft, reload }) {
       {review && <ImportModal fw={fw} review={review} onClose={() => setReview(null)}
         onApplied={(r) => { setReview(null); reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t("{0} Objekte in den Entwurf übernommen{1}", r.added, r.skipped.length ? t(" · übersprungen: {0}{1}", r.skipped.slice(0, 5).join('; '), r.skipped.length > 5 ? ' …' : '') : '') }) }} />}
       {centralExport && <CentralExportModal fw={fw} onClose={() => setCentralExport(false)} />}
+      {bulkEdit && <BulkRuleEdit fw={fw} entity={entity} rules={bulkEdit.objs} config={cfg.preview} rest={isRestEntity(entity)}
+        onClose={() => setBulkEdit(null)}
+        onDone={(r) => { bulkEdit.clear(); setBulkEdit(null); reload()
+          setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t("{0} Regeln geändert (Entwurf){1}", r.added, r.skipped.length ? t(" · übersprungen: {0}", r.skipped.join('; ')) : '') }) }} />}
       {wafInfo && (
         <Modal title={t("Neue WAF-Regel (Webserver-Schutz)")} onClose={() => setWafInfo(false)}>
           <div className="stack small">

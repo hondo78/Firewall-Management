@@ -140,3 +140,23 @@ def test_deploy_progress_is_reported_while_deploying(client, admin, fake, monkey
     assert "P2" in seen[-1]["current"] and seen[-1]["log"]
     cr = client.get(f"/api/changes/{cid}", headers=admin).json()
     assert cr["status"] == "deployed" and cr["progress"] is None and changes.deploy_progress(cid) is None
+
+
+def test_bulk_rule_edit_into_draft(client, admin, fake):
+    """Mehrfachbearbeitung: Logging + IPS für mehrere Regeln in einem Aufruf; Fehlerhafte werden übersprungen."""
+    fw_id = setup_firewall(client, admin)
+    ops = []
+    for r in fake.config["FirewallRule"]:
+        data = {**r, "NetworkPolicy": {**r["NetworkPolicy"], "LogTraffic": "Enable", "IntrusionPrevention": "generalpolicy"}}
+        ops.append({"entity": "FirewallRule", "action": "update", "name": r["Name"], "data": data})
+    ops.append({"entity": "FirewallRule", "action": "update", "name": "Gibt-es-nicht",
+                "data": {**ops[0]["data"], "Name": "Gibt-es-nicht"}})
+    r = client.post(f"/api/firewalls/{fw_id}/draft/operations/bulk", headers=admin, json={"operations": ops})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["added"] == 2 and len(body["skipped"]) == 1 and "Gibt-es-nicht" in body["skipped"][0]
+    draft = client.get(f"/api/changes/{body['draft']['id']}", headers=admin).json()
+    assert all(o["data"]["NetworkPolicy"]["IntrusionPrevention"] == "generalpolicy" for o in draft["operations"])
+    # ohne change.create kein Zugriff
+    aud = make_user(client, admin, "auditor", [("Auditor", None)])
+    assert client.post(f"/api/firewalls/{fw_id}/draft/operations/bulk", headers=aud, json={"operations": ops}).status_code in (403, 404)

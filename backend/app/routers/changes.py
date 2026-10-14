@@ -76,6 +76,25 @@ def add_operation(firewall_id: str, body: OperationIn, user: User = Depends(get_
     return {"draft": change_out(db, cr, user), "warnings": warnings}
 
 
+class BulkOperationsIn(BaseModel):
+    operations: list[OperationIn] = Field(min_length=1, max_length=5000)
+
+
+@router.post("/firewalls/{firewall_id}/draft/operations/bulk")
+def add_operations(firewall_id: str, body: BulkOperationsIn, request: Request, user: User = Depends(get_current_user),
+                   db: DbSession = Depends(get_db)):
+    """Viele Operationen auf einmal (Mehrfachbearbeitung von Regeln): je Operation geprüft, einmal gespeichert."""
+    fw = firewall_or_404(db, user, firewall_id, "change.create")
+    if not fw.last_sync_at:
+        raise HTTPException(409, tr('Firewall wurde noch nie synchronisiert – bitte zuerst synchronisieren'))
+    draft, added, skipped = changes.draft_add_many(db, user, fw, [o.model_dump() for o in body.operations])
+    audit(db, "config.bulk_to_draft", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
+          details={"firewall": fw.name, "added": added, "skipped": len(skipped),
+                   "entities": sorted({o.entity for o in body.operations})})
+    return {"added": added, "skipped": skipped,
+            "draft": {"id": draft.id, "number": draft.number, "operations": len(draft.operations or [])}}
+
+
 @router.delete("/changes/{change_id}/operations/{index}")
 def remove_operation(change_id: str, index: int, user: User = Depends(get_current_user),
                      db: DbSession = Depends(get_db)):
