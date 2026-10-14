@@ -260,7 +260,7 @@ def test_rest_connector_workflow(client, admin, monkeypatch):
     monkeypatch.setattr(conn, "fetch_config", lambda db, fw, log=None: (
         {e: [dict(o) for o in state.get(e, [])] for e in conn.entities.REST_NAMES}, "REST v1"))
 
-    def apply(db, fw, ops, log):
+    def apply(db, fw, ops, log, skipper=None):
         applied.append(ops)
         state.update(ch.effective_config(state, ops))
     monkeypatch.setattr(conn, "apply", apply)

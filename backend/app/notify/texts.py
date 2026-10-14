@@ -56,6 +56,12 @@ def change_lines(cr: ChangeRequest, kind: str) -> list[str]:
         lines.append(tr('Begründung der Ablehnung: {0}', reason))
     elif kind in ("failed", "conflict", "expiry_failed"):
         lines.append(tr('Fehler: {0}', cr.error or next((e.text for e in reversed(cr.events) if e.kind == kind), '')))
+    elif kind == "deployed" and cr.skipped:
+        lines.append(tr('{0} Objekt(e) übersprungen – bitte nacharbeiten:', len(cr.skipped)))
+        lines += [f"  ☐ {tr(entities.LABELS.get(s['entity'], s['entity']))} „{s['name']}“: {s['error']}"
+                  for s in cr.skipped[:15]]
+        if len(cr.skipped) > 15:
+            lines.append(tr('  … und {0} weitere', len(cr.skipped) - 15))
     elif kind == "expiry_soon":
         lines.append(tr('Die Änderung wird am {0:%d.%m.%Y %H:%M} UTC automatisch zurückgenommen.', cr.expires_at))
     return lines

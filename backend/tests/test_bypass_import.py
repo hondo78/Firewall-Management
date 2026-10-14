@@ -75,3 +75,45 @@ def test_import_apply_in_chunks(client, admin, fake):
     r = client.post(f"/api/firewalls/{fw_id}/import/apply", headers=admin,
                     json={"token": review["token"], "keys": keys[:10], "chunk": "x"})
     assert r.json()["draft"]["operations"] == 600
+
+
+def test_deploy_skips_rejected_objects_with_followup_checklist(client, admin, fake, monkeypatch):
+    _sync_deploy(monkeypatch)
+    fw_id = setup_firewall(client, admin)
+    for name, ip in (("Bad", "10.0.0.66"), ("Good", "10.0.0.7")):
+        r = client.post(f"/api/firewalls/{fw_id}/draft/operations", headers=admin, json={
+            "entity": "IPHost", "action": "add", "name": name,
+            "data": {"Name": name, "IPFamily": "IPv4", "HostType": "IP", "IPAddress": ip}})
+        assert r.status_code == 200, r.text
+    r = client.post(f"/api/firewalls/{fw_id}/draft/operations", headers=admin, json={
+        "entity": "IPHostGroup", "action": "add", "name": "Grp",
+        "data": {"Name": "Grp", "IPFamily": "IPv4", "HostList": {"Host": ["Bad"]}}})
+    cid = r.json()["draft"]["id"]
+    fake.reject = {"Bad"}
+    client.post(f"/api/changes/{cid}/submit", headers=admin, json={"title": "t", "justification": "j", "bypass_approval": True})
+    cr = client.get(f"/api/changes/{cid}", headers=admin).json()
+    assert cr["status"] == "deployed", cr["deploy_log"]
+    assert [o["name"] for o in cr["operations"]] == ["Good"]          # nur Ausgerolltes bleibt im Antrag
+    assert [(s["name"], s["done"]) for s in cr["skipped"]] == [("Bad", False), ("Grp", False)]
+    assert cr["followups_open"] == 2 and cr["can"]["followup"]
+    assert [c["id"] for c in client.get("/api/changes?followups=true", headers=admin).json()] == [cid]
+
+    # abhaken mit Notiz
+    r = client.put(f"/api/changes/{cid}/skipped/0", headers=admin, json={"done": True, "note": "manuell angelegt"})
+    assert r.status_code == 200 and r.json()["skipped"][0]["done_by"] == "admin" and r.json()["followups_open"] == 1
+    # Rest erneut in den Entwurf
+    r = client.post(f"/api/changes/{cid}/skipped/to-draft", headers=admin, json={"indexes": [1]})
+    assert r.status_code == 200 and r.json()["added"] == 1, r.text
+    # nur Lesen (Auditor) darf nicht abhaken
+    viewer = make_user(client, admin, "auditor", [("Auditor", None)])
+    assert client.put(f"/api/changes/{cid}/skipped/1", headers=viewer, json={"done": True}).status_code == 403
+
+
+def test_deploy_fails_when_everything_rejected(client, admin, fake, monkeypatch):
+    _sync_deploy(monkeypatch)
+    fw_id = setup_firewall(client, admin)
+    cid = _draft_rule(client, admin, fw_id, "Nix")
+    fake.reject = {"Nix"}
+    client.post(f"/api/changes/{cid}/submit", headers=admin, json={"title": "t", "justification": "j", "bypass_approval": True})
+    cr = client.get(f"/api/changes/{cid}", headers=admin).json()
+    assert cr["status"] == "failed" and cr["skipped"] == [] and len(cr["operations"]) == 1

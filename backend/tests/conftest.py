@@ -40,14 +40,26 @@ class FakeFirewall:
         }
         self.applied: list[list[dict]] = []
         self.fail = None
+        self.reject: set[str] = set()   # Objektnamen, die die Firewall ablehnt
 
     def fetch(self, db, fw, log=None):
         return copy.deepcopy(self.config), "2100.1"
 
-    def apply(self, db, fw, ops, log):
+    def apply(self, db, fw, ops, log, skipper=None):
         if self.fail:
             raise connector.DeployError(self.fail)
         from app import changes
+        if skipper is not None and self.reject:
+            # wie die echten Connectoren: abgelehnte Objekte und Abhängige überspringen
+            keep = []
+            for o in ops:
+                if skipper.check(o):
+                    continue
+                if o["name"] in self.reject:
+                    skipper.skip(o, f"500: {o['name']} ungültig")
+                    continue
+                keep.append(o)
+            ops = keep
         self.applied.append(ops)
         self.config = changes.effective_config(self.config, ops)
         log("fake applied")

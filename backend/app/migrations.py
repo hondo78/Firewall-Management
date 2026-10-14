@@ -38,6 +38,7 @@ POSTGRES = [
     "ALTER TABLE change_templates ADD COLUMN IF NOT EXISTS updated_by VARCHAR(36)",
     "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS template_id VARCHAR(36)",
     "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS template_version INTEGER",
+    "ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS skipped JSON NOT NULL DEFAULT '[]'",
     "CREATE INDEX IF NOT EXISTS ix_change_requests_template_id ON change_requests (template_id)",
 ]
 

@@ -706,6 +706,61 @@ def drift_conflicts(current: dict[str, list[dict]], ops: list[dict]) -> list[str
     return problems
 
 
+def _record_skipped(cr: ChangeRequest, skipper, logline) -> list[dict]:
+    """Übersprungene Objekte aus dem Antrag lösen (Rücknahme/Befristung beziehen sich nur auf Ausgerolltes) und als
+    Checkliste ablegen. Wurde gar nichts angewendet, gilt das Ausrollen als fehlgeschlagen (erneut versuchbar)."""
+    if not skipper or not skipper.items:
+        return []
+    keys = {(s["op"]["entity"], s["op"]["name"]) for s in skipper.items}
+    applied = [o for o in cr.operations if (o["entity"], o["name"]) not in keys]
+    if not applied:
+        raise connector.DeployError(tr('Kein Objekt wurde angewendet – alle {0} wurden von der Firewall abgelehnt: {1}',
+                                       len(keys), "; ".join(f"{s['op']['name']}: {s['error']}" for s in skipper.items[:5])))
+    skipped = [{**{k: v for k, v in s["op"].items() if k in ("entity", "action", "name", "data", "position")},
+                "error": s["error"], "done": False, "done_by": None, "done_at": None, "note": ""}
+               for s in skipper.items]
+    cr.operations = applied
+    cr.skipped = skipped
+    logline(tr('{0} von {1} Objekt(en) übersprungen – Checkliste „Nacharbeiten“ am Antrag', len(skipped),
+               len(skipped) + len(applied)))
+    return skipped
+
+
+def can_follow_up(db: DbSession, user: User, cr: ChangeRequest) -> bool:
+    """Checkliste abhaken: wer an dieser Firewall beantragen, genehmigen oder ausrollen darf."""
+    return any(permissions.can(db, user, p, cr.firewall) for p in ("change.create", "change.approve", "change.deploy"))
+
+
+def set_followup(db: DbSession, user: User, cr: ChangeRequest, index: int, done: bool, note: str, ip: str) -> None:
+    if not can_follow_up(db, user, cr):
+        raise HTTPException(403, tr('Keine Berechtigung'))
+    items = [dict(s) for s in cr.skipped or []]
+    if not 0 <= index < len(items):
+        raise HTTPException(404, tr('Eintrag nicht gefunden'))
+    it = items[index]
+    it.update(done=done, note=note.strip()[:1000], done_by=user.username if done else None,
+              done_at=utcnow().isoformat() if done else None)
+    cr.skipped = items
+    event(db, cr, "followup", tr('Nacharbeit {0}: {1} „{2}“', tr('erledigt') if done else tr('wieder offen'),
+                                 tr(entities.LABELS.get(it['entity'], it['entity'])), it['name'])
+          + (f" – {it['note']}" if it["note"] else ""), user)
+    audit(db, "change.followup_" + ("done" if done else "reopened"), actor=user, target_type="change", target_id=cr.id,
+          ip=ip, details={"number": cr.number, "firewall": cr.firewall.name,
+                          "object": f"{it['action']} {it['entity']} {it['name']}", "note": it["note"]})
+
+
+def followups_to_draft(db: DbSession, user: User, cr: ChangeRequest, indexes: list[int]) -> tuple[ChangeRequest, int, list[str]]:
+    """Übersprungene Objekte erneut in den eigenen Entwurf übernehmen – dort korrigieren und neu einreichen."""
+    if not permissions.can(db, user, "change.create", cr.firewall):
+        raise HTTPException(403, tr('Keine Berechtigung, Änderungen für diese Firewall zu beantragen'))
+    items = cr.skipped or []
+    picked = [items[i] for i in dict.fromkeys(indexes) if 0 <= i < len(items)]
+    if not picked:
+        raise HTTPException(400, tr('Keine Einträge ausgewählt'))
+    ops = [{k: v for k, v in s.items() if k in ("entity", "action", "name", "data", "position")} for s in picked]
+    return draft_add_many(db, user, cr.firewall, ops)
+
+
 def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
     """Führt einen bereits per claim_for_deploy() übernommenen Antrag aus."""
     with _deploy_lock:
@@ -734,7 +789,9 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
                 notify.change_event(cr.id, "conflict")
                 return
             logline(tr('Keine Abweichungen – wende Änderungen an …'))
-            connector.apply(db, fw, cr.operations, logline)
+            skipper = connector.Skipper(logline) if settings.get(db, "deploy_skip_failed") else None
+            connector.apply(db, fw, cr.operations, logline, skipper)
+            skipped = _record_skipped(cr, skipper, logline)
             logline(tr('Lese Konfiguration nach dem Ausrollen …'))
             try:
                 sync.sync_firewall(db, fw, actor=actor, reason="deploy", change_id=cr.id)
@@ -749,11 +806,13 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
                 cr = db.get(ChangeRequest, change_id)
             logline(tr('Fertig.'))
             cr.status, cr.error, cr.deployed_at, cr.deploy_log = "deployed", "", utcnow(), lines
-            event(db, cr, "deployed", "", actor)
+            event(db, cr, "deployed", tr('{0} Objekt(e) übersprungen – siehe Nacharbeiten', len(skipped)) if skipped else "", actor)
             audit(db, "change.deployed", actor=actor, target_type="change", target_id=cr.id, details={
                 "number": cr.number, "firewall": fw.name, "connector": fw.connector,
                 "operations": [f"{o['action']} {o['entity']} {o['name']}" for o in cr.operations],
                 "approvers": [e.actor_name for e in approvals(cr)],
+                **({"skipped": [f"{s['action']} {s['entity']} {s['name']}: {s['error']}" for s in skipped]}
+                   if skipped else {}),
             })
             notify.change_event(cr.id, "deployed")
         except (connector.DeployError, *connector.ConnectorError) as e:

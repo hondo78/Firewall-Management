@@ -82,7 +82,8 @@ export const EVENT_LABEL = {
   created: t("Entwurf angelegt"), draft_changed: t("Entwurf geändert"), submitted: t("Eingereicht"), approved: t("Genehmigt"),
   rejected: t("Abgelehnt"), withdrawn: t("Zurückgezogen"), comment: t("Kommentar"), deploy_started: t("Ausrollen gestartet"),
   deployed: t("Ausgerollt"), failed: t("Fehlgeschlagen"), conflict: t("Konflikt erkannt"),
-  preapproved: t("Vorab genehmigt (Befristung)"), approval_bypassed: t("Ohne Freigabe genehmigt (Superadmin)"), expiry_failed: t("Automatische Rücknahme fehlgeschlagen"),
+  preapproved: t("Vorab genehmigt (Befristung)"), approval_bypassed: t("Ohne Freigabe genehmigt (Superadmin)"),
+  followup: t("Nacharbeit"), expiry_failed: t("Automatische Rücknahme fehlgeschlagen"),
 }
 
 /** Recht auf einer Firewall (fw.permissions kommt vom Backend) bzw. global. */

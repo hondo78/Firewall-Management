@@ -9,6 +9,7 @@ const TABS = {
   open: { label: t("Offen"), query: 'status=pending,approved,deploying' },
   mine: { label: t("Meine"), query: 'mine=true' },
   failed: { label: t("Fehlgeschlagen"), query: 'status=failed,conflict' },
+  followups: { label: t("Nacharbeiten"), query: 'followups=true' },
   all: { label: t("Alle"), query: '' },
 }
 
@@ -34,7 +35,7 @@ export default function Changes() {
       )}
       <Tabs tabs={Object.entries(TABS).map(([k, v]) => [k, v.label])} value={tab} onChange={(t) => setParams({ tab: t })} />
       <ErrorBox error={error} />
-      {rows && (!rows.length ? <div className="panel"><Empty>{tab === 'approve' ? t("Keine Anträge warten auf Ihre Genehmigung.") : t("Keine Anträge.")}</Empty></div> : (
+      {rows && (!rows.length ? <div className="panel"><Empty>{tab === 'approve' ? t("Keine Anträge warten auf Ihre Genehmigung.") : tab === 'followups' ? t("Keine offenen Nacharbeiten.") : t("Keine Anträge.")}</Empty></div> : (
         <div className="panel table-wrap">
           <table>
             <thead><tr><th>{t("Nr.")}</th><th>{t("Titel")}</th><th>{t("Firewall")}</th><th>{t("Antragsteller")}</th><th>{t("Status")}</th><th>{t("Genehmigungen")}</th><th>{t("Eingereicht")}</th></tr></thead>
@@ -45,6 +46,7 @@ export default function Changes() {
                   <td>{c.title}{c.expires_at && <span className="badge b-info" style={{ marginLeft: 6 }} title={`bis ${fmt(c.expires_at)}`}>{t("befristet")}</span>}
                     {c.reverts_id && <span className="badge" style={{ marginLeft: 6 }}>{t("Rücknahme")}</span>}
                     {c.batch_id && <span className="badge b-accent" style={{ marginLeft: 6 }}>{t("Sammelantrag")}</span>}
+                    {c.followups_open > 0 && <span className="badge b-warn" style={{ marginLeft: 6 }} title={t("Beim Ausrollen übersprungene Objekte")}>{t("{0} nacharbeiten", c.followups_open)}</span>}
                     <div className="small muted">{c.operations_count} {t("Änderung(en)")}{c.ticket_ref && ` · ${c.ticket_ref}`}</div></td>
                   <td>{c.firewall}</td>
                   <td>{c.created_by}</td>

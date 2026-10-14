@@ -581,5 +581,17 @@
  "Ohne Freigabe ausgerollt (Superadmin)": "Deployed without approval (superadmin)",
  "Ohne Vier-Augen-Freigabe eingereicht (Superadmin)": "Submitted without four-eyes approval (superadmin)",
  "Ohne Vier-Augen-Freigabe eingereicht – direkt zum Ausrollen freigegeben": "Submitted without four-eyes approval – released for deployment directly",
- "Teile 1–{0} sind bereits auf der Firewall angewendet und werden nicht zurückgenommen": "Parts 1–{0} are already applied on the firewall and will not be rolled back"
+ "Teile 1–{0} sind bereits auf der Firewall angewendet und werden nicht zurückgenommen": "Parts 1–{0} are already applied on the firewall and will not be rolled back",
+ "{0} von {1} Objekt(en) übersprungen – Checkliste „Nacharbeiten“ am Antrag": "{0} of {1} object(s) skipped – see the “Follow-ups” checklist on the request",
+ "Kein Objekt wurde angewendet – alle {0} wurden von der Firewall abgelehnt: {1}": "No object was applied – the firewall rejected all {0}: {1}",
+ "Eintrag nicht gefunden": "Entry not found",
+ "Nacharbeit {0}: {1} „{2}“": "Follow-up {0}: {1} “{2}”",
+ "Keine Einträge ausgewählt": "No entries selected",
+ "erledigt": "done",
+ "wieder offen": "reopened",
+ "{0} Objekt(e) übersprungen – siehe Nacharbeiten": "{0} object(s) skipped – see follow-ups",
+ "{0} Objekt(e) übersprungen – bitte nacharbeiten:": "{0} object(s) skipped – please follow up:",
+ "Import von {0} Objekten fehlgeschlagen – suche das abgelehnte Objekt …": "Import of {0} objects failed – looking for the rejected object …",
+ "ÜBERSPRUNGEN: {0} – {1}": "SKIPPED: {0} – {1}",
+ "verweist auf das übersprungene Objekt „{0}“": "references the skipped object “{0}”"
 }

@@ -26,6 +26,43 @@ class DeployError(Exception):
     pass
 
 
+def is_element_error(e: Exception) -> bool:
+    """Hat die Firewall nur dieses Objekt abgelehnt (→ überspringbar)? Verbindungs-, Anmelde- und Serverfehler
+    betreffen dagegen den ganzen Vorgang."""
+    if isinstance(e, XmlApiError):
+        return e.element
+    if isinstance(e, RestApiError):
+        return e.status is not None and 400 <= e.status < 500 and e.status not in (401, 403, 429)
+    return False
+
+
+class Skipper:
+    """Überspringen statt Abbrechen: abgelehnte Objekte und alles, was auf sie verweist, landen in `items`
+    (Checkliste zum Nacharbeiten); der Rest wird ausgerollt."""
+    def __init__(self, log: Log):
+        self.items: list[dict] = []
+        self.failed: set[str] = set()
+        self.log = log
+
+    def blocked_by(self, o: dict) -> str | None:
+        if o["action"] == "remove" or not self.failed:
+            return None
+        return next((n for _, n in entities.references(o["entity"], o.get("data") or {}) if n in self.failed), None)
+
+    def skip(self, o: dict, error: str) -> None:
+        self.failed.add(o["name"])
+        self.items.append({"op": o, "error": error})
+        self.log(tr('ÜBERSPRUNGEN: {0} – {1}', _label(o), error))
+
+    def check(self, o: dict) -> bool:
+        """True, wenn o wegen eines bereits übersprungenen Objekts nicht angewendet werden kann."""
+        dep = self.blocked_by(o)
+        if dep:
+            self.skip(o, tr('verweist auf das übersprungene Objekt „{0}“', dep))
+            return True
+        return False
+
+
 def central_client(acc: CentralAccount) -> CentralClient:
     return CentralClient(acc.id_url, acc.api_url, acc.client_id,
                          crypto.decrypt(acc.client_secret_enc, f"central:{acc.id}"),
@@ -207,9 +244,11 @@ def test_connection(db: DbSession, fw: Firewall) -> str:
     return tr('Anmeldung erfolgreich (API-Version {0})', version or 'unbekannt')
 
 
-def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
+def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log, skipper: Skipper | None = None) -> None:
     """MDR-Teil (Sophos Central) zuerst, dann die Firewall-Konfiguration. Scheitert die Konfiguration, wird der
-    MDR-Teil zurückgenommen – es bleibt nie nur die Hälfte eines Antrags stehen."""
+    MDR-Teil zurückgenommen – es bleibt nie nur die Hälfte eines Antrags stehen.
+    Mit skipper werden von der Firewall abgelehnte Objekte übersprungen (skipper.items) statt alles zurückzurollen;
+    Verbindungsfehler brechen weiterhin ab."""
     central_ops = [o for o in ops if o["entity"] in entities.CENTRAL_ENTITIES]
     rest = [o for o in ops if o["entity"] not in entities.CENTRAL_ENTITIES]
     undo = None
@@ -224,7 +263,7 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
     if not rest:
         return
     try:
-        _apply_firewall(db, fw, rest, log)
+        _apply_firewall(db, fw, rest, log, skipper)
     except Exception:
         if undo:
             log(tr('Nehme MDR-Änderungen zurück …'))
@@ -232,24 +271,21 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
         raise
 
 
-def _apply_firewall(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> None:
+def _apply_firewall(db: DbSession, fw: Firewall, ops: list[dict], log: Log, skipper: Skipper | None = None) -> None:
     ordered = entities.order_operations(ops)
     if fw.connector == "central":
         if any(o["action"] == "remove" for o in ordered):
             raise DeployError(tr('Löschen ist über den Sophos-Central-Import nicht möglich'))
         client, cid = _central_for(db, fw)
-        objs = [(o["entity"], xmlconv.with_position(o["data"], o.get("position"))
-                 if o["entity"] == "FirewallRule" else o["data"]) for o in ordered]
         # Große Anträge (z. B. Migration) in mehreren Importen – in Schreibreihenfolge, Objekte vor Gruppen vor Regeln
-        parts = [objs[i:i + CENTRAL_IMPORT_CHUNK] for i in range(0, len(objs), CENTRAL_IMPORT_CHUNK)]
+        parts = [ordered[i:i + CENTRAL_IMPORT_CHUNK] for i in range(0, len(ordered), CENTRAL_IMPORT_CHUNK)]
         for n, part in enumerate(parts, 1):
             if len(parts) > 1:
                 log(tr('Import-Teil {0}/{1} ({2} Objekte) …', n, len(parts), len(part)))
-            archive = xmlconv.build_tar(xmlconv.build_entities_xml(part, fw.api_version))
-            tx = client.import_config([cid], archive, log)
-            items = (tx.get("response") or {}).get("items") or []
-            mine = next((i for i in items if i.get("firewallId") == cid), None)
-            result = (mine or {}).get("result") or tx.get("result")
+            if skipper is not None:
+                _central_import_skipping(client, cid, fw, part, log, skipper)
+                continue
+            result = _central_import(client, cid, fw, part, log)
             if result != "success":
                 if n > 1:
                     # Central kann nicht löschen – frühere Teile bleiben auf der Firewall
@@ -263,19 +299,53 @@ def _apply_firewall(db: DbSession, fw: Firewall, ops: list[dict], log: Log) -> N
             if not has_waf_xml(fw):
                 raise DeployError(tr('WAF-Regeln brauchen den XML-API-Zugang dieser Firewall (Einstellungen › Anbindung)'))
             xml = waf_xml_client(fw)
-        _rest_apply(rest_client(fw), ordered, log, xml)
+        _rest_apply(rest_client(fw), ordered, log, xml, skipper)
         return
     client = xml_client(fw)
     done: list[dict] = []
     for o in ordered:
+        if skipper and skipper.check(o):
+            continue
         try:
             msg = _xml_apply_one(client, o)
         except XmlApiError as e:
+            if skipper and is_element_error(e):
+                skipper.skip(o, str(e))
+                continue
             log(tr('FEHLER bei {0}: {1}', _label(o), e))
             _rollback(client, done, log)
             raise DeployError(f"{_label(o)}: {e}") from e
         done.append(o)
         log(f"{_label(o)} – {o['action']}: {msg}")
+
+
+def _central_import(client: CentralClient, cid: str, fw: Firewall, ops: list[dict], log: Log) -> str:
+    objs = [(o["entity"], xmlconv.with_position(o["data"], o.get("position"))
+             if o["entity"] == "FirewallRule" else o["data"]) for o in ops]
+    archive = xmlconv.build_tar(xmlconv.build_entities_xml(objs, fw.api_version))
+    tx = client.import_config([cid], archive, log)
+    items = (tx.get("response") or {}).get("items") or []
+    mine = next((i for i in items if i.get("firewallId") == cid), None)
+    return (mine or {}).get("result") or tx.get("result")
+
+
+def _central_import_skipping(client: CentralClient, cid: str, fw: Firewall, ops: list[dict], log: Log,
+                             skipper: Skipper) -> None:
+    """Central meldet nur „Import fehlgeschlagen“ ohne das schuldige Objekt: den Teil halbieren, bis die
+    abgelehnten Objekte einzeln feststehen (performPartialImport=false → ein gescheiterter Import ändert nichts)."""
+    ops = [o for o in ops if not skipper.check(o)]
+    if not ops:
+        return
+    result = _central_import(client, cid, fw, ops, log)
+    if result == "success":
+        return
+    if len(ops) == 1:
+        skipper.skip(ops[0], tr('Import auf der Firewall fehlgeschlagen (Ergebnis: {0})', result))
+        return
+    log(tr('Import von {0} Objekten fehlgeschlagen – suche das abgelehnte Objekt …', len(ops)))
+    half = len(ops) // 2
+    _central_import_skipping(client, cid, fw, ops[:half], log, skipper)
+    _central_import_skipping(client, cid, fw, ops[half:], log, skipper)
 
 
 def _label(o: dict) -> str:
@@ -386,7 +456,8 @@ def _xml_entity_undo(xml: XmlApiClient, o: dict) -> None:
         xml.set(tag, o["before"], "add", o.get("before_position"))
 
 
-def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log, xml: XmlApiClient | None = None) -> None:
+def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log, xml: XmlApiClient | None = None,
+                skipper: Skipper | None = None) -> None:
     """REST-Operationen (und WAF-Regeln per XML-API) nacheinander; bei Fehler alles bereits Angewendete zurück."""
     def one(o):
         return _xml_entity_one(xml, o) if o["entity"] in entities.REST_XML_ENTITIES else _rest_one(client, o)
@@ -395,9 +466,14 @@ def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log, xml: XmlAp
         return _xml_entity_undo(xml, o) if o["entity"] in entities.REST_XML_ENTITIES else _rest_undo(client, o)
     done: list[dict] = []
     for o in ordered:
+        if skipper and skipper.check(o):
+            continue
         try:
             msg = one(o)
         except (RestApiError, XmlApiError) as e:
+            if skipper and is_element_error(e):
+                skipper.skip(o, str(e))
+                continue
             log(tr('FEHLER bei {0}: {1}', _label(o), e))
             if done:
                 log(tr('Rolle {0} bereits angewendete Operation(en) zurück …', len(done)))

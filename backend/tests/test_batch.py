@@ -12,7 +12,7 @@ def setup_two(client, admin, monkeypatch):
     def fetch(db, fw, log=None):
         return fakes.setdefault(fw.name, FakeFirewall()).fetch(db, fw, log)
 
-    def apply(db, fw, ops, log):
+    def apply(db, fw, ops, log, skipper=None):
         fakes[fw.name].apply(db, fw, ops, log)
     monkeypatch.setattr(connector, "fetch_config", fetch)
     monkeypatch.setattr(connector, "apply", apply)

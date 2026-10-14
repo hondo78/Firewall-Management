@@ -17,7 +17,10 @@ from ..i18n import tr
 
 
 class XmlApiError(Exception):
-    pass
+    """element=True: die Firewall hat dieses eine Objekt abgelehnt (Status je Entität) – kein Verbindungsfehler."""
+    def __init__(self, message: str, element: bool = False):
+        super().__init__(message)
+        self.element = element
 
 
 def normalize_base_url(url: str) -> str:
@@ -96,7 +99,7 @@ class XmlApiClient:
             raise XmlApiError(tr('Keine Statusmeldung für {0} in der Antwort', entity))
         code, text = status.get("code", ""), (status.text or "").strip()
         if code != "200":
-            raise XmlApiError(f"{code}: {text}")
+            raise XmlApiError(f"{code}: {text}", element=True)
         return text
 
     def set(self, entity: str, data: dict, operation: str, position: dict | None = None) -> str:

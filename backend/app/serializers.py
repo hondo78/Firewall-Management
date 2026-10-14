@@ -75,6 +75,8 @@ def change_summary(cr: ChangeRequest) -> dict:
         "created_at": cr.created_at, "submitted_at": cr.submitted_at, "decided_at": cr.decided_at,
         "deployed_at": cr.deployed_at, "deploy_after": cr.deploy_after, "ticket_ref": cr.ticket_ref,
         "operations_count": len(cr.operations or []),
+        "skipped_count": len(cr.skipped or []),
+        "followups_open": sum(1 for s in cr.skipped or [] if not s.get("done")),
         "approvals": len({e.user_id for e in cr.events if e.kind == "approved"}),
         "required_approvals": cr.required_approvals,
         "entities": sorted({o["entity"] for o in cr.operations or []}),
@@ -116,6 +118,9 @@ def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
         **change_summary(cr),
         "justification": cr.justification, "error": cr.error, "deploy_log": cr.deploy_log or [],
         "operations": [op_out(fw, o) for o in cr.operations or []],
+        "skipped": [{k: v for k, v in s.items() if k != "data"} | {"label": entities.LABELS.get(s["entity"], s["entity"]),
+                                                                   "has_data": bool(s.get("data"))}
+                    for s in cr.skipped or []],
         "connector": fw.connector,
         "events": [{"ts": e.ts, "kind": e.kind, "text": e.text, "actor": e.actor_name} for e in cr.events],
         "can": {
@@ -126,6 +131,7 @@ def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
             "deploy": cr.status in ("approved", "failed") and permissions.can(db, user, "change.deploy", fw),
             "revert": changes.can_revert(db, user, cr) and not reverted_by,
             "submit": cr.status == "draft" and is_owner,
+            "followup": bool(cr.skipped) and changes.can_follow_up(db, user, cr),
         },
         "own": is_owner,
         "analysis": _analysis(db, cr) if cr.status in ("draft", "pending", "approved") else [],

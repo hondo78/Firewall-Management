@@ -202,7 +202,7 @@ def test_connector_rolls_back_mdr_when_config_part_fails(monkeypatch):
     monkeypatch.setattr(connector, "_central_for", lambda db, fw: (None, "fw1"))
     monkeypatch.setattr(mdr, "apply", lambda client, cid, ops, log: lambda: undone.append(True))
 
-    def broken(db, fw, ops, log):
+    def broken(db, fw, ops, log, skipper=None):
         raise connector.DeployError("Firewall sagt nein")
     monkeypatch.setattr(connector, "_apply_firewall", broken)
     ops = [{"entity": "mdrIndicators", "action": "add", "name": "1.2.3.4", "data": {"name": "1.2.3.4", "type": "ipv4-addr"}},

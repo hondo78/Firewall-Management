@@ -27,6 +27,8 @@ export default function SettingsPage() {
           <span>{t("Genehmigte Anträge automatisch ausrollen")} <span className="muted small">{t("(sonst manuell durch Berechtigte mit „change.deploy“)")}</span></span></label>
         <label className="check"><input type="checkbox" checked={form.require_ticket} onChange={(e) => setForm({ ...form, require_ticket: e.target.checked })} />
           <span>{t("Ticket-Referenz beim Einreichen verpflichtend")}</span></label>
+        <label className="check"><input type="checkbox" checked={form.deploy_skip_failed} onChange={(e) => setForm({ ...form, deploy_skip_failed: e.target.checked })} />
+          <span>{t("Von der Firewall abgelehnte Objekte überspringen statt den Antrag zurückzurollen")} <span className="muted small">{t("(übersprungene Objekte landen als Checkliste „Nacharbeiten“ am Antrag; Verbindungsfehler brechen immer ab)")}</span></span></label>
         <label className="check"><input type="checkbox" checked={form.superadmin_bypass_approval} onChange={(e) => setForm({ ...form, superadmin_bypass_approval: e.target.checked })} />
           <span>{t("Superadmins dürfen ohne Freigabe ausrollen")} <span className="muted small">{t("(Vier-Augen-Prinzip wird umgangen; protokolliert, Genehmiger werden benachrichtigt)")}</span></span></label>
         <h3 style={{ margin: '10px 0 0' }}>{t("Anmeldung & Sicherheit")}</h3>

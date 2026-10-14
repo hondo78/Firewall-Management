@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
-import { EVENT_LABEL, STATUS_LABEL, api, crNo, fmt } from '../api'
+import { ACTION_LABEL, EVENT_LABEL, STATUS_LABEL, api, crNo, fmt } from '../api'
 import { ErrorBox, Field, Modal, Progress, Status, useLoad } from '../components/ui'
 import { OperationCard } from './FirewallView'
 import Findings from '../components/Findings'
@@ -82,6 +82,58 @@ function DeployLog({ lines }) {
           <span className="ts">{new Date(l.ts).toLocaleTimeString(locale)}</span>{l.msg}
         </div>
       ))}
+    </div>
+  )
+}
+
+// Beim Ausrollen übersprungene Objekte: Checkliste zum Nacharbeiten (abhaken mit Notiz, erneut in den Entwurf)
+function Followups({ cr, onChange }) {
+  const nav = useNavigate()
+  const [sel, setSel] = useState(new Set())
+  const [notes, setNotes] = useState({})
+  const [error, setError] = useState('')
+  const [msg, setMsg] = useState('')
+  const open = cr.skipped.filter((s) => !s.done).length
+  const toggleSel = (i) => { const n = new Set(sel); n.has(i) ? n.delete(i) : n.add(i); setSel(n) }
+  const setDone = async (i, done) => {
+    setError('')
+    try { onChange(await api(`/changes/${cr.id}/skipped/${i}`, { method: 'PUT', body: { done, note: notes[i] ?? cr.skipped[i].note ?? '' } })) } catch (e) { setError(e.message) }
+  }
+  const toDraft = async () => {
+    setError('')
+    try {
+      const r = await api(`/changes/${cr.id}/skipped/to-draft`, { method: 'POST', body: { indexes: [...sel] } })
+      setMsg(t("{0} Objekt(e) in Ihren Entwurf übernommen{1}", r.added, r.skipped.length ? t(" · übersprungen: {0}", r.skipped.join('; ')) : ''))
+      setSel(new Set())
+      if (r.added) nav(`/firewalls/${r.firewall_id}`)
+    } catch (e) { setError(e.message) }
+  }
+  return (
+    <div className="panel" style={{ borderColor: open ? 'var(--warn)' : undefined }}>
+      <div className="panel-head">
+        <h3>{t("Nacharbeiten")} <span className="muted" style={{ fontWeight: 400 }}>({t("{0} von {1} offen", open, cr.skipped.length)})</span></h3>
+        <span className="muted small">{t("Diese Objekte hat die Firewall abgelehnt; sie wurden übersprungen, der Rest ist ausgerollt.")}</span>
+        {cr.can.followup && <button className="sm right" disabled={!sel.size} onClick={toDraft}>{t("Auswahl erneut in den Entwurf ({0})", sel.size)}</button>}
+      </div>
+      <ErrorBox error={error} />
+      {msg && <div className="alert ok small">{msg}</div>}
+      <div className="table-wrap"><table>
+        <thead><tr><th style={{ width: 28 }} /><th>{t("Erledigt")}</th><th>{t("Objekt")}</th><th>{t("Fehler der Firewall")}</th><th>{t("Notiz")}</th></tr></thead>
+        <tbody>{cr.skipped.map((s, i) => (
+          <tr key={i} className={s.done ? 'muted' : ''}>
+            <td>{cr.can.followup && <input type="checkbox" checked={sel.has(i)} onChange={() => toggleSel(i)} aria-label={t("Auswählen")} />}</td>
+            <td><label className="check"><input type="checkbox" checked={s.done} disabled={!cr.can.followup} onChange={(e) => setDone(i, e.target.checked)} />
+              {s.done && <span className="small">{s.done_by} · {fmt(s.done_at)}</span>}</label></td>
+            <td><span className={`badge ${s.action === 'add' ? 'b-ok' : s.action === 'remove' ? 'b-danger' : 'b-warn'}`}>{ACTION_LABEL[s.action]}</span>{' '}
+              {t(s.label)} „{s.name}“</td>
+            <td className="small text-error" style={{ whiteSpace: 'pre-wrap' }}>{s.error}</td>
+            <td>{cr.can.followup
+              ? <input value={notes[i] ?? s.note ?? ''} placeholder={t("z. B. manuell angelegt, Ticket …")} onChange={(e) => setNotes({ ...notes, [i]: e.target.value })}
+                onBlur={() => (notes[i] !== undefined && notes[i] !== (s.note || '')) && setDone(i, s.done)} />
+              : <span className="small">{s.note}</span>}</td>
+          </tr>))}
+        </tbody>
+      </table></div>
     </div>
   )
 }
@@ -179,6 +231,7 @@ export default function ChangeDetail() {
             <h3 style={{ marginTop: 0 }}>{t("Begründung")}</h3>
             <div style={{ whiteSpace: 'pre-wrap' }}>{cr.justification || <span className="muted">–</span>}</div>
           </div>
+          {cr.skipped?.length > 0 && <Followups cr={cr} onChange={(r) => { setCr(r); refreshCounts() }} />}
           <div>
             <h2>{t("Änderungen (")}{cr.operations.length})</h2>
             {cr.operations.map((op, i) => <OperationCard key={i} op={op} />)}

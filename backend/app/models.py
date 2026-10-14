@@ -233,6 +233,9 @@ class ChangeRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     deployed_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
     deploy_log: Mapped[list] = mapped_column(JSON, default=list)
+    # Beim Ausrollen übersprungene Objekte – Checkliste zum Nacharbeiten:
+    # [{entity, action, name, data?, position?, error, done, done_by, done_at, note}]
+    skipped: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     # Rücknahme: verweist auf den ausgerollten Antrag, der umgekehrt wird
     reverts_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     # Sammelantrag: gleiche Änderung auf mehreren Firewalls – gemeinsam genehmigt, je Firewall ausgerollt

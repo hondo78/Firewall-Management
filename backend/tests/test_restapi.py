@@ -305,3 +305,38 @@ def test_rest_fields_checked_against_spec(client, admin, fake):
     # Undokumentiertes Feld, das die Firewall selbst liefert, bleibt erlaubt
     changes.validate_operation(fw, {"entity": "firewallRulesIpv4", "action": "update", "name": "R1", "data": {
         "name": "R1", "skipLocalDestined": True, "action": "accept"}}, cfg)
+
+
+def test_rest_apply_skips_rejected_objects_and_dependents():
+    """Abgelehntes Objekt (4xx) und was darauf verweist wird übersprungen; Verbindungsfehler brechen ab."""
+    calls = []
+
+    def handler(req):
+        body = json.loads(req.content) if req.content else None
+        calls.append((req.method, req.url.path.replace("/api/firewall-config/v1", ""), body))
+        if req.method == "POST" and body and body.get("name") == "Bad":
+            return httpx.Response(400, json={"error": "invalid", "message": "ipv4Address ungültig"})
+        return httpx.Response(201 if req.method == "POST" else 200, json={})
+
+    restapi._PREFIX_BY_BASE.clear()
+    c = RestApiClient(BASE, "k", transport=httpx.MockTransport(handler))
+    ops = [
+        {"entity": "addressesIpv4", "action": "add", "name": "Bad", "data": {"name": "Bad", "type": "ipv4Address", "ipv4Address": "x"}},
+        {"entity": "addressesIpv4", "action": "add", "name": "Good", "data": {"name": "Good", "type": "ipv4Address", "ipv4Address": "10.0.0.2"}},
+        {"entity": "addressGroupsIpv4", "action": "add", "name": "Grp", "data": {"name": "Grp", "ipv4Addresses": [{"name": "Bad"}]}},
+    ]
+    log = []
+    skipper = connector.Skipper(log.append)
+    connector._rest_apply(c, entities.order_operations(ops), log.append, None, skipper)
+    assert [(s["op"]["name"]) for s in skipper.items] == ["Bad", "Grp"]
+    assert "übersprungene Objekt „Bad“" in skipper.items[1]["error"]
+    # Good angelegt, Gruppe gar nicht erst versucht, nichts zurückgerollt
+    assert [(m, b["name"]) for m, _, b in calls if m == "POST"] == [("POST", "Bad"), ("POST", "Good")]
+    assert not any(m == "DELETE" for m, _, _ in calls)
+
+    # Anmeldefehler betrifft alles → Abbruch mit Rücknahme
+    def denied(req):
+        return httpx.Response(401, json={"error": "unauthorized", "message": "key"})
+    c2 = RestApiClient(BASE, "k", transport=httpx.MockTransport(denied))
+    with pytest.raises(connector.DeployError):
+        connector._rest_apply(c2, ops[1:2], log.append, None, connector.Skipper(log.append))

@@ -112,7 +112,7 @@ def submit(change_id: str, body: SubmitIn, request: Request, user: User = Depend
 
 @router.get("/changes")
 def list_changes(status: str | None = None, firewall_id: str | None = None, mine: bool = False,
-                 to_approve: bool = False, q: str = "", limit: int = 200,
+                 to_approve: bool = False, followups: bool = False, q: str = "", limit: int = 200,
                  user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
     stmt = select(ChangeRequest).where(ChangeRequest.status != "draft")
     if status:
@@ -132,6 +132,8 @@ def list_changes(status: str | None = None, firewall_id: str | None = None, mine
         if cr.firewall_id not in fw_cache:
             fw_cache[cr.firewall_id] = permissions.can(db, user, "firewall.view", cr.firewall)
         if not fw_cache[cr.firewall_id]:
+            continue
+        if followups and not any(not s.get("done") for s in cr.skipped or []):
             continue
         if to_approve:
             if cr.status != "pending" or cr.created_by == user.id:
@@ -206,6 +208,33 @@ def deploy_now(change_id: str, request: Request, user: User = Depends(get_curren
     worker.deploy_in_background(cr.id, user.id)
     db.refresh(cr)
     return change_out(db, cr, user)
+
+
+class FollowupIn(BaseModel):
+    done: bool
+    note: str = Field(default="", max_length=1000)
+
+
+@router.put("/changes/{change_id}/skipped/{index}")
+def set_followup(change_id: str, index: int, body: FollowupIn, request: Request,
+                 user: User = Depends(get_current_user), db: DbSession = Depends(get_db)):
+    """Übersprungenes Objekt auf der Checkliste „Nacharbeiten“ abhaken (oder wieder öffnen)."""
+    cr = _change_or_404(db, user, change_id)
+    changes.set_followup(db, user, cr, index, body.done, body.note, client_ip(request))
+    return change_out(db, cr, user)
+
+
+class FollowupDraftIn(BaseModel):
+    indexes: list[int] = Field(max_length=5000)
+
+
+@router.post("/changes/{change_id}/skipped/to-draft")
+def followups_to_draft(change_id: str, body: FollowupDraftIn, user: User = Depends(get_current_user),
+                       db: DbSession = Depends(get_db)):
+    cr = _change_or_404(db, user, change_id)
+    draft, added, skipped = changes.followups_to_draft(db, user, cr, body.indexes)
+    return {"added": added, "skipped": skipped, "firewall_id": cr.firewall_id,
+            "draft": {"id": draft.id, "number": draft.number, "operations": len(draft.operations or [])}}
 
 
 class RevertIn(BaseModel):
