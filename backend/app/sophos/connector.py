@@ -26,6 +26,13 @@ class DeployError(Exception):
     pass
 
 
+def _step(log: Log, o: dict | None = None, n: int = 1) -> None:
+    """Fortschritt melden: changes.deploy hängt dafür `step(n, label)` an die Log-Funktion (sonst nichts zu tun)."""
+    step = getattr(log, "step", None)
+    if step:
+        step(n, _label(o) if o else "")
+
+
 def is_element_error(e: Exception) -> bool:
     """Hat die Firewall nur dieses Objekt abgelehnt (→ überspringbar)? Verbindungs-, Anmelde- und Serverfehler
     betreffen dagegen den ganzen Vorgang."""
@@ -53,6 +60,7 @@ class Skipper:
         self.failed.add(o["name"])
         self.items.append({"op": o, "error": error})
         self.log(tr('ÜBERSPRUNGEN: {0} – {1}', _label(o), error))
+        _step(self.log, o)
 
     def check(self, o: dict) -> bool:
         """True, wenn o wegen eines bereits übersprungenen Objekts nicht angewendet werden kann."""
@@ -257,6 +265,7 @@ def apply(db: DbSession, fw: Firewall, ops: list[dict], log: Log, skipper: Skipp
             client, cid = _central_for(db, fw)
             undo = mdr.apply(client, cid, central_ops, log)
             _remember_mdr(db, fw, central_ops)
+            _step(log, central_ops[-1], len(central_ops))
         except CentralError as e:
             log(tr('FEHLER im MDR-Threat-Feed: {0}', e))
             raise DeployError(tr('MDR-Threat-Feed: {0}', e)) from e
@@ -286,6 +295,8 @@ def _apply_firewall(db: DbSession, fw: Firewall, ops: list[dict], log: Log, skip
                 _central_import_skipping(client, cid, fw, part, log, skipper)
                 continue
             result = _central_import(client, cid, fw, part, log)
+            if result == "success":
+                _step(log, part[-1], len(part))
             if result != "success":
                 if n > 1:
                     # Central kann nicht löschen – frühere Teile bleiben auf der Firewall
@@ -317,6 +328,7 @@ def _apply_firewall(db: DbSession, fw: Firewall, ops: list[dict], log: Log, skip
             raise DeployError(f"{_label(o)}: {e}") from e
         done.append(o)
         log(f"{_label(o)} – {o['action']}: {msg}")
+        _step(log, o)
 
 
 def _central_import(client: CentralClient, cid: str, fw: Firewall, ops: list[dict], log: Log) -> str:
@@ -338,6 +350,7 @@ def _central_import_skipping(client: CentralClient, cid: str, fw: Firewall, ops:
         return
     result = _central_import(client, cid, fw, ops, log)
     if result == "success":
+        _step(log, ops[-1], len(ops))
         return
     if len(ops) == 1:
         skipper.skip(ops[0], tr('Import auf der Firewall fehlgeschlagen (Ergebnis: {0})', result))
@@ -486,3 +499,4 @@ def _rest_apply(client: RestApiClient, ordered: list[dict], log: Log, xml: XmlAp
             raise DeployError(f"{_label(o)}: {e}") from e
         done.append(o)
         log(f"{_label(o)}: {msg}")
+        _step(log, o)

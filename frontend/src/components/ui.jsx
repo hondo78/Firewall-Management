@@ -70,6 +70,31 @@ export function Chips({ items, kind, any = t("Beliebig") }) {
   return <span className="chips">{items.map((i) => <span key={i} className={`chip ${kind || ''}`}>{i}</span>)}</span>
 }
 
+const DEPLOY_PHASE = {
+  queued: t("Wartet auf ein anderes Ausrollen …"), drift: t("Lese Konfiguration (Drift-Prüfung) …"),
+  apply: t("Übertrage auf die Firewall"), verify: t("Kontrolle nach dem Ausrollen …"),
+}
+
+/** Fortschritt beim Ausrollen auf die Firewall (progress kommt vom Backend, nur während „deploying“). */
+export function DeployBar({ progress, compact }) {
+  if (!progress) return null
+  const { phase, done, total } = progress
+  // Lesen/Kontrolle haben keinen Zähler: Balken für diese Phasen fest anteilig, Übertragen dazwischen
+  const pct = phase === 'queued' ? 0 : phase === 'drift' ? 3
+    : phase === 'verify' ? 97 : 5 + Math.round((total ? done / total : 0) * 90)
+  const indeterminate = phase === 'queued' || phase === 'drift' || phase === 'verify'
+  return (
+    <div className={`deploybar ${compact ? 'compact' : ''}`}>
+      <div className={`deploybar-track ${indeterminate ? 'busy' : ''}`}><div className="deploybar-fill" style={{ width: `${pct}%` }} /></div>
+      {!compact && <div className="row small" style={{ justifyContent: 'space-between', marginTop: 4 }}>
+        <span>{DEPLOY_PHASE[phase] || phase}{phase === 'apply' && progress.current && <span className="muted"> · {progress.current}</span>}</span>
+        {phase === 'apply' && <b>{t("{0} von {1} Objekten", done, total)} ({pct > 95 ? 100 : Math.round((total ? done / total : 0) * 100)} %)</b>}
+      </div>}
+      {compact && <span className="small muted">{phase === 'apply' ? `${done}/${total}` : DEPLOY_PHASE[phase]}</span>}
+    </div>
+  )
+}
+
 export function Progress({ value, max }) {
   return (
     <span className="progress" title={t("{0} von {1} Genehmigungen", value, max)}>

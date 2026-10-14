@@ -578,3 +578,14 @@ button.flow-ok { border-color: var(--ok); color: var(--ok); }
 .mig-vendor:hover { border-color: var(--accent); }
 .mig-vendor.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .mig-vendor b { font-size: 15px; }
+
+/* Fortschritt beim Ausrollen */
+.deploybar { margin: 6px 0; }
+.deploybar.compact { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; }
+.deploybar.compact .deploybar-track { width: 90px; height: 6px; }
+.deploybar-track { position: relative; height: 10px; border-radius: 5px; background: var(--border); overflow: hidden; }
+.deploybar-fill { height: 100%; background: var(--accent); border-radius: 5px; transition: width .6s ease; }
+.deploybar-track.busy::after { content: ''; position: absolute; inset: 0; width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); animation: deploybar-shine 1.2s linear infinite; }
+@keyframes deploybar-shine { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .deploybar-track.busy::after { animation: none; } .deploybar-fill { transition: none; } }

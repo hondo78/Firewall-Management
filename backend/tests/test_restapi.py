@@ -340,3 +340,17 @@ def test_rest_apply_skips_rejected_objects_and_dependents():
     c2 = RestApiClient(BASE, "k", transport=httpx.MockTransport(denied))
     with pytest.raises(connector.DeployError):
         connector._rest_apply(c2, ops[1:2], log.append, None, connector.Skipper(log.append))
+
+
+def test_rest_apply_reports_progress_steps():
+    restapi._PREFIX_BY_BASE.clear()
+    c = RestApiClient(BASE, "k", transport=httpx.MockTransport(lambda req: httpx.Response(201, json={})))
+    steps = []
+
+    def log(msg):
+        pass
+    log.step = lambda n, label: steps.append((n, label))
+    ops = [{"entity": "addressesIpv4", "action": "add", "name": f"H{i}",
+            "data": {"name": f"H{i}", "type": "ipv4Address", "ipv4Address": f"10.0.0.{i}"}} for i in range(3)]
+    connector._rest_apply(c, ops, log)
+    assert [n for n, _ in steps] == [1, 1, 1] and "H2" in steps[-1][1]

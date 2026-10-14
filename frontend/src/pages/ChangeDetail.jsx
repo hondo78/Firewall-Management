@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { ACTION_LABEL, EVENT_LABEL, STATUS_LABEL, api, crNo, fmt } from '../api'
-import { ErrorBox, Field, Modal, Progress, Status, useLoad } from '../components/ui'
+import { DeployBar, ErrorBox, Field, Modal, Progress, Status, useLoad } from '../components/ui'
 import { OperationCard } from './FirewallView'
 import Findings from '../components/Findings'
 import { ReauthModal } from '../components/Reauth'
@@ -150,7 +150,7 @@ export default function ChangeDetail() {
   // Während des Ausrollens regelmäßig aktualisieren
   useEffect(() => {
     if (cr?.status !== 'deploying' && !(cr?.status === 'approved')) return undefined
-    const t = setInterval(reload, 3000)
+    const t = setInterval(reload, cr?.status === 'deploying' ? 1500 : 3000)
     return () => clearInterval(t)
   }, [cr?.status, reload])
 
@@ -181,6 +181,13 @@ export default function ChangeDetail() {
         </div>
       </div>
       <ErrorBox error={actionError} />
+      {cr.status === 'deploying' && (
+        <div className="panel panel-pad" style={{ marginBottom: 12 }}>
+          <h3 style={{ margin: 0 }}>{t("Wird auf „{0}“ ausgerollt …", cr.firewall)}</h3>
+          {cr.progress ? <DeployBar progress={cr.progress} /> : <div className="muted small">{t("Ausrollen wird gestartet …")}</div>}
+          {cr.progress?.log?.length > 0 && <details><summary className="small">{t("Live-Protokoll")}</summary><DeployLog lines={cr.progress.log} /></details>}
+        </div>
+      )}
       <div className="panel fw-head">
         <div className="meta">
           <div><span>{t("Firewall")}</span>{cr.firewall_archived ? <>{cr.firewall} <span className="badge">{t("entfernt")}</span></> : <Link to={`/firewalls/${cr.firewall_id}`}>{cr.firewall}</Link>}</div>

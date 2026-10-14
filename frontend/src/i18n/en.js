@@ -1856,4 +1856,12 @@ export default {
   "{0} nacharbeiten": "{0} to follow up",
   "Von der Firewall abgelehnte Objekte überspringen statt den Antrag zurückzurollen": "Skip objects the firewall rejects instead of rolling back the request",
   "(übersprungene Objekte landen als Checkliste „Nacharbeiten“ am Antrag; Verbindungsfehler brechen immer ab)": "(skipped objects end up as a “Follow-ups” checklist on the request; connection errors always abort)",
+  "Wartet auf ein anderes Ausrollen …": "Waiting for another deployment …",
+  "Lese Konfiguration (Drift-Prüfung) …": "Reading configuration (drift check) …",
+  "Übertrage auf die Firewall": "Transferring to the firewall",
+  "Kontrolle nach dem Ausrollen …": "Checking after deployment …",
+  "{0} von {1} Objekten": "{0} of {1} objects",
+  "Wird auf „{0}“ ausgerollt …": "Deploying to “{0}” …",
+  "Ausrollen wird gestartet …": "Starting deployment …",
+  "Live-Protokoll": "Live log",
 }

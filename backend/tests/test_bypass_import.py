@@ -117,3 +117,26 @@ def test_deploy_fails_when_everything_rejected(client, admin, fake, monkeypatch)
     client.post(f"/api/changes/{cid}/submit", headers=admin, json={"title": "t", "justification": "j", "bypass_approval": True})
     cr = client.get(f"/api/changes/{cid}", headers=admin).json()
     assert cr["status"] == "failed" and cr["skipped"] == [] and len(cr["operations"]) == 1
+
+
+def test_deploy_progress_is_reported_while_deploying(client, admin, fake, monkeypatch):
+    from app.sophos import connector
+    _sync_deploy(monkeypatch)
+    fw_id = setup_firewall(client, admin)
+    _draft_rule(client, admin, fw_id, "P1")
+    cid = _draft_rule(client, admin, fw_id, "P2")
+    seen = []
+
+    def apply(db, fw, ops, log, skipper=None):
+        for o in ops:
+            connector._step(log, o)
+            seen.append(changes.deploy_progress(cid))
+            # die Detailansicht liefert den Fortschritt mit, solange ausgerollt wird
+            seen.append(client.get(f"/api/changes/{cid}", headers=admin).json()["progress"])
+        fake.config = changes.effective_config(fake.config, ops)
+    monkeypatch.setattr(connector, "apply", apply)
+    client.post(f"/api/changes/{cid}/submit", headers=admin, json={"title": "t", "justification": "j", "bypass_approval": True})
+    assert [(p["phase"], p["done"], p["total"]) for p in seen[::2]] == [("apply", 1, 2), ("apply", 2, 2)]
+    assert "P2" in seen[-1]["current"] and seen[-1]["log"]
+    cr = client.get(f"/api/changes/{cid}", headers=admin).json()
+    assert cr["status"] == "deployed" and cr["progress"] is None and changes.deploy_progress(cid) is None

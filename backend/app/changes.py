@@ -761,15 +761,42 @@ def followups_to_draft(db: DbSession, user: User, cr: ChangeRequest, indexes: li
     return draft_add_many(db, user, cr.firewall, ops)
 
 
+# Fortschritt laufender Ausroll-Vorgänge (nur im Prozess – ein uvicorn-Worker, Ausrollen per Thread/Worker):
+# {change_id: {phase: queued|drift|apply|verify, done, total, current, started, lines}}
+_PROGRESS: dict[str, dict] = {}
+
+
+def deploy_progress(change_id: str) -> dict | None:
+    p = _PROGRESS.get(change_id)
+    if not p:
+        return None
+    return {k: v for k, v in p.items() if k != "lines"} | {"log": p["lines"][-40:]}
+
+
 def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
     """Führt einen bereits per claim_for_deploy() übernommenen Antrag aus."""
-    with _deploy_lock:
+    state = _PROGRESS[change_id] = {"phase": "queued", "done": 0, "total": 0, "current": "",
+                                    "started": utcnow().isoformat(), "lines": []}
+    try:
+        _deploy(db, change_id, actor, state)
+    finally:
+        _PROGRESS.pop(change_id, None)
+
+
+def _deploy(db: DbSession, change_id: str, actor: User | None, state: dict) -> None:
+    with _deploy_lock:   # wartet ggf. auf ein anderes Ausrollen (Phase „queued“)
         cr = db.get(ChangeRequest, change_id)
         fw = cr.firewall
         lines: list[dict] = list(cr.deploy_log or [])
+        state.update(phase="drift", total=len(cr.operations or []), lines=lines)
 
         def logline(msg: str) -> None:
             lines.append({"ts": utcnow().isoformat(), "msg": msg})
+
+        def step(n: int, label: str) -> None:
+            state["done"] = min(state["done"] + n, state["total"])
+            state["current"] = label
+        logline.step = step
 
         logline(tr('Ausrollen gestartet ({0}) über {1}', tr('manuell durch {0}', actor.username) if actor else tr('automatisch'), connector.capabilities(fw)['label']))
         event(db, cr, "deploy_started", "", actor)
@@ -789,9 +816,11 @@ def deploy(db: DbSession, change_id: str, actor: User | None = None) -> None:
                 notify.change_event(cr.id, "conflict")
                 return
             logline(tr('Keine Abweichungen – wende Änderungen an …'))
+            state["phase"] = "apply"
             skipper = connector.Skipper(logline) if settings.get(db, "deploy_skip_failed") else None
             connector.apply(db, fw, cr.operations, logline, skipper)
             skipped = _record_skipped(cr, skipper, logline)
+            state.update(phase="verify", current="")
             logline(tr('Lese Konfiguration nach dem Ausrollen …'))
             try:
                 sync.sync_firewall(db, fw, actor=actor, reason="deploy", change_id=cr.id)

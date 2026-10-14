@@ -66,7 +66,10 @@ def op_out(fw: Firewall, o: dict) -> dict:
 
 
 def change_summary(cr: ChangeRequest) -> dict:
+    from . import changes
+    prog = changes.deploy_progress(cr.id) if cr.status == "deploying" else None
     return {
+        "progress": {k: prog[k] for k in ("phase", "done", "total")} if prog else None,
         "id": cr.id, "number": cr.number, "title": cr.title, "status": cr.status,
         "firewall_id": cr.firewall_id, "firewall": cr.firewall.name if cr.firewall else "",
         "firewall_archived": bool(cr.firewall and cr.firewall.archived),
@@ -135,6 +138,7 @@ def change_out(db: DbSession, cr: ChangeRequest, user: User) -> dict:
         },
         "own": is_owner,
         "analysis": _analysis(db, cr) if cr.status in ("draft", "pending", "approved") else [],
+        "progress": changes.deploy_progress(cr.id) if cr.status == "deploying" else None,
         "batch": [{"id": m.id, "number": m.number, "firewall": m.firewall.name, "status": m.status,
                    "error": m.error} for m in changes.batch_members(db, cr)] if cr.batch_id else [],
         "reverts": {"id": reverts.id, "number": reverts.number} if reverts else None,

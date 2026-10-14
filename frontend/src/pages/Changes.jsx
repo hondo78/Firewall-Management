@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, crNo, fmt } from '../api'
-import { Empty, ErrorBox, Progress, Status, Tabs, useLoad } from '../components/ui'
+import { DeployBar, Empty, ErrorBox, Progress, Status, Tabs, useLoad } from '../components/ui'
 import { t } from '../i18n'
 
 const TABS = {
@@ -18,8 +18,15 @@ export default function Changes() {
   const nav = useNavigate()
   const tab = params.get('tab') || 'approve'
   const [q, setQ] = useState('')
-  const [rows, error] = useLoad(() => api(`/changes?${TABS[tab].query}${q ? `&q=${encodeURIComponent(q)}` : ''}`), [tab, q])
+  const [rows, error, reload] = useLoad(() => api(`/changes?${TABS[tab].query}${q ? `&q=${encodeURIComponent(q)}` : ''}`), [tab, q])
   const [drafts] = useLoad(() => api('/changes/drafts'), [])
+  // laufendes Ausrollen in der Liste mitverfolgen
+  const deploying = rows?.some((c) => c.status === 'deploying')
+  useEffect(() => {
+    if (!deploying) return undefined
+    const id = setInterval(reload, 2000)
+    return () => clearInterval(id)
+  }, [deploying, reload])
 
   return (
     <>
@@ -50,7 +57,7 @@ export default function Changes() {
                     <div className="small muted">{c.operations_count} {t("Änderung(en)")}{c.ticket_ref && ` · ${c.ticket_ref}`}</div></td>
                   <td>{c.firewall}</td>
                   <td>{c.created_by}</td>
-                  <td><Status value={c.status} />{c.deploy_after && c.status === 'approved' && <div className="small muted">{t("ab")} {fmt(c.deploy_after)}</div>}</td>
+                  <td><Status value={c.status} />{c.status === 'deploying' && <DeployBar progress={c.progress} compact />}{c.deploy_after && c.status === 'approved' && <div className="small muted">{t("ab")} {fmt(c.deploy_after)}</div>}</td>
                   <td><Progress value={c.approvals} max={c.required_approvals} /> <span className="small muted">{c.approvals}/{c.required_approvals}</span></td>
                   <td className="small nowrap">{fmt(c.submitted_at)}</td>
                 </tr>
