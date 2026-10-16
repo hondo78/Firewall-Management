@@ -160,3 +160,26 @@ def test_bulk_rule_edit_into_draft(client, admin, fake):
     # ohne change.create kein Zugriff
     aud = make_user(client, admin, "auditor", [("Auditor", None)])
     assert client.post(f"/api/firewalls/{fw_id}/draft/operations/bulk", headers=aud, json={"operations": ops}).status_code in (403, 404)
+
+
+def test_bulk_edit_keeps_pending_move_and_creates_no_empty_draft(client, admin, fake):
+    fw_id = setup_firewall(client, admin)
+    first, second = [r["Name"] for r in fake.config["FirewallRule"]][:2]
+    # nichts übernommen → kein (leerer) Entwurf
+    r = client.post(f"/api/firewalls/{fw_id}/draft/operations/bulk", headers=admin, json={"operations": [
+        {"entity": "FirewallRule", "action": "update", "name": "Gibt-es-nicht", "data": {"Name": "Gibt-es-nicht"}}]})
+    assert r.status_code == 200 and r.json()["added"] == 0 and r.json()["draft"] is None
+    assert client.get(f"/api/firewalls/{fw_id}/draft", headers=admin).json() is None
+    # erst verschieben, dann per Mehrfachbearbeitung ausschalten: die Verschiebung bleibt
+    rule0 = next(x for x in fake.config["FirewallRule"] if x["Name"] == first)
+    r = client.post(f"/api/firewalls/{fw_id}/draft/operations", headers=admin, json={
+        "entity": "FirewallRule", "action": "update", "name": first, "data": rule0,
+        "position": {"type": "after", "ref": second}})
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/firewalls/{fw_id}/draft/operations/bulk", headers=admin, json={"operations": [
+        {"entity": "FirewallRule", "action": "update", "name": first, "data": {**rule0, "Status": "Disable"}}]})
+    assert r.json()["added"] == 1 and "warnings" in r.json()
+    draft = client.get(f"/api/changes/{r.json()['draft']['id']}", headers=admin).json()
+    op = draft["operations"][0]
+    assert op["position"] == {"type": "after", "ref": second} and op["data"]["Status"] == "Disable"
+    assert any("Mehrfachbearbeitung" in (e.get("text") or "") for e in draft["events"])

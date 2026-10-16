@@ -264,6 +264,9 @@ def merge_operation(ops: list[dict], new: dict) -> list[dict]:
         return rest + [{**new, "action": "add", "position": new.get("position") or prev.get("position")}]
     if prev["action"] == "remove" and new["action"] == "add":
         return rest + [{**new, "action": "update"}]
+    # Update auf Update: eine offene Verschiebung bleibt erhalten, wenn die neue Änderung keine Position mitbringt
+    if prev["action"] == new["action"] == "update" and prev.get("position") and not new.get("position"):
+        return rest + [{**new, "position": prev["position"]}]
     return rest + [new]
 
 
@@ -301,13 +304,16 @@ def draft_add(db: DbSession, user: User, fw: Firewall, op: dict) -> tuple[Change
     return cr, warnings
 
 
-def draft_add_many(db: DbSession, user: User, fw: Firewall, ops: list[dict]) -> tuple[ChangeRequest, int, list[str]]:
-    """Viele Operationen auf einmal (Import): wie draft_add je Operation geprüft, aber Konfiguration, Verweisprüfung
-    und Speichern nur einmal – sonst wüchse der Aufwand bei tausenden Objekten quadratisch.
-    Ergebnis: (Entwurf, Anzahl übernommen, übersprungene Einträge mit Grund)."""
+def draft_add_many(db: DbSession, user: User, fw: Firewall, ops: list[dict], label: str | None = None,
+                   warnings: list | None = None) -> tuple[ChangeRequest | None, int, list[str]]:
+    """Viele Operationen auf einmal (Import, Mehrfachbearbeitung): wie draft_add je Operation geprüft, aber
+    Konfiguration, Verweisprüfung und Speichern nur einmal – sonst wüchse der Aufwand bei tausenden Objekten
+    quadratisch. Ergebnis: (Entwurf, Anzahl übernommen, übersprungene Einträge mit Grund). Ein Entwurf wird nur
+    angelegt, wenn wirklich etwas übernommen wurde (sonst None). `label` ist der Ereignistext mit {0} = Anzahl;
+    eine übergebene Liste `warnings` erhält die Verweis-Warnungen, die der Entwurf neu verursacht."""
     config = sync.cached_config(db, fw)
-    cr = get_draft(db, user, fw, create=True)
-    draft_ops = list(cr.operations or [])
+    cr = get_draft(db, user, fw)
+    draft_ops = list(cr.operations or []) if cr else []
     working = effective_config(config, draft_ops)
     added, skipped = 0, []
     for op in ops:
@@ -324,8 +330,12 @@ def draft_add_many(db: DbSession, user: User, fw: Firewall, ops: list[dict]) -> 
         _apply_op(working, clean, draft_ops)
         added += 1
     if added:
+        cr = cr or get_draft(db, user, fw, create=True)
         cr.operations = with_before(draft_ops, config)
-        event(db, cr, "draft_changed", tr('Import: {0} Operation(en) übernommen', added), user)
+        event(db, cr, "draft_changed", (label or tr('Import: {0} Operation(en) übernommen')).format(added), user)
+        if warnings is not None:
+            existing = set(check_references(config))
+            warnings.extend(dict.fromkeys(w for w in check_references(working) if w not in existing))
     db.commit()
     return cr, added, skipped
 

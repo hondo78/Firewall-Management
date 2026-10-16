@@ -674,7 +674,7 @@ def import_apply(firewall_id: str, body: ImportApplyIn, request: Request, user: 
     audit(db, "config.import_to_draft", actor=user, target_type="firewall", target_id=fw.id, ip=client_ip(request),
           details={"firewall": fw.name, "added": added, "skipped": len(skipped),
                    **({"chunk": body.chunk} if body.chunk else {})})
-    if body.chunk:
+    if body.chunk or draft is None:
         return {"added": added, "skipped": skipped,
-                "draft": {"id": draft.id, "number": draft.number, "operations": len(draft.operations or [])}}
+                "draft": draft and {"id": draft.id, "number": draft.number, "operations": len(draft.operations or [])}}
     return {"added": added, "skipped": skipped, "draft": change_out(db, draft, user)}

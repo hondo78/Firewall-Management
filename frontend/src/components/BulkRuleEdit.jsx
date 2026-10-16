@@ -30,7 +30,7 @@ const FIELDS = [
 
 // --- Werte setzen je Format ----------------------------------------------------------------------------------
 
-const ref = (v) => (v === NONE ? null : { name: v })
+const ref = (v) => (v === NONE ? null : { name: v })   // wie polRef im Regel-Editor
 
 export function patchRest(obj, ch) {
   const r = structuredClone(obj)
@@ -68,20 +68,21 @@ const onOff = (v) => (v === 'on' ? 'Enable' : 'Disable')
 
 export function patchXml(obj, ch) {
   const r = structuredClone(obj)
-  const polKey = r.NetworkPolicy ? 'NetworkPolicy' : r.UserPolicy ? 'UserPolicy' : null
+  const polKey = r.NetworkPolicy ? 'NetworkPolicy' : r.UserPolicy ? 'UserPolicy' : r.HTTPBasedPolicy ? 'HTTPBasedPolicy' : null
+  // WAF-Regeln (HTTPBased) kennen nur Status, IPS und Traffic-Shaping; Regeln ohne Richtlinie nur den Status
+  const waf = polKey === 'HTTPBasedPolicy'
+  const allowed = !polKey ? new Set(['enabled']) : waf ? new Set(['enabled', 'ips', 'ts']) : null
   const ignored = []
-  if (!polKey) {   // WAF (HTTPBased) u. Ä.: nur der Status
-    for (const [k, v] of Object.entries(ch)) {
-      if (k === 'enabled') r.Status = onOff(v)
-      else ignored.push(k)
-    }
-    return { data: r, ignored }
-  }
-  const p = { ...r[polKey] }
+  const p = { ...(polKey ? r[polKey] : {}) }
   const action = ch.action ? XML_ACTION[ch.action] : p.Action
+  const tsKey = waf ? 'TrafficShapingPolicy' : 'TrafficShappingPolicy'
   const pol = (v) => (v === NONE ? 'None' : v)
+  // „Keine“ bei einem Feld, das es noch gar nicht gibt, ist keine Änderung
+  const current = { ips: 'IntrusionPrevention', app: 'ApplicationControl', web: 'WebFilter', ts: tsKey }
   for (const [k, v] of Object.entries(ch)) {
-    if (SECURITY.has(k) && action !== 'Accept') { ignored.push(k); continue }
+    if (allowed && !allowed.has(k)) { ignored.push(k); continue }
+    if (!waf && SECURITY.has(k) && action !== 'Accept') { ignored.push(k); continue }
+    if (v === NONE && k in current && !(current[k] in p)) continue
     if (k === 'enabled') r.Status = onOff(v)
     else if (k === 'action') p.Action = XML_ACTION[v]
     else if (k === 'log') p.LogTraffic = onOff(v)
@@ -89,12 +90,12 @@ export function patchXml(obj, ch) {
     else if (k === 'ips') p.IntrusionPrevention = pol(v)
     else if (k === 'app') p.ApplicationControl = pol(v)
     else if (k === 'web') p.WebFilter = pol(v)
-    else if (k === 'ts') p.TrafficShappingPolicy = pol(v)
+    else if (k === 'ts') p[tsKey] = pol(v)
     else if (k === 'av') { p.ScanVirus = onOff(v); p.ScanFTP = onOff(v) }
     else if (k === 'zeroday') p.ZeroDayProtection = onOff(v)
     else if (k === 'ndr') p.NDRActiveThreatIntelligence = onOff(v)
   }
-  r[polKey] = p
+  if (polKey) r[polKey] = p
   return { data: r, ignored }
 }
 
@@ -118,10 +119,12 @@ export default function BulkRuleEdit({ fw, entity, rules, config, rest, onClose,
   const set = (k, v) => setCh((c) => { const n = { ...c }; if (v === KEEP) delete n[k]; else n[k] = v; return n })
 
   // Vorschau: was sich je Regel ändert
+  // Freitext-Namen ohne Leerzeichen am Rand übernehmen (beim Tippen bleiben sie stehen)
+  const values = useMemo(() => Object.fromEntries(Object.entries(ch).map(([k, v]) => [k, v.trim()])), [ch])
   const plan = useMemo(() => rules.map((obj) => {
-    const { data, ignored } = (rest ? patchRest : patchXml)(obj, ch)
+    const { data, ignored } = (rest ? patchRest : patchXml)(obj, values)
     return { obj, data, ignored, changed: canonical(data) !== canonical(obj) }
-  }), [rules, ch, rest])
+  }), [rules, values, rest])
   const changed = plan.filter((p) => p.changed)
   const partly = plan.filter((p) => p.ignored.length)
   const nothing = !Object.keys(ch).length

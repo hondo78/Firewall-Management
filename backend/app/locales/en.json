@@ -593,5 +593,6 @@
  "{0} Objekt(e) übersprungen – bitte nacharbeiten:": "{0} object(s) skipped – please follow up:",
  "Import von {0} Objekten fehlgeschlagen – suche das abgelehnte Objekt …": "Import of {0} objects failed – looking for the rejected object …",
  "ÜBERSPRUNGEN: {0} – {1}": "SKIPPED: {0} – {1}",
- "verweist auf das übersprungene Objekt „{0}“": "references the skipped object “{0}”"
+ "verweist auf das übersprungene Objekt „{0}“": "references the skipped object “{0}”",
+ "Mehrfachbearbeitung: {0} Regel(n) geändert": "Bulk edit: {0} rule(s) changed"
 }

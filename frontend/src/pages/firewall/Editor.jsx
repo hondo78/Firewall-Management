@@ -461,12 +461,21 @@ export default function Editor({ fw, cfg, draft, reload }) {
     reload()
     setMsg({ kind: errors.length ? 'warn' : 'ok', text: t("{0} zum Löschen in den Entwurf übernommen{1}", names.length - errors.length, errors.length ? t(" · übersprungen: {0}", errors.join('; ')) : '') })
   }
+  // Ergebnis einer Sammel-Übernahme in den Entwurf (Import, Mehrfachbearbeitung, Ein/Aus) als Meldung
+  const bulkResult = (r, text) => {
+    const notes = [...(r.skipped.length ? [t(" · übersprungen: {0}{1}", r.skipped.slice(0, 5).join('; '), r.skipped.length > 5 ? ' …' : '')] : []),
+      ...(r.warnings?.length ? [' · ' + r.warnings.join(' · ')] : [])]
+    setMsg({ kind: notes.length ? 'warn' : 'ok', text: text(notes.join('')) })
+  }
+  // Mehrfachbearbeitung/Ein-Aus auf dem Stand *mit* Entwurf aufsetzen – sonst überschriebe das Update frühere
+  // Entwurfsänderungen, wenn die Tabelle ohne Entwurf angezeigt wird
+  const withDraft = (objs) => objs.map((obj) => (cfg.preview[entity] || []).find((o) => oname(o) === oname(obj)) || obj)
   const bulkToggle = async (objs, on) => {
-    const operations = objs.map((obj) => ({ entity, action: 'update', name: oname(obj),
+    const operations = withDraft(objs).map((obj) => ({ entity, action: 'update', name: oname(obj),
       data: isRestEntity(entity) ? { ...obj, enabled: on } : { ...obj, Status: on ? 'Enable' : 'Disable' } }))
     try {
       const r = await api(`/firewalls/${fw.id}/draft/operations/bulk`, { method: 'POST', body: { operations } })
-      setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t(on ? "{0} Regeln eingeschaltet (Entwurf){1}" : "{0} Regeln ausgeschaltet (Entwurf){1}", r.added, r.skipped.length ? t(" · übersprungen: {0}", r.skipped.join('; ')) : '') })
+      bulkResult(r, (n) => (on ? t("{0} Regeln eingeschaltet (Entwurf){1}", r.added, n) : t("{0} Regeln ausgeschaltet (Entwurf){1}", r.added, n)))
     } catch (e) { setMsg({ kind: 'error', text: e.message }) }
     reload()
   }
@@ -571,7 +580,7 @@ export default function Editor({ fw, cfg, draft, reload }) {
             findings={findings} onSelect={select} onEdit={editRule} onAddFor={addFor}
             onAddWaf={rest ? (fw.waf_xml ? () => setEditing({ obj: null, entity: 'wafRules' }) : () => setWafInfo(true)) : null} onOp={quickOp}
             onShow={(obj) => setDetail({ entity, obj })} onBulkDelete={bulkDelete} onBulkToggle={bulkToggle}
-            onBulkEdit={(objs, clear) => setBulkEdit({ objs, clear })} />
+            onBulkEdit={(objs, clear) => setBulkEdit({ objs: withDraft(objs), clear })} />
           : <>{CENTRAL_ENTITIES.has(entity) && <MdrBar fw={fw} entity={entity} />}<EntityTable key={entity} entity={entity} meta={meta} rows={rows} fw={fw} mayEdit={mayEdit && !READ_ONLY_ENTITIES.has(entity)} pendingBy={pendingBy} draftBy={draftBy}
             findings={findings} onEdit={(obj) => setEditing({ obj })} onOp={quickOp} onShow={(obj) => setDetail({ entity, obj })}
             onBulkDelete={bulkDelete} onAdd={() => setEditing({ obj: null })} onBulkAdd={() => setBulk(true)} /></>}
@@ -585,12 +594,12 @@ export default function Editor({ fw, cfg, draft, reload }) {
       {bulk && <BulkAddModal entity={entity} label={meta.label} fmt={cfg.format} config={cfg.preview} onAdd={addOp}
         onClose={() => { setBulk(false); reload() }} />}
       {review && <ImportModal fw={fw} review={review} onClose={() => setReview(null)}
-        onApplied={(r) => { setReview(null); reload(); setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t("{0} Objekte in den Entwurf übernommen{1}", r.added, r.skipped.length ? t(" · übersprungen: {0}{1}", r.skipped.slice(0, 5).join('; '), r.skipped.length > 5 ? ' …' : '') : '') }) }} />}
+        onApplied={(r) => { setReview(null); reload(); bulkResult(r, (n) => t("{0} Objekte in den Entwurf übernommen{1}", r.added, n)) }} />}
       {centralExport && <CentralExportModal fw={fw} onClose={() => setCentralExport(false)} />}
       {bulkEdit && <BulkRuleEdit fw={fw} entity={entity} rules={bulkEdit.objs} config={cfg.preview} rest={isRestEntity(entity)}
         onClose={() => setBulkEdit(null)}
         onDone={(r) => { bulkEdit.clear(); setBulkEdit(null); reload()
-          setMsg({ kind: r.skipped.length ? 'warn' : 'ok', text: t("{0} Regeln geändert (Entwurf){1}", r.added, r.skipped.length ? t(" · übersprungen: {0}", r.skipped.join('; ')) : '') }) }} />}
+          bulkResult(r, (n) => t("{0} Regeln geändert (Entwurf){1}", r.added, n)) }} />}
       {wafInfo && (
         <Modal title={t("Neue WAF-Regel (Webserver-Schutz)")} onClose={() => setWafInfo(false)}>
           <div className="stack small">
