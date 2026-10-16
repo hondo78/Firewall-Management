@@ -89,8 +89,9 @@ The SFOS REST API only returns WAF rules as `ruleType: waf` with a placeholder `
   - `paloalto.py` reads shared objects and the first vsys.
   - `sonicwall.py` reads base64 + urlencoded `key_N` pairs.
   - `watchguard.py` reads `<profile>` and resolves aliases.
+  - `barracuda.py` reads one JSON of the CloudGen box REST API (networks, services, forwarding rules; `docs/barracuda-export.sh`). Barracuda has no zones: built-in objects „Internet“/„Trusted LAN“ become zone hints, bidirectional rules become two rules, objects with exclusions disable their rules, Dst-NAT/Map rules come over disabled, cascade rules are skipped.
   - `utm`/`sophos` sources are Entities.xml and go straight through `importer.parse_upload`.
-- SonicWall and WatchGuard formats are unofficial. The parsers were written from the known key names and tested only
+- SonicWall, WatchGuard and Barracuda formats are unofficial. The parsers were written from the known key names and tested only
   against synthetic samples, never real exports.
 - `convert.py` turns the model into XML-format SFOS dicts using `zone_map` and `prefix`: names are sanitized, made
   unique and limited to 60 characters; groups are flattened, mixed IP/FQDN groups split, inline IPs become hosts.

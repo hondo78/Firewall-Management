@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from .. import importer
 from ..i18n import tr
 from ..sophos import entities
-from . import convert, fortigate, model, paloalto, sonicwall, watchguard
+from . import barracuda, convert, fortigate, model, paloalto, sonicwall, watchguard
 
 SESSION_SECONDS = 3600
 _sessions: dict[str, dict] = {}
@@ -23,6 +23,9 @@ VENDORS = [
      "hint": "Unverschlüsselter Settings-Export (Export Settings bzw. Firmware and Settings).", "parse": sonicwall.parse},
     {"id": "watchguard", "title": "WatchGuard", "ext": [".xml"], "file": "Fireware XML",
      "hint": "Konfigurationsdatei aus dem Policy Manager (File › Save › As File) bzw. Backup-XML.", "parse": watchguard.parse},
+    {"id": "barracuda", "title": "Barracuda CloudGen", "ext": [".json"], "file": "CloudGen REST-API JSON",
+     "hint": "Netzobjekte, Dienste und Weiterleitungsregeln über die REST-API der Box (Port 8443, API-Token) als eine JSON-Datei – Skript: docs/barracuda-export.sh.",
+     "parse": barracuda.parse},
     {"id": "utm", "title": "Sophos UTM (SG)", "ext": [".xml", ".tar"], "file": "Entities.xml",
      "hint": "Mit dem Sophos Migration Utility (migrate.pl) auf der UTM erzeugen; Entities.xml oder Export.tar hochladen.", "parse": None},
     {"id": "sophos", "title": "Sophos Firewall", "ext": [".xml", ".tar"], "file": "Entities.xml",
@@ -48,6 +51,10 @@ MATRIX = {
     "sonicwall": [("concepts", "Exportformat inoffiziell – Ergebnis sorgfältig prüfen", "partial")],
     "watchguard": [("rules", "Proxy-Policies, Aliase werden aufgelöst", "partial"),
                    ("concepts", "XML-Schema inoffiziell – Ergebnis sorgfältig prüfen", "partial")],
+    "barracuda": [("concepts", "Keine Zonen: Internet/Trusted LAN werden Zonen zugeordnet", "partial"),
+                  ("objects", "Netzobjekte mit Ausschlüssen, Geo- und dynamische Einträge", "manual"),
+                  ("rules", "Bidirektionale Regeln werden zu zwei Regeln, Dst-NAT/Map deaktiviert", "partial"),
+                  ("concepts", "Nicht gegen echte Exporte getestet – Ergebnis sorgfältig prüfen", "partial")],
     "utm": [("objects", "Alle Objekte und Regeln aus der Entities.xml von migrate.pl", "supported")],
     "sophos": [("objects", "Alle von diesem Tool verwalteten Objekttypen der Entities.xml", "supported")],
 }

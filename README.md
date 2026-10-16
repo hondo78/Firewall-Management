@@ -89,7 +89,7 @@ The [approval guide](docs/approval-guide.md) walks through the whole flow with s
 
 **Migration assistant** (like in Sophos Firewall Config Studio)
 - Take over the configuration of **FortiGate** (`.conf`), **Palo Alto** (`running-config.xml`), **SonicWall** (`.exp`),
-  **WatchGuard** (Fireware XML), **Sophos UTM** (Entities.xml from `migrate.pl`) or another **Sophos Firewall**.
+  **WatchGuard** (Fireware XML), **Barracuda CloudGen** (JSON from the REST API, script `docs/barracuda-export.sh`), **Sophos UTM** (Entities.xml from `migrate.pl`) or another **Sophos Firewall**.
 - An overview per vendor shows what is migrated; after the upload a **migration report** lists every area as
   supported, partial, manual or not supported, with the affected objects.
 - Source interfaces and zones are **mapped to Sophos zones**, with suggestions from role and name. An optional name

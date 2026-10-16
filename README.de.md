@@ -62,7 +62,7 @@ Konfigurationsänderung und lückenlosem, manipulationssicherem Audit-Log. UI: *
 - **Regel-Prüfung**: Any-Any, offen aus dem Internet, verdeckte/redundante Regeln, fehlende Protokollierung,
   ungenutzte/doppelte Objekte – beim Einreichen, für den Approver und als Tab „Analyse“.
 - **Migrationsassistent** (wie im Sophos Config Studio): Konfiguration von **FortiGate** (`.conf`), **Palo Alto**
-  (`running-config.xml`), **SonicWall** (`.exp`), **WatchGuard** (Fireware-XML), **Sophos UTM** (Entities.xml aus
+  (`running-config.xml`), **SonicWall** (`.exp`), **WatchGuard** (Fireware-XML), **Barracuda CloudGen** (JSON aus der REST-API, Skript `docs/barracuda-export.sh`), **Sophos UTM** (Entities.xml aus
   `migrate.pl`) oder einer **Sophos Firewall** übernehmen. Übersicht „was übernommen wird“, **Migrationsbericht**
   (unterstützt / teilweise / manuell / nicht unterstützt), **Zonen-Zuordnung** und optionales Namenspräfix. Übernommen
   werden Adressen, Gruppen, Dienste und Firewall-Regeln; Sicherheitsprofile, Benutzer, NAT, VPN, Interfaces stehen

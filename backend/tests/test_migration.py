@@ -1,8 +1,11 @@
 """Migrationsassistent: Hersteller-Parser, Umwandlung in Sophos-Objekte, Bericht, Ziele Entwurf/Vorlage/Download."""
 import base64
+import json
 from urllib.parse import quote_plus
 
-from app.migration import convert, fortigate, paloalto, service, sonicwall, watchguard
+import pytest
+
+from app.migration import barracuda, convert, fortigate, paloalto, service, sonicwall, watchguard
 
 from .test_workflow import make_user, setup_firewall
 
@@ -275,6 +278,62 @@ def test_watchguard_parse_and_convert():
     assert any(n["name"] == "HTTP-proxy" for n in notes)
 
 
+BARRACUDA = json.dumps({
+    "name": "CGF-Office",
+    "networks": {"objects": [
+        {"name": "Webserver", "type": "generic", "included": [{"entry": {"ip": "10.0.2.10"}}]},
+        {"name": "Office", "included": [{"entry": {"ip": "10.0.1.0/24"}}, {"entry": {"ip": "10.0.5.1-10.0.5.9"}},
+                                        {"references": "Webserver"}]},
+        {"name": "Ohne-Gast", "included": [{"entry": {"ip": "10.0.0.0/16"}}], "excluded": [{"entry": {"ip": "10.0.9.0/24"}}]},
+    ]},
+    "services": {"objects": [
+        {"name": "Web-Ports", "entries": [{"entry": {"protocol": "TCP", "tcp": {"ports": ["8000-8010", "8443"]}}}]},
+        {"name": "Web-All", "entries": [{"references": "Web-Ports"}, {"entry": {"protocol": "TCP", "tcp": {"ports": ["80"]}}}]},
+    ]},
+    "rules": {"rules": [
+        {"name": "LAN-2-INTERNET", "action": {"type": "pass", "connection": {"references": "Dynamic NAT"}},
+         "source": {"references": "Trusted LAN"}, "destination": {"references": "Internet"}, "service": {"references": "HTTP+S"}},
+        {"name": "Web-In", "action": {"type": "pass"}, "source": {"references": "Any"},
+         "destination": {"explicit": {"entries": [{"entry": {"ip": "10.0.2.11"}}]}}, "service": {"references": "Web-All"}},
+        {"name": "Office-Sync", "action": {"type": "block"}, "bidirectional": True, "source": {"references": "Office"},
+         "destination": {"references": "Private 192"}, "service": {"references": "Any"}},
+        {"name": "Gast", "action": {"type": "deny"}, "source": {"references": "Ohne-Gast"}, "destination": {"references": "Any"},
+         "service": {"references": "Any"}},
+        {"name": "DNAT-Web", "action": {"type": "dnat"}, "source": {"references": "Internet"},
+         "destination": {"references": "Webserver"}, "service": {"references": "HTTPS"}},
+        {"name": "Sub", "action": {"type": "cascade"}},
+    ]},
+}).encode()
+
+
+def test_barracuda_parse_and_convert():
+    m = barracuda.parse(BARRACUDA)
+    z = _zones(m)
+    assert z["Internet"] == "WAN" and z["Trusted LAN"] == "LAN"
+    out, notes = convert.convert(m, z)
+    rules = {r["Name"]: r for r in out["FirewallRule"]}
+    lan = rules["LAN-2-INTERNET"]["NetworkPolicy"]
+    assert lan["SourceZones"] == {"Zone": ["LAN"]} and lan["DestinationZones"] == {"Zone": ["WAN"]}
+    assert lan["Services"] == {"Service": ["HTTP+S"]} and rules["LAN-2-INTERNET"]["Status"] == "Enable"
+    assert {g["Name"]: g["ServiceList"]["Service"] for g in out["ServiceGroup"]}["HTTP+S"] == ["HTTP", "HTTPS"]
+    web = rules["Web-In"]["NetworkPolicy"]
+    assert "SourceNetworks" not in web and web["DestinationNetworks"]["Network"] == ["Web-In (Ziel)"]
+    assert web["Services"] == {"Service": ["Web-All"]}
+    svc = {s["Name"]: s for s in out["Services"]}
+    assert [d["DestinationPort"] for d in svc["Web-Ports"]["ServiceDetails"]["ServiceDetail"]] == ["8000:8010", "8443"]
+    office = next(g for g in out["IPHostGroup"] if g["Name"] == "Office")
+    assert office["HostList"]["Host"] == ["10.0.1.0/24", "10.0.5.1-10.0.5.9", "10.0.2.10"]
+    # bidirektional → zwei Regeln, „Any“ als Dienst = beliebig
+    assert rules["Office-Sync"]["NetworkPolicy"]["Action"] == "Drop" and "Services" not in rules["Office-Sync"]["NetworkPolicy"]
+    assert rules["Office-Sync_rev"]["NetworkPolicy"]["SourceNetworks"]["Network"] == ["Private 192"]
+    # Ausschlüsse → nie weiter gefasst: Regel deaktiviert
+    assert rules["Gast"]["Status"] == "Disable" and rules["Gast"]["NetworkPolicy"]["Action"] == "Reject"
+    assert rules["DNAT-Web"]["Status"] == "Disable" and [n["name"] for n in m["nat"]] == ["LAN-2-INTERNET", "DNAT-Web"]
+    assert "Sub" not in rules and any(r["status"] == "unsupported" for r in m["report"])
+    with pytest.raises(ValueError):
+        barracuda.parse(b'{"networks": []}')
+
+
 def test_names_are_sanitized_and_unique():
     n = convert.Names("")
     assert n.get("addr", "a,b") == "a_b"
@@ -286,7 +345,7 @@ def test_names_are_sanitized_and_unique():
 def test_migration_api_draft_template_download(client, admin, fake):
     fw_id = setup_firewall(client, admin)
     vend = client.get("/api/migration/vendors", headers=admin).json()
-    assert [v["id"] for v in vend] == ["fortigate", "paloalto", "sonicwall", "watchguard", "utm", "sophos"]
+    assert [v["id"] for v in vend] == ["fortigate", "paloalto", "sonicwall", "watchguard", "barracuda", "utm", "sophos"]
     ap = make_user(client, admin, "approver", [("Approver", None)])
     assert client.post("/api/migration/parse", headers=ap, data={"vendor": "fortigate"},
                        files={"file": ("fgt.conf", FORTIGATE)}).status_code == 403
