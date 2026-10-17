@@ -621,5 +621,7 @@
  "Keine Zonen: Internet/Trusted LAN werden Zonen zugeordnet": "No zones: Internet/Trusted LAN are mapped to zones",
  "Netzobjekte mit Ausschlüssen, Geo- und dynamische Einträge": "Network objects with exclusions, geo and dynamic entries",
  "Bidirektionale Regeln werden zu zwei Regeln, Dst-NAT/Map deaktiviert": "Bidirectional rules become two rules, Dst NAT/map disabled",
- "Nicht gegen echte Exporte getestet – Ergebnis sorgfältig prüfen": "Not tested against real exports – review the result carefully"
+ "Nicht gegen echte Exporte getestet – Ergebnis sorgfältig prüfen": "Not tested against real exports – review the result carefully",
+ "Gerätezugriff-Ausnahmen IPv4": "Device access exceptions IPv4",
+ "Gerätezugriff-Ausnahmen IPv6": "Device access exceptions IPv6"
 }

@@ -28,6 +28,9 @@ REST_RESOURCES: dict[str, tuple[str, str, str]] = {
     "firewallRulesIpv4": ("/firewall/rules/ipv4", "Firewall-Regeln IPv4", "Regeln & Richtlinien"),
     "firewallRulesIpv6": ("/firewall/rules/ipv6", "Firewall-Regeln IPv6", "Regeln & Richtlinien"),
     "natRulesIpv4": ("/nat/rules/ipv4", "NAT-Regeln IPv4", "Regeln & Richtlinien"),
+    # Ausnahmen vom Gerätezugriff (Local Service ACL) – verweisen auf Adressen/Gruppen und Zonen
+    "aclExceptionRulesIpv4": ("/acl-exception-rules/ipv4", "Gerätezugriff-Ausnahmen IPv4", "Regeln & Richtlinien"),
+    "aclExceptionRulesIpv6": ("/acl-exception-rules/ipv6", "Gerätezugriff-Ausnahmen IPv6", "Regeln & Richtlinien"),
     "addressesIpv4": ("/network/addresses/ipv4", "IPv4-Adressen", "Hosts & Dienste"),
     "addressGroupsIpv4": ("/network/address-groups/ipv4", "IPv4-Adressgruppen", "Hosts & Dienste"),
     "addressesIpv6": ("/network/addresses/ipv6", "IPv6-Adressen", "Hosts & Dienste"),
@@ -125,9 +128,10 @@ WRITE_ORDER = ["Zone", "Schedule", "IPHost", "FQDNHost", "MACHost", "IPHostGroup
                "services", "serviceGroups", "webPolicies", "applicationPolicies", "ipsPolicies",
                "trafficShapingPolicies", "userGroups", "wafServers", "wafProtectionPolicies", "wafAuthPolicies",
                "natRulesIpv4", "firewallRulesIpv4", "wafRules", "firewallRulesIpv6",
+               "aclExceptionRulesIpv4", "aclExceptionRulesIpv6",
                "mdrThreatFeed", "mdrIndicators"]
 _RULE_LEVEL = {"NATRule", "FirewallRule", "FirewallRuleGroup", "natRulesIpv4", "firewallRulesIpv4",
-               "firewallRulesIpv6", "wafRules"}
+               "firewallRulesIpv6", "wafRules", "aclExceptionRulesIpv4", "aclExceptionRulesIpv6"}
 
 # Vordefinierte Objekte, die in Regeln ohne eigenes Objekt verwendet werden dürfen
 BUILTIN_REFS = {"Any", "All The Time", "Any IPv4", "Any IPv6", "None"}
@@ -300,6 +304,14 @@ def references(entity: str, obj: dict) -> list[tuple[str, str]]:
         return rest_rule_references(obj)
     if entity == "natRulesIpv4":
         return rest_nat_references(obj)
+    if entity in ("aclExceptionRulesIpv4", "aclExceptionRulesIpv6"):
+        # Dienste sind hier Gerätedienste (https, ssh …), keine Dienstobjekte
+        refs = [("zone", n) for n in _names([obj.get("sourceZone")]) if n]
+        for key in ("sourceNetworks", "destinationNetworks"):
+            nets = obj.get(key) or {}
+            for k in _REST_NET_KEYS:
+                refs += [("network", n) for n in _names(nets.get(k))]
+        return refs
     if entity in ("addressGroupsIpv4", "addressGroupsIpv6"):
         return [("network", n) for n in _names(obj.get("ipv4Addresses") or obj.get("ipv6Addresses"))]
     if entity == "addressGroupsFqdn":
@@ -316,4 +328,5 @@ def references(entity: str, obj: dict) -> list[tuple[str, str]]:
 
 REFERRING_ENTITIES = ("FirewallRule", "IPHostGroup", "ServiceGroup", "FQDNHostGroup", "firewallRulesIpv4",
                       "firewallRulesIpv6", "addressGroupsIpv4", "addressGroupsIpv6", "addressGroupsFqdn",
-                      "serviceGroups", "natRulesIpv4", "wafRules", "wafServers")
+                      "serviceGroups", "natRulesIpv4", "wafRules", "wafServers", "aclExceptionRulesIpv4",
+                      "aclExceptionRulesIpv6")

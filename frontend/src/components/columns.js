@@ -13,6 +13,16 @@ const REST_ADDR = [
   col('internal', t("System"), (o) => (o.isInternal ? t("ja") : ''), { hidden: true }),
 ]
 
+// Ausnahmen vom Gerätezugriff: Netze stehen in mehreren Unterschlüsseln (ipv4Groups, countries …)
+const aclNets = (n) => (n?.any || !n ? t("Beliebig") : Object.values(n).flatMap((v) => (Array.isArray(v) ? v.map((i) => i?.name) : [])).filter(Boolean).join(', '))
+const ACL_COLS = [
+  col('action', t("Aktion"), (o) => (o.action === 'accept' ? t("Annehmen") : t("Verwerfen"))),
+  col('zone', t("Quellzone"), (o) => o.sourceZone?.name || t("Beliebig")),
+  col('src', t("Quelle"), (o) => aclNets(o.sourceNetworks)),
+  col('dst', t("Ziel"), (o) => aclNets(o.destinationNetworks), { hidden: true }),
+  col('services', t("Dienste"), (o) => names(o.services)),
+]
+
 export const MDR_ACTION = { logOnly: t("Nur protokollieren"), logAndDrop: t("Protokollieren und verwerfen") }
 export const MDR_TYPE = { 'ipv4-addr': t("IPv4-Adresse"), 'domain-name': t("Domäne"), url: 'URL' }
 
@@ -36,6 +46,8 @@ export const COLUMNS = {
     col('sport', t("Quell-Port"), (o) => asList(o.services).map((d) => port(d.sourcePort)).filter(Boolean).join(', '), { hidden: true }),
   ],
   serviceGroups: [col('members', t("Mitglieder"), (o) => names(o.services))],
+  aclExceptionRulesIpv4: ACL_COLS,
+  aclExceptionRulesIpv6: ACL_COLS,
   zones: [col('type', t("Typ"), (o) => o.type), col('services', t("Gerätezugriff"), (o) => names(o.services), { hidden: true })],
   schedules: [col('type', t("Typ"), (o) => (o.type === 'oneTime' ? t("einmalig") : t("wiederkehrend"))),
     col('slots', t("Zeiten"), (o) => asList(o.timeSlots).map((t) => `${t.dayOfWeek} ${t.startTime}–${t.endTime}`).join(', '))],

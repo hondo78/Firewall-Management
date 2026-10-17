@@ -78,3 +78,19 @@ def test_compare_configs():
     assert r["modified"][0]["name"] == "A"
     assert r["modified"][0]["fields"] == [{"field": "NetworkPolicy › Action", "before": "Accept", "after": "Drop"}]
     assert "IPHost" not in result
+
+
+def test_acl_exception_rule_blocks_group_removal():
+    """Eine Gerätezugriff-Ausnahme (REST) verweist auf Gruppen – Löschen wird schon im Entwurf verhindert
+    (SFOS antwortet sonst beim Ausrollen nur mit HTTP 500)."""
+    from app.changes import used_by
+    config = {
+        "addressGroupsIpv4": [{"name": "Blocklist-Grp", "ipv4Addresses": []}],
+        "aclExceptionRulesIpv4": [{"name": "Blocklist", "action": "drop", "sourceZone": {"name": "WAN"},
+                                   "sourceNetworks": {"ipv4Groups": [{"name": "Blocklist-Grp"}], "countries": [{"name": "Iran"}]},
+                                   "destinationNetworks": {"any": True}, "services": [{"name": "https"}]}],
+    }
+    assert any("Blocklist" in u for u in used_by(config, "addressGroupsIpv4", "Blocklist-Grp"))
+    assert used_by(config, "zones", "WAN")
+    # Gerätedienste sind keine Dienstobjekte
+    assert not used_by(config, "services", "https")

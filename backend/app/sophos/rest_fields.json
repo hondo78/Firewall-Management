@@ -72,6 +72,32 @@
   "translatedSource",
   "updatedAt"
  ],
+ "aclExceptionRulesIpv4": [
+  "action",
+  "createdAt",
+  "description",
+  "destinationNetworks",
+  "id",
+  "name",
+  "position",
+  "services",
+  "sourceNetworks",
+  "sourceZone",
+  "updatedAt"
+ ],
+ "aclExceptionRulesIpv6": [
+  "action",
+  "createdAt",
+  "description",
+  "destinationNetworks",
+  "id",
+  "name",
+  "position",
+  "services",
+  "sourceNetworks",
+  "sourceZone",
+  "updatedAt"
+ ],
  "addressesIpv4": [
   "cidr",
   "createdAt",

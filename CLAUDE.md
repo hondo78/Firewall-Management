@@ -42,6 +42,8 @@ They use **two data formats**. `rest` keeps REST JSON objects 1:1 (entities like
 - `xmlconv.py`: lossless XML⇄dict. Text-only → str, repeated tags → list. **List containers** (name ends in `s`/`List`, uniform children) are always `{Tag: [...]}`, even with a single child. `Position`/`After`/`Before` are write-only directives: they are stripped from stored objects and passed per operation (`with_position`).
 - `entities.py`: the managed entity list (`MANAGED`, export names = XML tags) and `order_operations` (rule removals first, then adds/updates in dependency order, then object removals).
 
+- `aclExceptionRulesIpv4/6` (`/acl-exception-rules/…`, Local service ACL exceptions): cached and in `REFERRING_ENTITIES`, so `used_by` blocks removing groups/addresses/zones they use. **SFOS answers such a DELETE with a bare HTTP 500**, not a reference error. Their `services` are device services (`https`, `ssh` …), not service objects. Form: `AclExceptionForm` in `RestEditors.jsx`.
+
 ### REST field check
 `changes._check_rest_fields` validates REST objects on add/update against the spec fields in `sophos/rest_fields.json`, which is generated from `docs/sfos-rest-openapi.json` by `backend/tools/gen_rest_fields.py` and is the union of POST, PATCH and GET. Unknown top-level keys → 400, with an extra hint for XML-API-style fields (`policyType`, `httpBasedPolicy` …). Keys the firewall itself returns for that object are always allowed, as are `entities.REST_UNDOCUMENTED` (e.g. `skipLocalDestined`). A REST WAF rule (`ruleType: waf`) needs a `wafRule` reference; full WAF rules go through `wafRules` (XML). Regenerate the JSON after updating the spec.
 

@@ -25,6 +25,10 @@ const NEW_REST = {
   schedules: { name: '', description: '', type: 'recurring', timeSlots: [{ dayOfWeek: 'weekdays', startTime: '08:00', endTime: '18:00' }] },
   addressesMac: { name: '', description: '', type: 'macAddress', macAddress: '' },
   addressesIpv6: { name: '', description: '', type: 'ipv6Address', ipv6Address: '' },
+  aclExceptionRulesIpv4: { name: '', description: '', action: 'drop', position: 'top', sourceZone: { any: true },
+    sourceNetworks: { any: true }, destinationNetworks: { any: true }, services: [{ name: 'https' }] },
+  aclExceptionRulesIpv6: { name: '', description: '', action: 'drop', position: 'top', sourceZone: { any: true },
+    sourceNetworks: { any: true }, destinationNetworks: { any: true }, services: [{ name: 'https' }] },
   ...NEW_POLICY,
   ...NEW_WAF,
 }
@@ -196,6 +200,65 @@ function Ipv4Form({ data, setData, isNew }) {
   )
 }
 
+const NET_KEYS = ['ipv4Addresses', 'ipv4Groups', 'ipv6Addresses', 'ipv6Groups', 'fqdnAddresses', 'fqdnGroups', 'macAddresses', 'countryGroups']
+
+/** Ausnahme vom Gerätezugriff (Administration › Gerätezugriff › Local service ACL exception rule) */
+function AclExceptionForm({ data, setData, isNew, config, v6 }) {
+  const opts = useMemo(() => restRefOptions(config), [config])
+  const netOpts = v6 ? opts.networks6 : opts.networks
+  const nets = (side) => {
+    const n = data[side] || {}
+    return NET_KEYS.flatMap((k) => refNames(n[k]).map((name) => ({ name, key: k })))
+  }
+  // Namen → Unterschlüssel (ipv4Groups …): bisheriger Schlüssel, sonst aus den Auswahloptionen
+  const setNets = (side, names, countries) => {
+    const prev = Object.fromEntries(nets(side).map((x) => [x.name, x.key]))
+    const out = {}
+    for (const name of names) {
+      const key = prev[name] || netOpts.find((o) => o.value === name)?.key || (v6 ? 'ipv6Addresses' : 'ipv4Addresses')
+      ;(out[key] = out[key] || []).push({ name })
+    }
+    if (countries.length) out.countries = countries.map((name) => ({ name }))
+    setData({ ...data, [side]: Object.keys(out).length ? out : { any: true } })
+  }
+  const side = (key, label) => {
+    const countries = refNames((data[key] || {}).countries)
+    const names = nets(key).map((x) => x.name)
+    return <div className="stack">
+      <EntryList label={label} value={names} options={netOpts} emptyLabel={t("Beliebig")} onChange={(v) => setNets(key, v, countries)} />
+      {(key === 'sourceNetworks' || countries.length > 0) && <EntryList label={t("Länder")} value={countries} emptyLabel={t("keine")}
+        placeholder={t("Ländername wie in SFOS, z. B. Russian Federation")} onChange={(v) => setNets(key, names, v)} />}
+    </div>
+  }
+  const svc = refNames(data.services)
+  // Gerätedienste wie beim Gerätezugriff der Zonen; unbekannte Werte der Firewall bleiben auswählbar
+  const known = new Set(ZONE_SERVICES.map(([k]) => k))
+  const allSvc = [...ZONE_SERVICES, ...svc.filter((x) => !known.has(x)).map((x) => [x, x])]
+  return (
+    <div className="stack">
+      <NameDesc data={data} setData={setData} isNew={isNew} />
+      <div className="form-grid">
+        <Field label={t("Aktion")}><Seg options={[['accept', t("Annehmen")], ['drop', t("Verwerfen")]]} value={data.action} onChange={(v) => setData({ ...data, action: v })} /></Field>
+        <Field label={t("Position")}><Seg options={[['top', t("Oben")], ['bottom', t("Unten")]]} value={data.position} onChange={(v) => setData({ ...data, position: v })} /></Field>
+        <Field label={t("Quellzone")}>
+          <select value={data.sourceZone?.name || ''} onChange={(e) => setData({ ...data, sourceZone: e.target.value ? { name: e.target.value } : { any: true } })}>
+            <option value="">{t("Beliebig")}</option>
+            {opts.zones.map((z) => <option key={z.value} value={z.value}>{z.value}</option>)}
+          </select></Field>
+      </div>
+      <div className="form-grid">
+        {side('sourceNetworks', t("Quellnetzwerke und -geräte"))}
+        {side('destinationNetworks', t("Ziel-Hosts"))}
+      </div>
+      <div><b className="small">{t("Dienste (Gerätezugriff)")}</b></div>
+      <div className="sf-checks">{allSvc.map(([x, l]) => (
+        <label key={x} className="check"><input type="checkbox" checked={svc.includes(x)}
+          onChange={() => setData({ ...data, services: toRefs(svc.includes(x) ? svc.filter((y) => y !== x) : [...svc, x]) })} />{l}</label>
+      ))}</div>
+    </div>
+  )
+}
+
 function RestServiceForm({ data, setData, isNew, portsAsText }) {
   const rows = asList(data.services)
   const setRows = (r) => setData({ ...data, services: r })
@@ -268,6 +331,8 @@ export function RestObjectEditor({ entity, label, config, object, onClose, onSub
     schedules: <ScheduleForm {...props} />,
     addressesMac: <MacForm {...props} />,
     addressesIpv6: <Ipv6Form {...props} />,
+    aclExceptionRulesIpv4: <AclExceptionForm {...props} config={config} />,
+    aclExceptionRulesIpv6: <AclExceptionForm {...props} config={config} v6 />,
     backupSettings: <BackupSettingsForm {...props} />,
     wafServers: <WafServerForm {...props} config={config} />,
     wafProtectionPolicies: <WafProtectionForm {...props} />,

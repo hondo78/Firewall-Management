@@ -68,6 +68,8 @@
  "Für die REST-API sind Adresse und API-Key nötig",
  "Für die XML-API sind Adresse, Benutzer und Passwort nötig",
  "Genehmigte Änderungen manuell ausrollen / erneut versuchen",
+ "Gerätezugriff-Ausnahmen IPv4",
+ "Gerätezugriff-Ausnahmen IPv6",
  "Gruppe nicht gefunden",
  "Gruppen aus Sophos Central werden dort umbenannt",
  "Hosts & Dienste",
