@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { asList, isRestEntity, listOf, policy, refOptions, setList, toXml } from './entities'
-import { ErrorBox, Field, Modal, Picker, Seg } from './ui'
+import { EntryList, ErrorBox, Field, Modal, Picker, Seg } from './ui'
 import { t } from '../i18n'
 
 /** Formular ⇄ Experten-Ansicht (XML bzw. JSON beim REST-Format); Speichern = in den Entwurf übernehmen. */
@@ -242,8 +242,10 @@ function IPHostForm({ data, setData, isNew }) {
           <Field label={t("Start-IP")}><input value={data.StartIPAddress || ''} onChange={set('StartIPAddress')} /></Field>
           <Field label={t("End-IP")}><input value={data.EndIPAddress || ''} onChange={set('EndIPAddress')} /></Field>
         </>}
-        {type === 'IPList' && <Field label="IP-Adressen" hint={t("Kommagetrennt")}><input value={data.ListOfIPAddresses || ''} onChange={set('ListOfIPAddresses')} /></Field>}
       </div>
+      {type === 'IPList' && <EntryList label={t("IP-Adressen")} placeholder="10.0.0.1, 10.0.0.2"
+        value={String(data.ListOfIPAddresses || '').split(',').map((x) => x.trim()).filter(Boolean)}
+        onChange={(v) => setData({ ...data, ListOfIPAddresses: v.join(',') })} />}
     </div>
   )
 }
@@ -287,10 +289,8 @@ function GroupForm({ data, setData, isNew, container, itemKey, options, label })
         <Field label={t("Name")}><input value={data.Name} disabled={!isNew} onChange={set('Name')} autoFocus={isNew} /></Field>
         <Field label={t("Beschreibung")}><input value={data.Description || ''} onChange={set('Description')} /></Field>
       </div>
-      <Field label={label}>
-        <Picker value={asList(data[container]?.[itemKey])} options={options} emptyLabel={t("keine")}
-          onChange={(v) => setData({ ...data, [container]: { [itemKey]: v } })} />
-      </Field>
+      <EntryList label={label} value={asList(data[container]?.[itemKey])} options={options}
+        onChange={(v) => setData({ ...data, [container]: { [itemKey]: v } })} />
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { EditorShell } from './Editors'
 import { SINGLETON_ENTITIES, asList, restRefOptions } from './entities'
-import { Field, Picker, Seg } from './ui'
+import { EntryList, Field, Seg } from './ui'
 import { NEW_POLICY, policyForm } from './SophosPolicies'
 import { NEW_WAF, WafProtectionForm, WafServerForm } from './SophosWaf'
 import { MdrFeedForm, MdrIndicatorForm, NEW_MDR } from './CentralMdr'
@@ -189,9 +189,9 @@ function Ipv4Form({ data, setData, isNew }) {
           <Field label={t("Start")}><input value={data.ipv4AddressStart || ''} onChange={set('ipv4AddressStart')} /></Field>
           <Field label={t("Ende")}><input value={data.ipv4AddressEnd || ''} onChange={set('ipv4AddressEnd')} /></Field>
         </>}
-        {data.type === 'ipv4List' && <Field label={t("Adressen")} hint={t("Kommagetrennt")}>
-          <input value={asList(data.ipv4Addresses).join(', ')} onChange={(e) => setData({ ...data, ipv4Addresses: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })} /></Field>}
       </div>
+      {data.type === 'ipv4List' && <EntryList label={t("Adressen")} value={asList(data.ipv4Addresses)} placeholder="10.0.0.1, 10.0.0.2"
+        onChange={(v) => setData({ ...data, ipv4Addresses: v })} />}
     </div>
   )
 }
@@ -238,8 +238,8 @@ function RefGroupForm({ data, setData, isNew, field, options, label }) {
   return (
     <div className="stack">
       <NameDesc data={data} setData={setData} isNew={isNew} />
-      <Field label={label}><Picker value={refNames(data[field])} options={options} emptyLabel={t("keine")}
-        onChange={(v) => setData({ ...data, [field]: toRefs(v) })} /></Field>
+      <EntryList label={label} value={refNames(data[field])} options={options}
+        onChange={(v) => setData({ ...data, [field]: toRefs(v) })} />
     </div>
   )
 }

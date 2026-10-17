@@ -153,6 +153,95 @@ export function Picker({ value, options, onChange, placeholder = t("Hinzufügen 
   )
 }
 
+/** Einträge einer Liste (IP-Liste, Gruppenmitglieder) bearbeiten: je Eintrag ⊖, Mehrfachauswahl zum Entfernen,
+ * Filter bei langen Listen. Mit `options` wird aus vorhandenen Objekten gewählt, sonst sind Einträge freier Text
+ * (mehrere auf einmal, getrennt durch Komma, Leerzeichen oder Zeilenumbruch). Bewusst kein <label> drumherum:
+ * dort würde ein Klick auf eine Zeile die erste Checkbox umschalten. */
+export function EntryList({ label, hint, value, onChange, options, placeholder, emptyLabel = t("keine") }) {
+  const [sel, setSel] = useState(new Set())
+  const [filter, setFilter] = useState('')
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  const f = filter.trim().toLowerCase()
+  const visible = f ? value.filter((v) => v.toLowerCase().includes(f)) : value
+  const picked = value.filter((v) => sel.has(v))
+  const allShown = visible.length > 0 && visible.every((v) => sel.has(v))
+  const remove = (gone) => {
+    const g = new Set(gone)
+    onChange(value.filter((v) => !g.has(v)))
+    setSel(new Set([...sel].filter((v) => !g.has(v))))
+  }
+  const toggle = (v) => { const n = new Set(sel); if (n.has(v)) n.delete(v); else n.add(v); setSel(n) }
+  const add = (items) => {
+    const fresh = [...new Set(items.map((x) => x.trim()).filter(Boolean))].filter((x) => !value.includes(x))
+    if (fresh.length) onChange([...value, ...fresh])
+    setQ('')
+  }
+  const have = new Set(value)
+  const ql = q.toLowerCase()
+  const shown = options ? options.filter((o) => !have.has(o.value) && o.value.toLowerCase().includes(ql)).slice(0, 100) : []
+  return (
+    <div className="field entry-list">
+      <span>{label} <span className="muted" style={{ fontWeight: 400 }}>({value.length})</span></span>
+      <div className="sf-list" ref={ref}>
+        {value.length > 8 && <div className="entry-list-filter">
+          <input value={filter} placeholder={t("Einträge filtern …")} onChange={(e) => setFilter(e.target.value)} /></div>}
+        <div className="sf-list-items">
+          {!value.length && <div className="sf-list-item any"><span>{emptyLabel}</span></div>}
+          {value.length > 0 && !visible.length && <div className="sf-list-item any"><span>{t("Kein Eintrag passt zum Filter.")}</span></div>}
+          {visible.map((v) => (
+            <div key={v} className={`sf-list-item ${sel.has(v) ? 'picked' : ''}`}>
+              <input type="checkbox" checked={sel.has(v)} onChange={() => toggle(v)} aria-label={t("{0} markieren", v)} />
+              <span className="grow" onClick={() => toggle(v)}>{v}</span>
+              <button type="button" className="sf-remove" title={t("Entfernen")} aria-label={t("{0} entfernen", v)}
+                onClick={() => remove([v])}>−</button>
+            </div>
+          ))}
+        </div>
+        {value.length > 0 && <div className="entry-list-bar">
+          <label className="row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={allShown} onChange={() => {
+              const n = new Set(sel)
+              visible.forEach((v) => (allShown ? n.delete(v) : n.add(v)))
+              setSel(n)
+            }} />{f ? t("Gefilterte markieren") : t("Alle markieren")}</label>
+          <span className="grow" />
+          <button type="button" className="sm danger" disabled={!picked.length} onClick={() => remove(picked)}>
+            {t("Markierte entfernen ({0})", picked.length)}</button>
+          <button type="button" className="sm" onClick={() => remove(value)}>{t("Alle entfernen")}</button>
+        </div>}
+        <div className="entry-list-add">
+          <input value={q} placeholder={placeholder || (options ? t("Hinzufügen …") : t("Einträge hinzufügen (Komma, Leerzeichen oder Zeilenumbruch)"))}
+            onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setOpen(true) }}
+            onPaste={options ? undefined : (e) => { e.preventDefault(); add(e.clipboardData.getData('text').split(/[\s,;]+/)) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); if (options) { if (shown[0]) add([shown[0].value]) } else add(q.split(/[\s,;]+/)) }
+              if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false) }
+            }} />
+          {!options && <button type="button" className="sm" disabled={!q.trim()} onClick={() => add(q.split(/[\s,;]+/))}>{t("Hinzufügen")}</button>}
+          {options && open && shown.length > 0 && (
+            <div className="sf-list-pop"><div className="sf-list-options" style={{ marginTop: 0 }}>
+              {shown.map((o) => (
+                <button type="button" key={`${o.kind}:${o.value}`} onClick={() => add([o.value])}>
+                  <span>{o.value}</span>{o.kind && <span className="kind">{o.kind}</span>}
+                </button>
+              ))}
+            </div></div>
+          )}
+        </div>
+      </div>
+      {hint && <small>{hint}</small>}
+    </div>
+  )
+}
+
 export function DiffTable({ rows }) {
   if (!rows?.length) return <div className="muted small">{t("Keine Feldänderungen.")}</div>
   return (

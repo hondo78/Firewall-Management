@@ -490,6 +490,16 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--border); borde
 .sf-list-options button { display: flex; justify-content: space-between; gap: 8px; width: 100%; border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 4px; }
 .sf-list-options button:hover { background: var(--accent-soft); }
 .sf-list-options .kind { color: var(--muted); font-size: 11.5px; }
+.entry-list .sf-list-items { max-height: 320px; }
+.entry-list .sf-list-item { justify-content: flex-start; padding-left: 10px; }
+.entry-list .sf-list-item .grow { flex: 1; cursor: pointer; }
+.entry-list .sf-list-item.picked { background: var(--accent-soft); }
+.entry-list-filter, .entry-list-add { display: flex; gap: 6px; padding: 6px; }
+.entry-list-filter { border-bottom: 1px solid var(--border); }
+.entry-list-filter input, .entry-list-add input { flex: 1; min-width: 0; }
+.entry-list-add { border-top: 1px solid var(--border); position: relative; }
+.entry-list-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); font-size: 13px; }
+.entry-list-bar .grow { flex: 1; }
 .sf-list-pop-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
 
 @media (max-width: 900px) {
